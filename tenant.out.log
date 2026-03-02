@@ -1,0 +1,394 @@
+Using launch settings from C:\Users\rasha\source\Bms\api\Clienta.Api\Properties\launchSettings.json...
+Building...
+info: Clienta.Api.BackgroundServices.TrialReminderService[0]
+      Trial Reminder Service started
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'User' has a global query filter defined and is the required end of a relationship with the entity 'BusinessUser'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10622]
+      Entity 'Permission' has a global query filter defined and is the required end of a relationship with the entity 'UserPermission'. This may lead to unexpected results when the required entity is filtered out. Either configure the navigation as optional, or define matching query filters for both entities in the navigation. See https://go.microsoft.com/fwlink/?linkid=2131316 for more information.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (16ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT "t"."Id", "t"."BillingCycle", "t"."CreatedAt", "t"."IsSuspended", "t"."MessageLimit", "t"."Name", "t"."PaymentGracePeriodEndsAt", "t"."Plan", "t"."ScheduledPlan", "t"."ScheduledPlanChangeAt", "t"."StripeCustomerId", "t"."StripeSubscriptionId", "t"."Subdomain", "t"."SubscriptionStatus", "t"."TrialEndsAt", "t"."UserLimit"
+      FROM "Tenants" AS "t"
+      WHERE "t"."Plan" = 0 AND "t"."SubscriptionStatus" = 0 AND NOT ("t"."IsSuspended")
+info: Clienta.Api.BackgroundServices.TrialReminderService[0]
+      Checking 1 trial tenants
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (3ms) [Parameters=[@__ef_filter__TenantId_0='?' (DbType = Guid), @__tenant_Id_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Email"
+      FROM "Users" AS "u"
+      WHERE "u"."TenantId" = @__ef_filter__TenantId_0 AND "u"."TenantId" = @__tenant_Id_0 AND "u"."Role" = 'Admin'
+      LIMIT 1
+warn: Clienta.Api.BackgroundServices.TrialReminderService[0]
+      No admin email found for tenant 5b866683-4e88-40ed-9b5f-19a75841ee31
+warn: Clienta.Api.Data.AppDbContext[0]
+      ApplyTenantId: TenantId is empty (likely background service)
+info: Clienta.Api.BackgroundServices.GracePeriodService[0]
+      Grace Period Service started
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (11ms) [Parameters=[@__now_0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      SELECT "t"."Id", "t"."BillingCycle", "t"."CreatedAt", "t"."IsSuspended", "t"."MessageLimit", "t"."Name", "t"."PaymentGracePeriodEndsAt", "t"."Plan", "t"."ScheduledPlan", "t"."ScheduledPlanChangeAt", "t"."StripeCustomerId", "t"."StripeSubscriptionId", "t"."Subdomain", "t"."SubscriptionStatus", "t"."TrialEndsAt", "t"."UserLimit"
+      FROM "Tenants" AS "t"
+      WHERE "t"."PaymentGracePeriodEndsAt" IS NOT NULL AND "t"."PaymentGracePeriodEndsAt" < @__now_0 AND NOT ("t"."IsSuspended")
+info: Clienta.Api.BackgroundServices.GracePeriodService[0]
+      Found 0 tenants with expired grace periods
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5146
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\rasha\source\Bms\api\Clienta.Api
+Tenant resolved: 5b866683-4e88-40ed-9b5f-19a75841ee31
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__request_Email_0='?' (Size = 17)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Email" = @__request_Email_0
+      LIMIT 1
+warn: Clienta.Api.Data.AppDbContext[0]
+      ApplyTenantId: TenantId is empty (likely background service)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (4ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      UPDATE "Users" SET "LastLoginAt" = @p0
+      WHERE "Id" = @p1
+      RETURNING 1;
+info: Clienta.Api.Services.JwtService[0]
+      === JWT Generation Debug ===
+info: Clienta.Api.Services.JwtService[0]
+      User ID: 0aebae75-602e-48b0-9d6d-e705e250a3a2
+info: Clienta.Api.Services.JwtService[0]
+      User Email: admin@example.com
+info: Clienta.Api.Services.JwtService[0]
+      User Role from Database: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      Claims added to JWT:
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'sub', Value: '0aebae75-602e-48b0-9d6d-e705e250a3a2'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'email', Value: 'admin@example.com'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'role', Value: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      JWT Generated Successfully
+info: Clienta.Api.Services.JwtService[0]
+      ============================
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (40ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (16ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (10ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__request_Email_0='?' (Size = 17)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Email" = @__request_Email_0
+      LIMIT 1
+warn: Clienta.Api.Data.AppDbContext[0]
+      ApplyTenantId: TenantId is empty (likely background service)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (4ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      UPDATE "Users" SET "LastLoginAt" = @p0
+      WHERE "Id" = @p1
+      RETURNING 1;
+info: Clienta.Api.Services.JwtService[0]
+      === JWT Generation Debug ===
+info: Clienta.Api.Services.JwtService[0]
+      User ID: 0aebae75-602e-48b0-9d6d-e705e250a3a2
+info: Clienta.Api.Services.JwtService[0]
+      User Email: admin@example.com
+info: Clienta.Api.Services.JwtService[0]
+      User Role from Database: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      Claims added to JWT:
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'sub', Value: '0aebae75-602e-48b0-9d6d-e705e250a3a2'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'email', Value: 'admin@example.com'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'role', Value: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      JWT Generated Successfully
+info: Clienta.Api.Services.JwtService[0]
+      ============================
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (1ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (2ms) [Parameters=[@__request_Email_0='?' (Size = 17)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Email" = @__request_Email_0
+      LIMIT 1
+warn: Clienta.Api.Data.AppDbContext[0]
+      ApplyTenantId: TenantId is empty (likely background service)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      UPDATE "Users" SET "LastLoginAt" = @p0
+      WHERE "Id" = @p1
+      RETURNING 1;
+info: Clienta.Api.Services.JwtService[0]
+      === JWT Generation Debug ===
+info: Clienta.Api.Services.JwtService[0]
+      User ID: 0aebae75-602e-48b0-9d6d-e705e250a3a2
+info: Clienta.Api.Services.JwtService[0]
+      User Email: admin@example.com
+info: Clienta.Api.Services.JwtService[0]
+      User Role from Database: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      Claims added to JWT:
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'sub', Value: '0aebae75-602e-48b0-9d6d-e705e250a3a2'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'email', Value: 'admin@example.com'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'role', Value: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      JWT Generated Successfully
+info: Clienta.Api.Services.JwtService[0]
+      ============================
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__request_Email_0='?' (Size = 17)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Email" = @__request_Email_0
+      LIMIT 1
+warn: Clienta.Api.Data.AppDbContext[0]
+      ApplyTenantId: TenantId is empty (likely background service)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      UPDATE "Users" SET "LastLoginAt" = @p0
+      WHERE "Id" = @p1
+      RETURNING 1;
+info: Clienta.Api.Services.JwtService[0]
+      === JWT Generation Debug ===
+info: Clienta.Api.Services.JwtService[0]
+      User ID: 0aebae75-602e-48b0-9d6d-e705e250a3a2
+info: Clienta.Api.Services.JwtService[0]
+      User Email: admin@example.com
+info: Clienta.Api.Services.JwtService[0]
+      User Role from Database: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      Claims added to JWT:
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'sub', Value: '0aebae75-602e-48b0-9d6d-e705e250a3a2'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'email', Value: 'admin@example.com'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'role', Value: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      JWT Generated Successfully
+info: Clienta.Api.Services.JwtService[0]
+      ============================
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (11ms) [Parameters=[@__request_Email_0='?' (Size = 17)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Email" = @__request_Email_0
+      LIMIT 1
+warn: Clienta.Api.Data.AppDbContext[0]
+      ApplyTenantId: TenantId is empty (likely background service)
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (2ms) [Parameters=[@p1='?' (DbType = Guid), @p0='?' (DbType = DateTime)], CommandType='Text', CommandTimeout='30']
+      UPDATE "Users" SET "LastLoginAt" = @p0
+      WHERE "Id" = @p1
+      RETURNING 1;
+info: Clienta.Api.Services.JwtService[0]
+      === JWT Generation Debug ===
+info: Clienta.Api.Services.JwtService[0]
+      User ID: 0aebae75-602e-48b0-9d6d-e705e250a3a2
+info: Clienta.Api.Services.JwtService[0]
+      User Email: admin@example.com
+info: Clienta.Api.Services.JwtService[0]
+      User Role from Database: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      Claims added to JWT:
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'sub', Value: '0aebae75-602e-48b0-9d6d-e705e250a3a2'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'email', Value: 'admin@example.com'
+info: Clienta.Api.Services.JwtService[0]
+        - Type: 'role', Value: 'Admin'
+info: Clienta.Api.Services.JwtService[0]
+      JWT Generated Successfully
+info: Clienta.Api.Services.JwtService[0]
+      ============================
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (0ms) [Parameters=[@__userGuid_0='?' (DbType = Guid)], CommandType='Text', CommandTimeout='30']
+      SELECT "u"."Id", "u"."CreatedAt", "u"."Email", "u"."FullName", "u"."IsActive", "u"."LastLoginAt", "u"."PasswordHash", "u"."Role", "u"."RoleLabel", "u"."TenantId"
+      FROM "Users" AS "u"
+      WHERE "u"."Id" = @__userGuid_0
+      LIMIT 1

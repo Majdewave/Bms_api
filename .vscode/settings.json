@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^dotnet ef migrations add FixAuditNullable --context AppDbContext$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}
