@@ -1,4 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using Clienta.Api.Data;
 
 namespace Clienta.Api.Authorization;
 
@@ -11,3 +14,4 @@ public class PermissionRequirement : IAuthorizationRequirement
         Permission = permission;
     }
 }
+

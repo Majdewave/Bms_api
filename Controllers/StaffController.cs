@@ -8,7 +8,7 @@ using Clienta.Api.DTOs;
 
 namespace Clienta.Api.Controllers;
 
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = "manage_staff")]
 [ApiController]
 [Route("api/staff")]
 public class StaffController : ControllerBase
@@ -22,7 +22,7 @@ public class StaffController : ControllerBase
         _tenant = tenant;
     }
 
-    // GET /staff
+    // GET /api/staff
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -36,22 +36,18 @@ public class StaffController : ControllerBase
                 u.FullName ?? string.Empty,
                 u.RoleLabel ?? string.Empty,
                 u.IsActive,
-                new List<string>() // Permissions removed for now - can be added separately if needed
+                u.Permissions.Select(p => p.Permission.Key).ToList()
             ))
             .ToListAsync();
 
         return Ok(staff);
     }
 
-    // POST /staff
+    // POST /api/staff
     [HttpPost]
     public async Task<IActionResult> Create(CreateStaffRequest request)
     {
-        // Check if email already exists
-        var emailExists = await _context.Users
-            .AnyAsync(u => u.Email == request.Email);
-
-        if (emailExists)
+        if (await _context.Users.AnyAsync(u => u.Email == request.Email))
             return BadRequest("Email already exists.");
 
         var hashed = BCrypt.Net.BCrypt.HashPassword(request.Password);
@@ -71,15 +67,14 @@ public class StaffController : ControllerBase
 
         _context.Users.Add(user);
 
-        // Link to Business
         _context.BusinessUsers.Add(new BusinessUser
         {
             TenantId = _tenant.TenantId,
             UserId = user.Id
         });
 
-        // Assign permissions
-        if (request.Permissions.Any())
+        // Assign permissions (GLOBAL permissions)
+        if (request.Permissions?.Any() == true)
         {
             var permissions = await _context.Permissions
                 .Where(p => request.Permissions.Contains(p.Key))
@@ -89,6 +84,7 @@ public class StaffController : ControllerBase
             {
                 _context.UserPermissions.Add(new UserPermission
                 {
+                    Id = Guid.NewGuid(),
                     UserId = user.Id,
                     PermissionId = permission.Id
                 });
@@ -103,11 +99,11 @@ public class StaffController : ControllerBase
             user.FullName,
             user.RoleLabel,
             user.IsActive,
-            request.Permissions
+            request.Permissions ?? new List<string>()
         ));
     }
 
-    // PUT /staff/{id}
+    // PUT /api/staff/{id}
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateStaffRequest request)
     {
@@ -122,20 +118,25 @@ public class StaffController : ControllerBase
         user.RoleLabel = request.RoleLabel;
         user.IsActive = request.IsActive;
 
-        // Clear old permissions
-        _context.UserPermissions.RemoveRange(user.Permissions);
+        // Remove old permissions
+        var existingPermissions = await _context.UserPermissions
+            .Where(up => up.UserId == user.Id)
+            .ToListAsync();
+
+        _context.UserPermissions.RemoveRange(existingPermissions);
 
         // Assign new permissions
-        if (request.Permissions.Any())
+        if (request.Permissions?.Any() == true)
         {
             var permissions = await _context.Permissions
-                .Where(p => request.Permissions.Contains(p.Key) && p.TenantId == _tenant.TenantId)
+                .Where(p => request.Permissions.Contains(p.Key))
                 .ToListAsync();
 
             foreach (var permission in permissions)
             {
                 _context.UserPermissions.Add(new UserPermission
                 {
+                    Id = Guid.NewGuid(),
                     UserId = user.Id,
                     PermissionId = permission.Id
                 });
@@ -147,7 +148,7 @@ public class StaffController : ControllerBase
         return NoContent();
     }
 
-    // DELETE /staff/{id}
+    // DELETE /api/staff/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {

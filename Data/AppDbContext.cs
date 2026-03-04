@@ -51,9 +51,6 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Client>()
             .HasQueryFilter(c => c.TenantId == _tenantContext.TenantId);
 
-        modelBuilder.Entity<Permission>()
-            .HasQueryFilter(p => p.TenantId == _tenantContext.TenantId);
-
         modelBuilder.Entity<Appointment>()
             .HasQueryFilter(a => a.TenantId == _tenantContext.TenantId);
 
@@ -95,19 +92,6 @@ public class AppDbContext : DbContext
             .HasForeignKey(n => n.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Additional model configuration can be added here
-        // Additional model configuration can be added here
-
-        // Seed default permissions (global, TenantId = Guid.Empty)
-        modelBuilder.Entity<Permission>().HasData(
-            new Permission { Id = Guid.Parse("11111111-1111-1111-1111-111111111111"), Key = "manage_clients", TenantId = Guid.Empty },
-            new Permission { Id = Guid.Parse("22222222-2222-2222-2222-222222222222"), Key = "manage_appointments", TenantId = Guid.Empty },
-            new Permission { Id = Guid.Parse("33333333-3333-3333-3333-333333333333"), Key = "manage_notes", TenantId = Guid.Empty },
-            new Permission { Id = Guid.Parse("44444444-4444-4444-4444-444444444444"), Key = "manage_files", TenantId = Guid.Empty }
-        );
-        // Additional model configuration can be added here
-
-        // ProcessedStripeEvent - for webhook idempotency
         modelBuilder.Entity<ProcessedStripeEvent>(entity =>
         {
             entity.HasKey(e => e.EventId);

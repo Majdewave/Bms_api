@@ -2,7 +2,6 @@ using Clienta.Api.Data;
 using Clienta.Api.Services;
 using Clienta.Api.Authorization;
 using Clienta.Api.Middleware;
-using Clienta.Api.BackgroundServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -36,10 +35,7 @@ builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
 
-// Background Services
-// builder.Services.AddHostedService<TrialReminderService>();
-// builder.Services.AddHostedService<GracePeriodService>();
-
+// JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
 
@@ -62,59 +58,40 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// Authorization
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
 builder.Services.AddAuthorization(options =>
 {
-    // Simple role-based policies - check JWT role claim directly
     options.AddPolicy("manage_clients",
-        policy => policy.RequireRole("Admin"));
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_clients")));
 
     options.AddPolicy("manage_appointments",
-        policy => policy.RequireRole("Admin"));
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_appointments")));
+
+    options.AddPolicy("manage_notes",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_notes")));
+
+    options.AddPolicy("manage_files",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_files")));
+
+    options.AddPolicy("manage_staff",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_staff")));
 });
 
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description = "Enter JWT Bearer token"
-    });
-
-    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
-    {
-        {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            new string[] {}
-        }
-    });
-});
-
-builder.Services.AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-    });
+builder.Services.AddSwaggerGen();
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactDev",
         policy =>
         {
-            policy.WithOrigins("http://localhost:5173", "http://localhost:5174", "http://localhost:5175")
+            policy.WithOrigins(
+                    "http://localhost:5173",
+                    "http://localhost:5174",
+                    "http://localhost:5175")
                   .AllowAnyHeader()
                   .AllowAnyMethod()
                   .AllowCredentials();
@@ -123,68 +100,36 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// SEED TENANT AND ADMIN USER ON STARTUP
+
+// ---------- DATABASE + SEED ----------
 using (var scope = app.Services.CreateScope())
 {
-    var seeder = scope.ServiceProvider.GetRequiredService<AuthSeedService>();
-    seeder.SeedAsync().GetAwaiter().GetResult();
+    var services = scope.ServiceProvider;
+
+    var db = services.GetRequiredService<AppDbContext>();
+    db.Database.Migrate(); // creates tables if missing
+
+    var seeder = services.GetRequiredService<AuthSeedService>();
+    await seeder.SeedAsync();
 }
 
+
+// ---------- MIDDLEWARE ----------
+
 app.UseCors("AllowReactDev");
 
-// Configure static files for uploads
-app.UseCors("AllowReactDev");
-
-// Configure static files for uploads
 app.UseStaticFiles();
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Clienta API v1");
-        c.RoutePrefix = string.Empty;
-    });
+    app.UseSwaggerUI();
 }
-
-app.MapGet("/health", () => new { 
-    message = "Clienta API is running", 
-    version = "1.0",
-    endpoints = new[] {
-        "POST /auth/login",
-        "GET /api/clients",
-        "POST /api/clients"
-    }
-});
-
-// Stripe Webhook (must be BEFORE authentication middleware)
-// app.MapPost("/stripe/webhook", async (HttpRequest request, IStripeService stripeService) =>
-// {
-//     request.EnableBuffering();
-//     string json;
-//     using (var reader = new StreamReader(request.Body, leaveOpen: true))
-//     {
-//         json = await reader.ReadToEndAsync();
-//     }
-//     request.Body.Position = 0;
-//     var signature = request.Headers["Stripe-Signature"].ToString();
-//
-//     try
-//     {
-//         await stripeService.HandleWebhookAsync(json, signature);
-//         return Results.Ok();
-//     }
-//     catch (Exception ex)
-//     {
-//         return Results.BadRequest(new { error = ex.Message });
-//     }
-// });
-
 
 app.UseAuthentication();
 
-app.UseMiddleware<TenantMiddleware>(); 
+// Tenant AFTER authentication
+app.UseMiddleware<TenantMiddleware>();
 
 app.UseAuthorization();
 

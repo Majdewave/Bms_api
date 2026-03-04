@@ -1,6 +1,3 @@
-
-
-
 using System.Security.Claims;
 using Clienta.Api.Services;
 
@@ -17,18 +14,19 @@ public class TenantMiddleware
 
     public async Task InvokeAsync(HttpContext context, ITenantContext tenantContext)
     {
-        var tenantIdClaim = context.User.FindFirst("tenant_id")?.Value;
-        var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var tenantClaim = context.User.FindFirst("tenant_id")?.Value;
+        var userClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
+        if (Guid.TryParse(tenantClaim, out var tenantId))
+        {
+            tenantContext.SetTenant(tenantId);
+        }
 
-        if (!string.IsNullOrEmpty(tenantIdClaim))
-            tenantContext.SetTenant(Guid.Parse(tenantIdClaim));
-
-        if (!string.IsNullOrEmpty(userIdClaim))
-            tenantContext.SetUserId(Guid.Parse(userIdClaim));
+        if (Guid.TryParse(userClaim, out var userId))
+        {
+            tenantContext.SetUserId(userId);
+        }
 
         await _next(context);
     }
 }
-
-
