@@ -8,7 +8,7 @@ using Clienta.Api.DTOs;
 
 namespace Clienta.Api.Controllers;
 
-[Authorize(Policy = "manage_staff")]
+[Authorize]
 [ApiController]
 [Route("api/staff")]
 public class StaffController : ControllerBase
