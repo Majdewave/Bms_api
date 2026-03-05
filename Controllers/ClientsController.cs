@@ -71,7 +71,7 @@ public class ClientsController : ControllerBase
     }
 
     // POST /api/clients
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Staff")]
     [HttpPost]
     public async Task<IActionResult> Create(CreateClientRequest request)
     {
