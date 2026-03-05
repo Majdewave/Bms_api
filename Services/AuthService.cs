@@ -11,7 +11,6 @@ public class AuthService : IAuthService
     private readonly TokenService _tokenService;
     private readonly IEmailService _emailService;
     private readonly IConfiguration _config;
-    private readonly ITenantContext? _tenant;
     private readonly IPlanEnforcementService _planEnforcement;
 
     public AuthService(
@@ -19,50 +18,49 @@ public class AuthService : IAuthService
         TokenService tokenService,
         IEmailService emailService,
         IConfiguration config,
-        IPlanEnforcementService planEnforcement,
-        ITenantContext? tenant = null)
+        IPlanEnforcementService planEnforcement)
     {
         _context = context;
         _tokenService = tokenService;
         _emailService = emailService;
         _config = config;
-        _tenant = tenant;
         _planEnforcement = planEnforcement;
     }
 
-    // =====================================================
+    // =========================================
     // INVITE USER
-    // =====================================================
+    // =========================================
+
     public async Task<bool> InviteUserAsync(string email, Guid tenantId)
     {
-        // Check user limit via central enforcement
         await _planEnforcement.EnsureUserLimitAsync(tenantId);
 
-        // Check if user already exists
         var existingUser = await _context.Users
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == email);
-        
-        if (existingUser != null)
-            return false; // User already exists
 
-        // Create new user
+        if (existingUser != null)
+            return false;
+
         var user = new User
         {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
             Email = email,
             IsActive = false,
-            Role = "Staff" // Default role for invited users
+            Role = "Staff",
+            CreatedAt = DateTime.UtcNow
         };
 
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
-        // Generate secure token
         var rawToken = _tokenService.GenerateSecureToken();
         var tokenHash = _tokenService.HashToken(rawToken);
 
-        // Create user token
         var userToken = new UserToken
         {
+            Id = Guid.NewGuid(),
             TenantId = tenantId,
             UserId = user.Id,
             TokenHash = tokenHash,
@@ -74,8 +72,8 @@ public class AuthService : IAuthService
         _context.UserTokens.Add(userToken);
         await _context.SaveChangesAsync();
 
-        // Send invite email
-        var baseUrl = _config["App:BaseUrl"] ?? "https://yourdomain.com";
+        var baseUrl = _config["App:BaseUrl"] ?? "http://localhost:5173";
+
         var inviteLink = $"{baseUrl}/account/accept-invite?token={rawToken}";
 
         await _emailService.SendInviteEmailAsync(email, inviteLink);
@@ -83,24 +81,27 @@ public class AuthService : IAuthService
         return true;
     }
 
-    // =====================================================
+    // =========================================
     // ACCEPT INVITE
-    // =====================================================
-    public async Task<bool> AcceptInviteAsync(string token, string password, string fullName, Guid tenantId)
+    // =========================================
+
+    public async Task<bool> AcceptInviteAsync(string token, string password, string fullName)
     {
         var tokenHash = _tokenService.HashToken(token);
 
         var userToken = await _context.UserTokens
+            .IgnoreQueryFilters()
             .Include(ut => ut.User)
-            .FirstOrDefaultAsync(ut => ut.TokenHash == tokenHash
-                                   && ut.TenantId == tenantId
-                                   && ut.Type == "Invite"
-                                   && !ut.IsUsed);
+            .FirstOrDefaultAsync(ut =>
+                ut.TokenHash == tokenHash &&
+                ut.Type == "Invite" &&
+                !ut.IsUsed);
 
         if (userToken == null || userToken.ExpiryDate < DateTime.UtcNow)
-            return false; // Invalid or expired token
+            return false;
 
         var user = userToken.User;
+
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password);
         user.FullName = fullName;
         user.IsActive = true;
@@ -112,47 +113,38 @@ public class AuthService : IAuthService
         return true;
     }
 
-    // =====================================================
+    // =========================================
     // REQUEST PASSWORD RESET
-    // =====================================================
+    // =========================================
+
     public async Task<bool> RequestPasswordResetAsync(string email)
     {
         var user = await _context.Users
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(u => u.Email == email);
 
-        // Don't reveal if user exists or not (security best practice)
         if (user == null)
             return true;
 
-        // Check if there's an active reset token already
-        var existingToken = await _context.UserTokens
-            .FirstOrDefaultAsync(ut => ut.UserId == user.Id
-                                   && ut.Type == "ResetPassword"
-                                   && !ut.IsUsed
-                                   && ut.ExpiryDate > DateTime.UtcNow);
-
-        if (existingToken != null)
-            return true; // Token already exists, don't send duplicate
-
-        // Generate secure token
         var rawToken = _tokenService.GenerateSecureToken();
         var tokenHash = _tokenService.HashToken(rawToken);
 
         var userToken = new UserToken
         {
-            TenantId = _tenant?.TenantId ?? Guid.Empty,
+            Id = Guid.NewGuid(),
+            TenantId = user.TenantId,
             UserId = user.Id,
             TokenHash = tokenHash,
             Type = "ResetPassword",
-            ExpiryDate = DateTime.UtcNow.AddMinutes(30), // 30-minute expiry
+            ExpiryDate = DateTime.UtcNow.AddMinutes(30),
             IsUsed = false
         };
 
         _context.UserTokens.Add(userToken);
         await _context.SaveChangesAsync();
 
-        // Send reset email
-        var baseUrl = _config["App:BaseUrl"] ?? "https://yourdomain.com";
+        var baseUrl = _config["App:BaseUrl"] ?? "http://localhost:5173";
+
         var resetLink = $"{baseUrl}/account/reset-password?token={rawToken}";
 
         await _emailService.SendPasswordResetEmailAsync(email, resetLink);
@@ -160,28 +152,26 @@ public class AuthService : IAuthService
         return true;
     }
 
-    // =====================================================
-    // CONFIRM PASSWORD RESET
-    // =====================================================
-    public async Task<bool> ResetPasswordAsync(string token, string newPassword, Guid tenantId)
-    {
-        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
-            return false; // Password validation
+    // =========================================
+    // RESET PASSWORD
+    // =========================================
 
+    public async Task<bool> ResetPasswordAsync(string token, string newPassword)
+    {
         var tokenHash = _tokenService.HashToken(token);
 
         var userToken = await _context.UserTokens
+            .IgnoreQueryFilters()
             .Include(ut => ut.User)
-            .FirstOrDefaultAsync(ut => ut.TokenHash == tokenHash
-                                   && ut.TenantId == tenantId
-                                   && ut.Type == "ResetPassword"
-                                   && !ut.IsUsed);
+            .FirstOrDefaultAsync(ut =>
+                ut.TokenHash == tokenHash &&
+                ut.Type == "ResetPassword" &&
+                !ut.IsUsed);
 
         if (userToken == null || userToken.ExpiryDate < DateTime.UtcNow)
-            return false; // Invalid or expired token
+            return false;
 
-        var user = userToken.User;
-        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        userToken.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
 
         userToken.IsUsed = true;
 

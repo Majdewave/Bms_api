@@ -15,17 +15,15 @@ public class TenantMiddleware
     public async Task InvokeAsync(HttpContext context, ITenantContext tenantContext)
     {
         var tenantClaim = context.User.FindFirst("tenant_id")?.Value;
-        var userClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userClaim =
+            context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
+            context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
 
-        if (Guid.TryParse(tenantClaim, out var tenantId))
-        {
-            tenantContext.SetTenant(tenantId);
-        }
+        if (!string.IsNullOrEmpty(tenantClaim))
+              tenantContext.SetTenant(Guid.Parse(tenantClaim));
 
-        if (Guid.TryParse(userClaim, out var userId))
-        {
-            tenantContext.SetUserId(userId);
-        }
+        if (!string.IsNullOrEmpty(userClaim))
+              tenantContext.SetUserId(Guid.Parse(userClaim));
 
         await _next(context);
     }

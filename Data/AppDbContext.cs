@@ -46,22 +46,22 @@ public class AppDbContext : DbContext
 
         // Global Tenant Filters (CRITICAL for shared database multi-tenancy)
         modelBuilder.Entity<User>()
-            .HasQueryFilter(u => u.TenantId == _tenantContext.TenantId);
+            .HasQueryFilter(u => _tenantContext.TenantId == Guid.Empty || u.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<Client>()
-            .HasQueryFilter(c => c.TenantId == _tenantContext.TenantId);
+            .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<Appointment>()
-            .HasQueryFilter(a => a.TenantId == _tenantContext.TenantId);
+            .HasQueryFilter(a => _tenantContext.TenantId == Guid.Empty || a.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<Note>()
-            .HasQueryFilter(n => n.TenantId == _tenantContext.TenantId);
+            .HasQueryFilter(n => _tenantContext.TenantId == Guid.Empty || n.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<ClientFile>()
-            .HasQueryFilter(f => f.TenantId == _tenantContext.TenantId);
+            .HasQueryFilter(f => _tenantContext.TenantId == Guid.Empty || f.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<UserToken>()
-            .HasQueryFilter(ut => ut.TenantId == _tenantContext.TenantId);
+            .HasQueryFilter(ut => _tenantContext.TenantId == Guid.Empty || ut.TenantId == _tenantContext.TenantId);
 
         // Tenant unique index on Subdomain
         modelBuilder.Entity<Tenant>()

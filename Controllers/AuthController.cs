@@ -123,8 +123,7 @@ public class AuthController : ControllerBase
         var success = await _authService.AcceptInviteAsync(
             request.Token,
             request.Password,
-            request.FullName,
-            tenantId);
+            request.FullName);
 
         if (!success)
             return BadRequest("Invalid or expired token");
@@ -167,8 +166,7 @@ public class AuthController : ControllerBase
 
         var success = await _authService.ResetPasswordAsync(
             request.Token,
-            request.NewPassword,
-            tenantId);
+            request.NewPassword);
 
         if (!success)
             return BadRequest("Invalid or expired token");

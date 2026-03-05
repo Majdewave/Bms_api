@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Clienta.Api.Data;
 using Clienta.Api.Entities;
 using Clienta.Api.DTOs;
+using Clienta.Api.Services;
 
 namespace Clienta.Api.Controllers;
 
@@ -13,10 +14,13 @@ namespace Clienta.Api.Controllers;
 public class ClientsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ITenantContext _tenantContext;
 
-    public ClientsController(AppDbContext context)
+
+    public ClientsController(AppDbContext context, ITenantContext tenantContext)
     {
         _context = context;
+        _tenantContext = tenantContext;
     }
 
     // GET /api/clients
@@ -24,6 +28,7 @@ public class ClientsController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var clients = await _context.Clients
+            .IgnoreQueryFilters()
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new ClientResponse(
                 c.Id,
@@ -70,9 +75,13 @@ public class ClientsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateClientRequest request)
     {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
         var client = new Client
         {
             Id = Guid.NewGuid(),
+            TenantId = _tenantContext.TenantId,
             FullName = request.FullName,
             Email = request.Email,
             Phone = request.Phone,

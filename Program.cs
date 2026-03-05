@@ -101,6 +101,26 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 
+// ---------- TEMPORARY DATA FIX: Assign TenantId to clients with Guid.Empty ----------
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var tenant = db.Tenants.FirstOrDefault();
+    if (tenant != null)
+    {
+        var clients = db.Clients
+            .IgnoreQueryFilters()
+            .Where(c => c.TenantId == Guid.Empty)
+            .ToList();
+        foreach (var client in clients)
+        {
+            client.TenantId = tenant.Id;
+        }
+        db.SaveChanges();
+    }
+}
+
+
 // ---------- DATABASE + SEED ----------
 using (var scope = app.Services.CreateScope())
 {
