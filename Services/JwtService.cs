@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using Clienta.Api.Data;
 using Clienta.Api.Entities;
 
 namespace Clienta.Api.Services;
@@ -10,11 +11,13 @@ public class JwtService
 {
     private readonly IConfiguration _config;
     private readonly ILogger<JwtService> _logger;
+    private readonly AppDbContext _db;
 
-    public JwtService(IConfiguration config, ILogger<JwtService> logger)
+    public JwtService(IConfiguration config, ILogger<JwtService> logger, AppDbContext db)
     {
         _config = config;
         _logger = logger;
+        _db = db;
     }
 
     public string GenerateToken(User user, Guid tenantId)
@@ -33,7 +36,7 @@ public class JwtService
             ? "Admin"
             : user.Role.Trim();
 
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -41,6 +44,19 @@ public class JwtService
             new Claim(ClaimTypes.Role, roleValue),
             new Claim("tenant_id", tenantId.ToString())
         };
+
+        // Add permission claims for staff
+        if (roleValue == "Staff")
+        {
+            var permissions = _db.UserPermissions
+                .Where(up => up.UserId == user.Id)
+                .Select(up => up.Permission.Key)
+                .ToList();
+            foreach (var permission in permissions)
+            {
+                claims.Add(new Claim("permission", permission));
+            }
+        }
 
         // Log all claims being added to token
         _logger.LogInformation("Claims added to JWT:");

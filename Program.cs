@@ -63,6 +63,7 @@ builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
 builder.Services.AddAuthorization(options =>
 {
+    // Existing policies
     options.AddPolicy("manage_clients",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_clients")));
 
@@ -77,6 +78,35 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy("manage_staff",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_staff")));
+
+    // Added policies using RequireClaim
+    options.AddPolicy("view_clients", policy =>
+        policy.RequireAssertion(context =>
+            context.User.HasClaim("permission", "view_clients") ||
+            context.User.HasClaim("permission", "manage_clients") ||
+            context.User.IsInRole("Admin")
+        ));
+
+    options.AddPolicy("manage_clients",
+        policy => policy.RequireClaim("permission", "manage_clients"));
+
+    options.AddPolicy("view_appointments",
+        policy => policy.RequireClaim("permission", "view_appointments"));
+
+    options.AddPolicy("manage_appointments",
+        policy => policy.RequireClaim("permission", "manage_appointments"));
+
+    options.AddPolicy("view_notes",
+        policy => policy.RequireClaim("permission", "view_notes"));
+
+    options.AddPolicy("manage_notes",
+        policy => policy.RequireClaim("permission", "manage_notes"));
+
+    options.AddPolicy("view_files",
+        policy => policy.RequireClaim("permission", "view_files"));
+
+    options.AddPolicy("manage_files",
+        policy => policy.RequireClaim("permission", "manage_files"));
 });
 
 builder.Services.AddControllers();

@@ -16,6 +16,18 @@ public class AuthSeedService
     public async Task SeedAsync()
     {
         // ===============================
+        // REMOVE DUPLICATE DEFAULT TENANTS
+        // ===============================
+        var defaultTenants = await _db.Tenants.Where(t => t.Subdomain == "default").ToListAsync();
+        if (defaultTenants.Count > 1)
+        {
+            // Keep the first, remove the rest
+            var keepTenant = defaultTenants.First();
+            var removeTenants = defaultTenants.Skip(1).ToList();
+            _db.Tenants.RemoveRange(removeTenants);
+            await _db.SaveChangesAsync();
+        }
+        // ===============================
         // CREATE PERMISSIONS IF MISSING
         // ===============================
 
@@ -52,6 +64,7 @@ public class AuthSeedService
 
         var tenant = await _db.Tenants.FirstOrDefaultAsync();
 
+        tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Subdomain == "default");
         if (tenant == null)
         {
             tenant = new Tenant

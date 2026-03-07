@@ -24,6 +24,7 @@ public class ClientsController : ControllerBase
     }
 
     // GET /api/clients
+    [Authorize(Policy = "view_clients")]
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
@@ -71,7 +72,7 @@ public class ClientsController : ControllerBase
     }
 
     // POST /api/clients
-    [Authorize(Roles = "Admin,Staff")]
+    [Authorize(Policy = "manage_clients")]
     [HttpPost]
     public async Task<IActionResult> Create(CreateClientRequest request)
     {
@@ -108,7 +109,7 @@ public class ClientsController : ControllerBase
     }
 
     // PUT /api/clients/{id}
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "manage_clients")]
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateClientRequest request)
     {
@@ -126,7 +127,7 @@ public class ClientsController : ControllerBase
     }
 
     // DELETE /api/clients/{id}
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = "manage_clients")]
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
