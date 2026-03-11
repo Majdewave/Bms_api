@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Clienta.Api.Data;
 using Clienta.Api.Entities;
@@ -45,18 +46,7 @@ public class JwtService
             new Claim("tenant_id", tenantId.ToString())
         };
 
-        // Add permission claims for staff
-        if (roleValue == "Staff")
-        {
-            var permissions = _db.UserPermissions
-                .Where(up => up.UserId == user.Id)
-                .Select(up => up.Permission.Key)
-                .ToList();
-            foreach (var permission in permissions)
-            {
-                claims.Add(new Claim("permission", permission));
-            }
-        }
+        // Permissions are NOT added to JWT. They are loaded from the database in /me endpoint.
 
         // Log all claims being added to token
         _logger.LogInformation("Claims added to JWT:");

@@ -143,7 +143,7 @@ public class BillingController : ControllerBase
                     success = true,
                     type = "upgrade",
                     message = "Plan upgraded successfully! Proration will be charged on next invoice.",
-                    currentPlan = tenant.Plan.ToString(),
+                    currentPlan = tenant?.Plan == null ? string.Empty : tenant.Plan.ToString(),
                     currentCycle = tenant.BillingCycle.ToString(),
                     newPlan = request.NewPlan.ToString(),
                     newCycle = request.NewCycle.ToString(),

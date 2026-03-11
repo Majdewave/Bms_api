@@ -58,12 +58,12 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// Authorization
+// Authorization handler
 builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 
+// Authorization policies (DB-based permissions)
 builder.Services.AddAuthorization(options =>
 {
-    // Existing policies
     options.AddPolicy("manage_clients",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_clients")));
 
@@ -76,37 +76,11 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("manage_files",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_files")));
 
+    options.AddPolicy("view_clients",
+    policy => policy.Requirements.Add(new PermissionRequirement("view_clients")));
+    
     options.AddPolicy("manage_staff",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_staff")));
-
-    // Added policies using RequireClaim
-    options.AddPolicy("view_clients", policy =>
-        policy.RequireAssertion(context =>
-            context.User.HasClaim("permission", "view_clients") ||
-            context.User.HasClaim("permission", "manage_clients") ||
-            context.User.IsInRole("Admin")
-        ));
-
-    options.AddPolicy("manage_clients",
-        policy => policy.RequireClaim("permission", "manage_clients"));
-
-    options.AddPolicy("view_appointments",
-        policy => policy.RequireClaim("permission", "view_appointments"));
-
-    options.AddPolicy("manage_appointments",
-        policy => policy.RequireClaim("permission", "manage_appointments"));
-
-    options.AddPolicy("view_notes",
-        policy => policy.RequireClaim("permission", "view_notes"));
-
-    options.AddPolicy("manage_notes",
-        policy => policy.RequireClaim("permission", "manage_notes"));
-
-    options.AddPolicy("view_files",
-        policy => policy.RequireClaim("permission", "view_files"));
-
-    options.AddPolicy("manage_files",
-        policy => policy.RequireClaim("permission", "manage_files"));
 });
 
 builder.Services.AddControllers();
@@ -131,21 +105,24 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 
-// ---------- TEMPORARY DATA FIX: Assign TenantId to clients with Guid.Empty ----------
+// ---------- TEMPORARY DATA FIX ----------
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var tenant = db.Tenants.FirstOrDefault();
+
     if (tenant != null)
     {
         var clients = db.Clients
             .IgnoreQueryFilters()
             .Where(c => c.TenantId == Guid.Empty)
             .ToList();
+
         foreach (var client in clients)
         {
             client.TenantId = tenant.Id;
         }
+
         db.SaveChanges();
     }
 }
@@ -157,7 +134,7 @@ using (var scope = app.Services.CreateScope())
     var services = scope.ServiceProvider;
 
     var db = services.GetRequiredService<AppDbContext>();
-    db.Database.Migrate(); // creates tables if missing
+    db.Database.Migrate();
 
     var seeder = services.GetRequiredService<AuthSeedService>();
     await seeder.SeedAsync();

@@ -95,7 +95,7 @@ public class OnboardingService : IOnboardingService
             var tenant = new Tenant
             {
                 Id = Guid.NewGuid(),
-                Name = pending.CompanyName,
+                Name = pending?.CompanyName ?? string.Empty,
                 Subdomain = safeSubdomain,
                 Plan = PlanType.Trial,
                 BillingCycle = BillingCycle.Monthly,

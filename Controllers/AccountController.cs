@@ -31,6 +31,10 @@ public class AccountController : ControllerBase
         if (tenant?.TenantId == Guid.Empty)
             return Unauthorized("No business context");
 
+        if (tenant == null)
+        {
+            return BadRequest("Tenant not found");
+        }
         var success = await _authService.InviteUserAsync(request.Email, tenant.TenantId);
 
         if (!success)

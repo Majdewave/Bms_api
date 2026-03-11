@@ -5,14 +5,33 @@ public record CreateAppointmentRequest(
     DateTime StartTime,
     DateTime EndTime,
     string? Notes,
-    Guid? ServiceId // New field for service
+    Guid? ServiceId,
+    Guid? StaffId
 );
 
 public record UpdateAppointmentRequest(
     DateTime StartTime,
     DateTime EndTime,
     string Status,
-    string? Notes
+    string? Notes,
+    Guid? ServiceId,
+    Guid? StaffId
+);
+
+
+public record AppointmentDto(
+    Guid Id,
+    Guid ClientId,
+    string ClientName,
+    Guid? ServiceId,
+    string? ServiceName,
+    Guid? StaffId,
+    string? StaffName,
+    DateTime StartTime,
+    DateTime EndTime,
+    string Status,
+    string? Notes,
+    DateTime CreatedAt
 );
 
 public record AppointmentResponse(
@@ -23,5 +42,9 @@ public record AppointmentResponse(
     DateTime EndTime,
     string Status,
     string? Notes,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    Guid? ServiceId,
+    Guid? StaffId,
+    string? StaffName,
+    string? ServiceName
 );

@@ -173,20 +173,27 @@ public class AuthSeedService
                 p.Key == "manage_notes")
             .ToList();
 
-        foreach (var permission in staffPermissions)
-        {
-            var exists = await _db.UserPermissions.AnyAsync(up =>
-                up.UserId == staff.Id &&
-                up.PermissionId == permission.Id);
+        var staffUsers = await _db.Users
+            .Where(u => u.Role == "Staff")
+            .ToListAsync();
 
-            if (!exists)
+        foreach (var staffUser in staffUsers)
+        {
+            foreach (var permission in staffPermissions)
             {
-                _db.UserPermissions.Add(new UserPermission
+                var exists = await _db.UserPermissions.AnyAsync(up =>
+                    up.UserId == staffUser.Id &&
+                    up.PermissionId == permission.Id);
+
+                if (!exists)
                 {
-                    Id = Guid.NewGuid(),
-                    UserId = staff.Id,
-                    PermissionId = permission.Id
-                });
+                    _db.UserPermissions.Add(new UserPermission
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = staffUser.Id,
+                        PermissionId = permission.Id
+                    });
+                }
             }
         }
 

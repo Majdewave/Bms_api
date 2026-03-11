@@ -18,18 +18,40 @@ public class PermissionHandler : AuthorizationHandler<PermissionRequirement>
         AuthorizationHandlerContext context,
         PermissionRequirement requirement)
     {
-        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var userId =
+            context.User.FindFirst("sub")?.Value ??
+            context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         if (string.IsNullOrEmpty(userId))
             return;
 
-        var hasPermission = await _context.UserPermissions
-            .Include(up => up.Permission)
-            .AnyAsync(up =>
-                up.UserId == Guid.Parse(userId) &&
-                up.Permission.Key == requirement.Permission);
+        if (!Guid.TryParse(userId, out var userGuid))
+            return;
 
-        if (hasPermission)
+        // Load all user permissions
+        var permissions = await _context.UserPermissions
+            .Include(up => up.Permission)
+            .Where(up => up.UserId == userGuid)
+            .Select(up => up.Permission.Key)
+            .ToListAsync();
+
+        // direct permission
+        if (permissions.Contains(requirement.Permission))
+        {
             context.Succeed(requirement);
+            return;
+        }
+
+        // manage_* also allows view_*
+        if (requirement.Permission.StartsWith("view_"))
+        {
+            var managePermission = requirement.Permission.Replace("view_", "manage_");
+
+            if (permissions.Contains(managePermission))
+            {
+                context.Succeed(requirement);
+                return;
+            }
+        }
     }
 }

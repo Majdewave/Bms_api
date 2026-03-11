@@ -18,7 +18,7 @@ public class AppointmentsController : ControllerBase
     private readonly IPlanEnforcementService _planEnforcement;
 
     public AppointmentsController(
-        AppDbContext context, 
+        AppDbContext context,
         ITenantContext tenant,
         IPlanEnforcementService planEnforcement)
     {
@@ -34,11 +34,17 @@ public class AppointmentsController : ControllerBase
     {
         var appointments = await _context.Appointments
             .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Staff)
             .OrderByDescending(a => a.StartTime)
-            .Select(a => new AppointmentResponse(
+            .Select(a => new AppointmentDto(
                 a.Id,
                 a.ClientId,
                 a.Client.FullName,
+                a.ServiceId,
+                a.Service != null ? a.Service.Name : null,
+                a.StaffId,
+                a.Staff != null ? a.Staff.User.FullName : null,
                 a.StartTime,
                 a.EndTime,
                 a.Status,
@@ -57,11 +63,17 @@ public class AppointmentsController : ControllerBase
     {
         var appointment = await _context.Appointments
             .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Staff)
             .Where(a => a.Id == id)
-            .Select(a => new AppointmentResponse(
+            .Select(a => new AppointmentDto(
                 a.Id,
                 a.ClientId,
                 a.Client.FullName,
+                a.ServiceId,
+                a.Service != null ? a.Service.Name : null,
+                a.StaffId,
+                a.Staff != null ? a.Staff.User.FullName : null,
                 a.StartTime,
                 a.EndTime,
                 a.Status,
@@ -81,7 +93,6 @@ public class AppointmentsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateAppointmentRequest request)
     {
-        // Ensure client belongs to this Business (Tenant filter applies automatically)
         var client = await _context.Clients
             .FirstOrDefaultAsync(c => c.Id == request.ClientId);
 
@@ -91,7 +102,6 @@ public class AppointmentsController : ControllerBase
         if (request.EndTime <= request.StartTime)
             return BadRequest("End time must be after start time.");
 
-        // Check appointment limit via central enforcement
         try
         {
             await _planEnforcement.EnsureMessageLimitAsync(_tenant.TenantId);
@@ -106,6 +116,8 @@ public class AppointmentsController : ControllerBase
             Id = Guid.NewGuid(),
             TenantId = _tenant.TenantId,
             ClientId = request.ClientId,
+            ServiceId = request.ServiceId,
+            StaffId = request.StaffId,
             CreatedByUserId = _tenant.UserId!.Value,
             StartTime = request.StartTime,
             EndTime = request.EndTime,
@@ -117,12 +129,26 @@ public class AppointmentsController : ControllerBase
         _context.Appointments.Add(appointment);
         await _context.SaveChangesAsync();
 
+        // Fetch related entities for response
+        var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
+        var staff = appointment.StaffId.HasValue ? await _context.BusinessUsers.FirstOrDefaultAsync(bu => bu.Id == appointment.StaffId) : null;
+        string? staffName = null;
+        if (staff != null)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == staff.UserId);
+            staffName = user?.FullName;
+        }
+
         return CreatedAtAction(nameof(GetById),
             new { id = appointment.Id },
-            new AppointmentResponse(
+            new AppointmentDto(
                 appointment.Id,
                 appointment.ClientId,
                 client.FullName,
+                appointment.ServiceId,
+                service?.Name,
+                appointment.StaffId,
+                staffName,
                 appointment.StartTime,
                 appointment.EndTime,
                 appointment.Status,
@@ -149,10 +175,36 @@ public class AppointmentsController : ControllerBase
         appointment.EndTime = request.EndTime;
         appointment.Status = request.Status;
         appointment.Notes = request.Notes;
+        appointment.ServiceId = request.ServiceId;
+        appointment.StaffId = request.StaffId;
 
         await _context.SaveChangesAsync();
 
-        return NoContent();
+        // Fetch related entities for response
+        var client = await _context.Clients.FirstOrDefaultAsync(c => c.Id == appointment.ClientId);
+        var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
+        var staff = appointment.StaffId.HasValue ? await _context.BusinessUsers.FirstOrDefaultAsync(bu => bu.Id == appointment.StaffId) : null;
+        string? staffName = null;
+        if (staff != null)
+        {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == staff.UserId);
+            staffName = user?.FullName;
+        }
+
+        return Ok(new AppointmentDto(
+            appointment.Id,
+            appointment.ClientId,
+            client?.FullName ?? string.Empty,
+            appointment.ServiceId,
+            service?.Name,
+            appointment.StaffId,
+            staffName,
+            appointment.StartTime,
+            appointment.EndTime,
+            appointment.Status,
+            appointment.Notes,
+            appointment.CreatedAt
+        ));
     }
 
     // DELETE /appointments/{id}

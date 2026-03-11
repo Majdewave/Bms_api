@@ -27,16 +27,15 @@ public class StaffController : ControllerBase
     public async Task<IActionResult> GetAll()
     {
         var staff = await _context.BusinessUsers
-            .Where(bu => bu.TenantId == _tenant.TenantId)
-            .Select(bu => bu.User)
-            .Where(u => u.Role == "Staff")
-            .Select(u => new StaffResponse(
-                u.Id,
-                u.Email,
-                u.FullName ?? string.Empty,
-                u.RoleLabel ?? string.Empty,
-                u.IsActive,
-                u.Permissions.Select(p => p.Permission.Key).ToList()
+            .Include(bu => bu.User)
+            .Where(bu => bu.TenantId == _tenant.TenantId && bu.User.Role == "Staff")
+            .Select(bu => new StaffResponse(
+                bu.Id, // BusinessUser Id
+                bu.User.Email,
+                bu.User.FullName ?? string.Empty,
+                bu.User.RoleLabel ?? string.Empty,
+                bu.User.IsActive,
+                bu.User.Permissions.Select(p => p.Permission.Key).ToList()
             ))
             .ToListAsync();
 

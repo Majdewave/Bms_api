@@ -33,4 +33,7 @@ public class Appointment : ITenantEntity
 
     public Guid? ServiceId { get; set; }
     public Service? Service { get; set; }
+
+    public Guid? StaffId { get; set; }
+    public BusinessUser? Staff { get; set; }
 }

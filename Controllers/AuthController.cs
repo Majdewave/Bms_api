@@ -45,7 +45,22 @@ public class AuthController : ControllerBase
 
         var token = _jwtService.GenerateToken(user, user.TenantId);
 
-        return Ok(new { token });
+        var permissions = await _context.UserPermissions
+            .Where(p => p.UserId == user.Id)
+            .Select(p => p.Permission.Key)
+            .ToListAsync();
+
+        return Ok(new {
+            token = token,
+            user = new {
+                id = user.Id,
+                email = user.Email,
+                name = user.FullName,
+                role = user.Role,
+                businessId = user.TenantId,
+                permissions = permissions
+            }
+        });
     }
 
     /// <summary>
@@ -68,13 +83,20 @@ public class AuthController : ControllerBase
         if (user == null || !user.IsActive)
             return Unauthorized();
 
+        var permissions = await _context.UserPermissions
+            .Where(up => up.UserId == user.Id)
+            .Include(up => up.Permission)
+            .Select(up => up.Permission.Key)
+            .ToListAsync();
+
         return Ok(new
         {
             id = user.Id.ToString(),
             email = user.Email,
             name = user.FullName,
             role = user.Role.ToLower(),
-            businessId = user.TenantId.ToString()
+            businessId = user.TenantId.ToString(),
+            permissions = permissions
         });
     }
 
@@ -93,6 +115,10 @@ public class AuthController : ControllerBase
         if (tenant?.TenantId == Guid.Empty)
             return Unauthorized("No business context");
 
+        if (tenant == null)
+        {
+            return BadRequest("Tenant not found");
+        }
         var success = await _authService.InviteUserAsync(request.Email, tenant.TenantId);
 
         if (!success)

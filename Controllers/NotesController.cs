@@ -135,7 +135,7 @@ namespace Clienta.Api.Controllers;
                 n.ClientId,
                 n.Content,
                 n.CreatedByUserId,
-                n.CreatedByUser.FullName,
+                n.CreatedByUser != null ? n.CreatedByUser.FullName : string.Empty,
                 n.CreatedAt
             ))
             .ToListAsync();
