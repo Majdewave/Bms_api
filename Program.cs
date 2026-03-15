@@ -35,7 +35,10 @@ builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
  
- builder.Services.AddScoped<DashboardService>();
+builder.Services.AddScoped<DashboardService>();
+builder.Services.AddScoped<Clienta.Api.Repositories.AppointmentsRepository>();
+builder.Services.AddScoped<Clienta.Api.Repositories.ClientsRepository>();
+builder.Services.AddScoped<Clienta.Api.Repositories.BusinessUsersRepository>();
 
 // JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
