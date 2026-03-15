@@ -115,8 +115,8 @@ public class OnboardingService : IOnboardingService
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenant.Id,
-                Email = pending.AdminEmail,
-                PasswordHash = pending.PasswordHash,
+                Email = pending.AdminEmail ?? throw new InvalidOperationException("AdminEmail is required for admin user creation."),
+                PasswordHash = pending.PasswordHash ?? throw new InvalidOperationException("PasswordHash is required for admin user creation."),
                 Role = "Admin",
                 FullName = "Admin",
                 IsActive = true,

@@ -34,6 +34,8 @@ builder.Services.AddScoped<ITenantSeedService, TenantSeedService>();
 builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
+ 
+ builder.Services.AddScoped<DashboardService>();
 
 // JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
