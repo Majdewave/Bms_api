@@ -7,5 +7,8 @@ public class Invoice
     public Guid ClientId { get; set; }
     public string ClientName { get; set; } = "";
     public decimal Amount { get; set; }
+    public DateTime InvoiceDate { get; set; }
+    public DateTime? DueDate { get; set; }
+    public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

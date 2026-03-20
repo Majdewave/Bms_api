@@ -42,7 +42,10 @@ public class InvoicesController : ControllerBase
             InvoiceNumber = request.InvoiceNumber,
             ClientId = client.Id,
             ClientName = client.FullName,
-            Amount = request.Amount
+            Amount = request.Amount,
+            InvoiceDate = request.InvoiceDate,
+            DueDate = request.DueDate,
+            Notes = request.Notes
         };
 
         _db.Invoices.Add(invoice);
@@ -87,5 +90,45 @@ public class InvoicesController : ControllerBase
         }).GeneratePdf();
 
         return File(pdf, "application/pdf", $"invoice-{invoice.Id}.pdf");
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] Invoice request)
+    {
+        var invoice = await _db.Invoices.FindAsync(id);
+
+        if (invoice == null)
+            return NotFound();
+
+        var client = await _db.Clients.FindAsync(request.ClientId);
+
+        if (client == null)
+            return BadRequest("Client not found");
+
+        invoice.InvoiceNumber = request.InvoiceNumber;
+        invoice.ClientId = client.Id;
+        invoice.ClientName = client.FullName;
+        invoice.Amount = request.Amount;
+        invoice.InvoiceDate = request.InvoiceDate;
+        invoice.DueDate = request.DueDate;
+        invoice.Notes = request.Notes;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(invoice);
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var invoice = await _db.Invoices.FindAsync(id);
+
+        if (invoice == null)
+            return NotFound();
+
+        _db.Invoices.Remove(invoice);
+        await _db.SaveChangesAsync();
+
+        return Ok();
     }
 }
