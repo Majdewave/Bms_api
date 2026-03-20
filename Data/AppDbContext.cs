@@ -34,6 +34,7 @@ public class AppDbContext : DbContext
     public DbSet<PendingTenantRegistration> PendingTenantRegistrations => Set<PendingTenantRegistration>();
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
     public DbSet<Service> Services => Set<Service>();
+    public DbSet<Invoice> Invoices { get; set; } = null!;
     // Removed Staffs DbSet
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

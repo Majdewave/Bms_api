@@ -385,7 +385,7 @@ public class StripeService : IStripeService
 
     private async Task HandleInvoicePaymentSucceeded(Event stripeEvent)
     {
-        var invoice = stripeEvent.Data.Object as Invoice;
+        var invoice = stripeEvent.Data.Object as Stripe.Invoice;
         if (invoice == null) return;
 
         var tenant = await _db.Tenants
@@ -403,7 +403,7 @@ public class StripeService : IStripeService
 
     private async Task HandleInvoicePaymentFailed(Event stripeEvent)
     {
-        var invoice = stripeEvent.Data.Object as Invoice;
+        var invoice = stripeEvent.Data.Object as Stripe.Invoice;
         if (invoice == null) return;
 
         var tenant = await _db.Tenants
