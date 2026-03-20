@@ -32,10 +32,16 @@ public class InvoicesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] Invoice request)
     {
+        var client = await _db.Clients.FindAsync(request.ClientId);
+
+        if (client == null)
+            return BadRequest("Client not found");
+
         var invoice = new Invoice
         {
             InvoiceNumber = request.InvoiceNumber,
-            ClientName = request.ClientName,
+            ClientId = client.Id,
+            ClientName = client.FullName,
             Amount = request.Amount
         };
 
@@ -57,16 +63,25 @@ public class InvoicesController : ControllerBase
         {
             container.Page(page =>
             {
-                page.Margin(20);
+                page.Margin(30);
 
                 page.Content().Column(col =>
                 {
-                    col.Item().Text("INVOICE").FontSize(24).Bold();
+                    col.Item().Text("INVOICE")
+                        .FontSize(28)
+                        .Bold();
 
-                    col.Item().Text($"Number: {invoice.InvoiceNumber}");
+                    col.Item().PaddingTop(10);
+
+                    col.Item().Text($"Invoice #: {invoice.InvoiceNumber}");
                     col.Item().Text($"Client: {invoice.ClientName}");
-                    col.Item().Text($"Amount: {invoice.Amount}");
-                    col.Item().Text($"Date: {invoice.CreatedAt}");
+                    col.Item().Text($"Date: {invoice.CreatedAt:yyyy-MM-dd}");
+
+                    col.Item().PaddingVertical(10).LineHorizontal(1);
+
+                    col.Item().Text($"Total Amount: {invoice.Amount}")
+                        .FontSize(18)
+                        .Bold();
                 });
             });
         }).GeneratePdf();
