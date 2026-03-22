@@ -35,6 +35,8 @@ public class AppDbContext : DbContext
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
     public DbSet<Service> Services => Set<Service>();
     public DbSet<Invoice> Invoices { get; set; } = null!;
+    public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
+    public DbSet<Prescription> Prescriptions { get; set; } = null!;
     // Removed Staffs DbSet
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -104,6 +106,12 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.EventId);
             entity.Property(e => e.ProcessedAt).IsRequired();
         });
+
+        modelBuilder.Entity<Invoice>()
+            .HasMany(i => i.LineItems)
+            .WithOne()
+            .HasForeignKey(li => li.InvoiceId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<AuditLog>()
             .HasOne<User>()
