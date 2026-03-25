@@ -18,6 +18,8 @@ public class AuditLog : ITenantEntity
     public string? OldValues { get; set; }
     public string? NewValues { get; set; }
 
+    public string? PerformedBy { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation

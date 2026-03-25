@@ -174,6 +174,34 @@ public class StaffController : ControllerBase
 
         _context.BusinessUsers.RemoveRange(businessUser);
 
+        var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        Guid? performedByUserId = null;
+        if (Guid.TryParse(currentUserId, out var parsedUserId))
+            performedByUserId = parsedUserId;
+
+        User? currentUser = null;
+        if (performedByUserId.HasValue)
+            currentUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == performedByUserId.Value);
+
+        var performedByLabel = currentUser != null
+            ? $"{currentUser.Role} - {currentUser.FullName}"
+            : "Admin";
+
+        var isStaff = user.Role == "Staff";
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            UserId = performedByUserId,
+            EntityName = isStaff ? "Staff" : "User",
+            ActionType = isStaff ? "staff_deleted" : "user_deleted",
+            EntityId = user.Id.ToString(),
+            NewValues = user.FullName ?? user.Email,
+            PerformedBy = performedByLabel,
+            CreatedAt = DateTime.UtcNow
+        });
+
         _context.Users.Remove(user);
         await _context.SaveChangesAsync();
 

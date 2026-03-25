@@ -85,10 +85,44 @@ namespace Clienta.Api.Services
                 })
                 .ToListAsync();
 
+            var auditEvents = await _db.AuditLogs
+                .Where(a => a.TenantId == tenantId && a.ActionType == "staff_deleted")
+                .Include(a => a.User)
+                .Select(a => new ActivityDto
+                {
+                    id = a.Id,
+                    type = "staff_deleted",
+                    title = "Staff member deleted",
+                    clientName = null,
+                    staffName = a.NewValues,
+                    serviceName = null,
+                    performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                    timestamp = a.CreatedAt
+                })
+                .ToListAsync();
+
+            var userDeletedEvents = await _db.AuditLogs
+                .Where(a => a.TenantId == tenantId && a.ActionType == "user_deleted")
+                .Include(a => a.User)
+                .Select(a => new ActivityDto
+                {
+                    id = a.Id,
+                    type = "user_deleted",
+                    title = "User deleted",
+                    clientName = null,
+                    staffName = a.NewValues,
+                    serviceName = null,
+                    performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                    timestamp = a.CreatedAt
+                })
+                .ToListAsync();
+
             var allEvents = appointmentCreatedEvents
                 .Concat(appointmentCompletedEvents)
                 .Concat(clientEvents)
                 .Concat(staffEvents)
+                .Concat(auditEvents)
+                .Concat(userDeletedEvents)
                 .OrderByDescending(e => e.timestamp)
                 .Take(10);
 
