@@ -28,12 +28,13 @@ public class StaffController : ControllerBase
     {
         var staff = await _context.BusinessUsers
             .Include(bu => bu.User)
-            .Where(bu => bu.TenantId == _tenant.TenantId && bu.User.Role == "Staff")
+            .Where(bu => bu.TenantId == _tenant.TenantId)
             .Select(bu => new StaffResponse(
                 bu.User.Id, // BusinessUser  Id
                 bu.User.Email,
                 bu.User.FullName ?? string.Empty,
                 bu.User.RoleLabel ?? string.Empty,
+                bu.User.Role,
                 bu.User.IsActive,
                 bu.User.Permissions.Select(p => p.Permission.Key).ToList()
             ))
@@ -50,13 +51,14 @@ public class StaffController : ControllerBase
             return BadRequest("Email already exists.");
 
         var hashed = BCrypt.Net.BCrypt.HashPassword(request.Password);
+        var role = request.Role == "Admin" ? "Admin" : "Staff";
 
         var user = new User
         {
             Id = Guid.NewGuid(),
             Email = request.Email,
             PasswordHash = hashed,
-            Role = "Staff",
+            Role = role,
             RoleLabel = request.RoleLabel,
             FullName = request.FullName,
             IsActive = true,
@@ -72,8 +74,8 @@ public class StaffController : ControllerBase
             UserId = user.Id
         });
 
-        // Assign permissions (GLOBAL permissions)
-        if (request.Permissions?.Any() == true)
+        // Assign permissions only for Staff users
+        if (role == "Staff" && request.Permissions?.Any() == true)
         {
             var permissions = await _context.Permissions
                 .Where(p => request.Permissions.Contains(p.Key))
@@ -97,8 +99,9 @@ public class StaffController : ControllerBase
             user.Email,
             user.FullName,
             user.RoleLabel,
+            user.Role,
             user.IsActive,
-            request.Permissions ?? new List<string>()
+            role == "Staff" ? request.Permissions ?? new List<string>() : new List<string>()
         ));
     }
 

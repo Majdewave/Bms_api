@@ -40,6 +40,15 @@ public class AuthSeedService
             "manage_staff"
         };
 
+        // Remove legacy manage_admins permission if it exists
+        var legacyAdminPermission = await _db.Permissions.FirstOrDefaultAsync(p => p.Key == "manage_admins");
+        if (legacyAdminPermission != null)
+        {
+            var legacyUserPerms = _db.UserPermissions.Where(up => up.PermissionId == legacyAdminPermission.Id);
+            _db.UserPermissions.RemoveRange(legacyUserPerms);
+            _db.Permissions.Remove(legacyAdminPermission);
+        }
+
         foreach (var key in permissions)
         {
             var exists = await _db.Permissions.AnyAsync(p => p.Key == key);
@@ -141,26 +150,7 @@ public class AuthSeedService
             await _db.SaveChangesAsync();
         }
 
-        // ===============================
-        // ASSIGN ADMIN PERMISSIONS
-        // ===============================
-
-        foreach (var permission in allPermissions)
-        {
-            var exists = await _db.UserPermissions.AnyAsync(up =>
-                up.UserId == admin.Id &&
-                up.PermissionId == permission.Id);
-
-            if (!exists)
-            {
-                _db.UserPermissions.Add(new UserPermission
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = admin.Id,
-                    PermissionId = permission.Id
-                });
-            }
-        }
+        // Admin users have full access via Role = "Admin" — no DB permissions needed.
 
         // ===============================
         // ASSIGN STAFF PERMISSIONS

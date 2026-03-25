@@ -28,6 +28,13 @@ public class PermissionHandler : AuthorizationHandler<PermissionRequirement>
         if (!Guid.TryParse(userId, out var userGuid))
             return;
 
+        // Admin role bypasses all permission checks
+        if (context.User.IsInRole("Admin"))
+        {
+            context.Succeed(requirement);
+            return;
+        }
+
         // Load all user permissions
         var permissions = await _context.UserPermissions
             .Include(up => up.Permission)

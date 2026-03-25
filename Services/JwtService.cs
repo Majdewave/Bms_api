@@ -46,7 +46,15 @@ public class JwtService
             new Claim("tenant_id", tenantId.ToString())
         };
 
-        // Permissions are NOT added to JWT. They are loaded from the database in /me endpoint.
+        // Add permission claims from DB
+        var userPermissions = _db.UserPermissions
+            .Include(up => up.Permission)
+            .Where(up => up.UserId == user.Id)
+            .Select(up => up.Permission.Key)
+            .ToList();
+
+        foreach (var perm in userPermissions)
+            claims.Add(new Claim("permission", perm));
 
         // Log all claims being added to token
         _logger.LogInformation("Claims added to JWT:");

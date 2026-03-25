@@ -5,7 +5,8 @@ public record CreateStaffRequest(
     string Password,
     string FullName,
     string RoleLabel,
-    List<string> Permissions
+    List<string> Permissions,
+    string Role = "Staff"
 );
 
 public record UpdateStaffRequest(
@@ -20,6 +21,7 @@ public record StaffResponse(
     string Email,
     string FullName,
     string RoleLabel,
+    string Role,
     bool IsActive,
     List<string> Permissions
 );
