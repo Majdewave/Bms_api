@@ -139,6 +139,32 @@ public class ClientsController : ControllerBase
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Id == id);
         if (client == null)
             return NotFound();
+
+        var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        User? currentUser = null;
+        if (Guid.TryParse(currentUserId, out var parsedId))
+        {
+            currentUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == parsedId);
+        }
+
+        var performedByLabel = currentUser != null
+            ? $"{currentUser.Role} - {currentUser.FullName}"
+            : "Admin";
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenantContext.TenantId,
+            UserId = currentUser?.Id,
+            EntityName = "Client",
+            ActionType = "client_deleted",
+            EntityId = client.Id.ToString(),
+            NewValues = client.FullName,
+            PerformedBy = performedByLabel,
+            CreatedAt = DateTime.UtcNow
+        });
+
         _context.Clients.Remove(client);
         await _context.SaveChangesAsync();
         return NoContent();

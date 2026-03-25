@@ -117,12 +117,29 @@ namespace Clienta.Api.Services
                 })
                 .ToListAsync();
 
+            var clientDeletedEvents = await _db.AuditLogs
+                .Where(a => a.TenantId == tenantId && a.ActionType == "client_deleted")
+                .Include(a => a.User)
+                .Select(a => new ActivityDto
+                {
+                    id = a.Id,
+                    type = "client_deleted",
+                    title = "Client deleted",
+                    clientName = a.NewValues,
+                    staffName = null,
+                    serviceName = null,
+                    performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                    timestamp = a.CreatedAt
+                })
+                .ToListAsync();
+
             var allEvents = appointmentCreatedEvents
                 .Concat(appointmentCompletedEvents)
                 .Concat(clientEvents)
                 .Concat(staffEvents)
                 .Concat(auditEvents)
                 .Concat(userDeletedEvents)
+                .Concat(clientDeletedEvents)
                 .OrderByDescending(e => e.timestamp)
                 .Take(10);
 

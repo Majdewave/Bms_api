@@ -194,8 +194,8 @@ public class StaffController : ControllerBase
             Id = Guid.NewGuid(),
             TenantId = _tenant.TenantId,
             UserId = performedByUserId,
-            EntityName = isStaff ? "Staff" : "User",
-            ActionType = isStaff ? "staff_deleted" : "user_deleted",
+            EntityName = user.Role, // Admin / Staff
+            ActionType = "user_deleted",
             EntityId = user.Id.ToString(),
             NewValues = user.FullName ?? user.Email,
             PerformedBy = performedByLabel,
