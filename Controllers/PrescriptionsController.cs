@@ -1,5 +1,7 @@
 using Clienta.Api.Data;
+using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using QuestPDF.Fluent;
@@ -14,23 +16,27 @@ namespace Clienta.Api.Controllers;
 public class PrescriptionsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ITenantContext _tenant;
 
-    public PrescriptionsController(AppDbContext context)
+    public PrescriptionsController(AppDbContext context, ITenantContext tenant)
     {
         _context = context;
+        _tenant = tenant;
     }
 
+    // ✅ CREATE
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] Prescription request)
+    public async Task<IActionResult> Create([FromBody] CreatePrescriptionRequest request)
     {
         var prescription = new Prescription
         {
             Id = Guid.NewGuid(),
             ClientId = request.ClientId,
             Date = request.Date,
-            Instructions = request.Instructions,
-            DoctorName = request.DoctorName,
-            Notes = request.Notes,
+            Drugs = request.Drugs ?? new List<string>(),
+            Instructions = request.Instructions ?? string.Empty,
+            DoctorName = request.DoctorName ?? string.Empty,
+            Notes = request.Notes ?? string.Empty,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -40,6 +46,7 @@ public class PrescriptionsController : ControllerBase
         return Ok(prescription);
     }
 
+    // ✅ GET BY CLIENT
     [HttpGet("client/{clientId}")]
     public async Task<IActionResult> GetByClient(Guid clientId)
     {
@@ -51,6 +58,7 @@ public class PrescriptionsController : ControllerBase
         return Ok(prescriptions);
     }
 
+    // ✅ DELETE
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -65,6 +73,7 @@ public class PrescriptionsController : ControllerBase
         return NoContent();
     }
 
+    // ✅ PDF (עם העיצוב המתוקן)
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetPdf(Guid id)
     {
@@ -76,99 +85,154 @@ public class PrescriptionsController : ControllerBase
         if (client == null)
             return NotFound();
 
-        var idNumber = ExtractPatientId(prescription.Notes);
-        var patientName = !string.IsNullOrWhiteSpace(client.FullName) ? client.FullName : string.Empty;
-        var patientPhone = client.Phone ?? string.Empty;
+        var tenantId = Guid.Parse("40AFF269-58DB-4D97-B391-CCBB701CD458");
+        var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
+
+        var idNumber = client.IdNumber ?? "";
+        var patientName = client.FullName ?? "";
+        var patientPhone = client.Phone ?? "";
+        var today = DateTime.Now.ToString("yyyy-MM-dd");
+
+        var logoUrl = $"http://localhost:5146/uploads/tenants/{tenantId}/logo.png?v={DateTime.UtcNow.Ticks}";
+
+        byte[]? logoBytes = null;
+        try
+        {
+            using var http = new HttpClient();
+            logoBytes = await http.GetByteArrayAsync(logoUrl);
+        }
+        catch { }
 
         var pdf = Document.Create(container =>
         {
             container.Page(page =>
             {
-                page.Margin(30);
+                page.Margin(20);
 
-                page.Content().Border(1).Padding(15).Column(col =>
+                page.Content().Column(col =>
                 {
-                    col.Item().AlignCenter().Text("מרשם רפואי")
-                        .FontSize(28)
-                        .Bold();
-
-                    col.Item().PaddingVertical(20);
-
-                    col.Item().Border(1).Padding(10).Table(table =>
-                    {
-                        table.ColumnsDefinition(columns =>
-                        {
-                            columns.RelativeColumn();
-                            columns.RelativeColumn();
-                        });
-
-                        void Cell(string label, string value)
-                        {
-                            table.Cell().Column(c =>
-                            {
-                                c.Item().AlignRight().Text(label).FontSize(10).FontColor(Colors.Grey.Darken1);
-                                c.Item().AlignRight().BorderBottom(1).Text(value ?? "");
-                            });
-                        }
-
-                        Cell("תאריך", prescription.Date.ToString("yyyy-MM-dd"));
-                        Cell("שם המטופל", patientName);
-
-                        Cell("ת.ז", idNumber);
-                        Cell("טלפון", patientPhone);
-                    });
-
-                    col.Item().PaddingVertical(20);
-
-                    col.Item().Border(1).Padding(10).Column(c =>
-                    {
-                        c.Item().AlignRight().Text("תרופה:")
-                            .Bold()
-                            .FontSize(16);
-
-                        c.Item().PaddingTop(10);
-
-                        c.Item().BorderBottom(1).PaddingBottom(5)
-                            .AlignRight()
-                            .Text("☐ " + prescription.Instructions);
-                    });
-
-                    col.Item().PaddingVertical(20);
-
-                    col.Item().Border(1).Padding(10).Column(c =>
-                    {
-                        c.Item().AlignRight().Text("הוראות שימוש:")
-                            .Bold()
-                            .FontSize(16);
-
-                        c.Item().PaddingTop(10);
-
-                        c.Item().AlignRight().Text(prescription.Instructions);
-                    });
-
-                    col.Item().PaddingVertical(30);
-
-                    col.Item().Row(row =>
-                    {
-                        row.RelativeItem().Column(c =>
-                        {
-                            c.Item().AlignRight().Text("שם הרופא:");
-                            c.Item().BorderBottom(1).PaddingTop(5).Text(prescription.DoctorName);
-                        });
-
-                        row.RelativeItem().Column(c =>
-                        {
-                            c.Item().AlignRight().Text("חתימה:");
-                            c.Item().BorderBottom(1).PaddingTop(15).Text("");
-                        });
-                    });
-
-                    col.Item().PaddingVertical(30);
+                    if (logoBytes != null)
+                        col.Item().AlignCenter().Height(110).Image(logoBytes);
 
                     col.Item().AlignCenter()
-                        .Text($"מזהה: {prescription.Id}")
+                        .Text(tenant?.Name ?? "")
+                        .FontSize(18)
+                        .Bold();
+
+                    col.Item().AlignCenter().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+
+                    var contactText = "";
+
+                    if (!string.IsNullOrWhiteSpace(tenant?.Phone))
+                        contactText += tenant.Phone;
+
+                    if (!string.IsNullOrWhiteSpace(tenant?.WhatsApp))
+                    {
+                        if (!string.IsNullOrEmpty(contactText))
+                            contactText += " | ";
+
+                        contactText += $"WhatsApp {tenant.WhatsApp}";
+                    }
+
+                    col.Item().AlignCenter()
+                        .Text(contactText)
                         .FontSize(10)
                         .FontColor(Colors.Grey.Darken1);
+
+                    col.Item().PaddingBottom(5);
+
+                    col.Item().AlignCenter().Text("מרשם רפואי")
+                        .FontSize(26)
+                        .Bold();
+
+                    col.Item().PaddingVertical(10);
+
+                    col.Item().Border(1).Padding(15).Column(details =>
+                    {
+                        details.Item().Border(1).Padding(10).Table(table =>
+                        {
+                            table.ColumnsDefinition(columns =>
+                            {
+                                columns.RelativeColumn();
+                                columns.RelativeColumn();
+                            });
+
+                            void Cell(string label, string value)
+                            {
+                                table.Cell().Column(c =>
+                                {
+                                    c.Item().AlignRight().Text(label).FontSize(10).FontColor(Colors.Grey.Darken1);
+                                    c.Item().AlignRight().Text(value ?? "").FontSize(12);
+                                });
+                            }
+
+                            Cell("תאריך", prescription.Date.ToString("yyyy-MM-dd"));
+                            Cell("שם המטופל", patientName);
+                            Cell("ת.ז", idNumber);
+                            Cell("טלפון", patientPhone);
+                        });
+
+                        details.Item().PaddingVertical(10);
+
+                        details.Item().Border(1).Padding(10).Column(c =>
+                        {
+                            c.Item().AlignRight().Text("תרופה").Bold().FontSize(16);
+                            c.Item().PaddingTop(10);
+
+                            foreach (var drug in prescription.Drugs)
+                            {
+                                c.Item()
+                                    .BorderBottom(0.3f)
+                                    .BorderColor(Colors.Grey.Lighten3)
+                                    .PaddingBottom(5)
+                                    .Row(r =>
+                                    {
+                                        r.ConstantItem(20).Text("☐");
+                                        r.RelativeItem().AlignRight().Text(drug);
+                                    });
+                            }
+                        });
+
+                        details.Item().PaddingVertical(10);
+
+                        details.Item().Border(1).Padding(10).Column(c =>
+                        {
+                            c.Item().AlignRight().Text("הוראות שימוש").Bold().FontSize(16);
+                            c.Item().PaddingTop(10);
+                            c.Item().AlignRight().Text(prescription.Instructions ?? "");
+                        });
+
+                        details.Item().PaddingVertical(10);
+
+                        details.Item().Row(row =>
+                        {
+                            row.RelativeItem().AlignRight().Column(c =>
+                            {
+                                c.Item().Text("שם הרופא").Bold();
+                                c.Item().Width(150).Text(prescription.DoctorName);
+                            });
+
+                            row.RelativeItem().AlignRight().Column(c =>
+                            {
+                                c.Item().Text("חתימה").Bold();
+                                c.Item().Width(150);
+                            });
+                        });
+
+                        details.Item().PaddingVertical(10);
+
+                        details.Item().AlignCenter()
+                            .Text($"הופק בתאריך: {today}")
+                            .FontSize(10)
+                            .FontColor(Colors.Grey.Darken1);
+
+                        details.Item().PaddingVertical(5);
+
+                        details.Item().AlignCenter()
+                            .Text($"מזהה: {prescription.Id}")
+                            .FontSize(9)
+                            .FontColor(Colors.Grey.Darken1);
+                    });
                 });
             });
         }).GeneratePdf();
@@ -182,21 +246,6 @@ public class PrescriptionsController : ControllerBase
             return string.Empty;
 
         var match = Regex.Match(notes, @"(?:ת\.?ז\.?|תעודת זהות|ID)\s*[:\-]?\s*([0-9]{5,12})", RegexOptions.IgnoreCase);
-        if (match.Success)
-            return match.Groups[1].Value;
-
-        return string.Empty;
-    }
-
-    private static string ExtractSignature(string? notes)
-    {
-        if (string.IsNullOrWhiteSpace(notes))
-            return "____________________";
-
-        var match = Regex.Match(notes, @"(?:חתימה|signature)\s*[:\-]?\s*([^\r\n]+)", RegexOptions.IgnoreCase);
-        if (match.Success)
-            return match.Groups[1].Value.Trim();
-
-        return "____________________";
+        return match.Success ? match.Groups[1].Value : string.Empty;
     }
 }

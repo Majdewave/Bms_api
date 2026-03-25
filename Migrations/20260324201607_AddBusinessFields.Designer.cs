@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260324201607_AddBusinessFields")]
+    partial class AddBusinessFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.0");
@@ -179,9 +182,6 @@ namespace Clienta.Api.Migrations
 
                     b.Property<string>("FullName")
                         .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("IdNumber")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("InternalNote")
@@ -492,10 +492,6 @@ namespace Clienta.Api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Drugs")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Instructions")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -577,9 +573,6 @@ namespace Clienta.Api.Migrations
                     b.Property<DateTime?>("PaymentGracePeriodEndsAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Phone")
-                        .HasColumnType("TEXT");
-
                     b.Property<int>("Plan")
                         .HasColumnType("INTEGER");
 
@@ -607,9 +600,6 @@ namespace Clienta.Api.Migrations
 
                     b.Property<int>("UserLimit")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("WhatsApp")
-                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 

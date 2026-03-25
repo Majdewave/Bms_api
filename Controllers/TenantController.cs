@@ -2,13 +2,14 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Clienta.Api.Data;
+using Clienta.Api.Entities;
 using Clienta.Api.Services;
 using Clienta.Api.DTOs;
 
 namespace Clienta.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/tenant")]
 [Authorize]
 public class TenantController : ControllerBase
 {
@@ -24,6 +25,51 @@ public class TenantController : ControllerBase
         _context = context;
         _tenantContext = tenantContext;
         _webHostEnvironment = webHostEnvironment;
+    }
+
+    // GET api/tenant/me
+    [HttpGet("me")]
+    public async Task<IActionResult> GetMe()
+    {
+        // TEMP (עד שנחזיר TenantContext)
+        var tenantId = Guid.Parse("40AFF269-58DB-4D97-B391-CCBB701CD458");
+
+        var tenant = await _context.Tenants
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+
+        if (tenant == null)
+            return NotFound();
+
+        return Ok(new
+        {
+            tenant.Name,
+            tenant.Phone,
+            tenant.WhatsApp,
+            tenant.LogoUrl
+        });
+    }
+
+    // PUT api/tenant/me
+    [HttpPut("me")]
+    public async Task<IActionResult> UpdateMe([FromBody] UpdateTenantRequest request)
+    {
+        var tenantId = Guid.Parse("40AFF269-58DB-4D97-B391-CCBB701CD458");
+
+        var tenant = await _context.Tenants
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+
+        if (tenant == null)
+            return NotFound();
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+            tenant.Name = request.Name;
+
+        tenant.Phone = request.Phone;
+        tenant.WhatsApp = request.WhatsApp;
+
+        await _context.SaveChangesAsync();
+
+        return Ok();
     }
 
     // GET /api/tenant
@@ -57,8 +103,14 @@ public class TenantController : ControllerBase
         if (tenant == null)
             return NotFound();
 
-        tenant.Name = request.Name;
-        tenant.LogoUrl = request.LogoUrl;   // 👈 חשוב מאוד
+        if (!string.IsNullOrWhiteSpace(request.Name))
+            tenant.Name = request.Name;
+
+        if (request.LogoUrl != null)
+            tenant.LogoUrl = request.LogoUrl;   // 👈 חשוב מאוד
+
+        tenant.Phone = request.Phone;
+        tenant.WhatsApp = request.WhatsApp;
 
         await _context.SaveChangesAsync();
 

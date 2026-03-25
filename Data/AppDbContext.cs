@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Clienta.Api.Entities;
 using Clienta.Api.Services;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace Clienta.Api.Data;
 
@@ -37,6 +39,8 @@ public class AppDbContext : DbContext
     public DbSet<Invoice> Invoices { get; set; } = null!;
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
     public DbSet<Prescription> Prescriptions { get; set; } = null!;
+    public DbSet<Drug> Drugs { get; set; } = null!;
+    public DbSet<Business> Businesses { get; set; } = null!;
     // Removed Staffs DbSet
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -46,6 +50,22 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(a => a.StaffId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        var drugsComparer = new ValueComparer<List<string>>(
+            (left, right) =>
+                (left ?? new List<string>()).SequenceEqual(right ?? new List<string>()),
+            list => (list ?? new List<string>())
+                .Aggregate(0, (hash, item) => HashCode.Combine(hash, item)),
+            list => (list ?? new List<string>()).ToList());
+
+        modelBuilder.Entity<Prescription>()
+            .Property(p => p.Drugs)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+                v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>()
+            )
+            .Metadata.SetValueComparer(drugsComparer);
+
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.Entity<UserPermission>()
@@ -118,6 +138,13 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(a => a.UserId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Drug>().HasData(
+            new Drug { Id = new Guid("a1000000-0000-0000-0000-000000000001"), Name = "BORIC ACID", Dosage = "600 MG", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Drug { Id = new Guid("a1000000-0000-0000-0000-000000000002"), Name = "Ibuprofen", Dosage = "200mg", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Drug { Id = new Guid("a1000000-0000-0000-0000-000000000003"), Name = "Amoxicillin", Dosage = "500mg", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new Drug { Id = new Guid("a1000000-0000-0000-0000-000000000004"), Name = "Paracetamol", Dosage = "500mg", CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
+        );
     }
 
     public override async Task<int> SaveChangesAsync(

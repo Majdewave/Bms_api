@@ -34,6 +34,7 @@ public class ClientsController : ControllerBase
             .Select(c => new ClientResponse(
                 c.Id,
                 c.FullName,
+                c.IdNumber,
                 c.Email,
                 c.Phone,
                 c.Address,
@@ -56,6 +57,7 @@ public class ClientsController : ControllerBase
             .Select(c => new ClientResponse(
                 c.Id,
                 c.FullName,
+                c.IdNumber,
                 c.Email,
                 c.Phone,
                 c.Address,
@@ -84,6 +86,7 @@ public class ClientsController : ControllerBase
             Id = Guid.NewGuid(),
             TenantId = _tenantContext.TenantId,
             FullName = request.FullName,
+            IdNumber = request.IdNumber,
             Email = request.Email,
             Phone = request.Phone,
             Address = request.Address,
@@ -97,6 +100,7 @@ public class ClientsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = client.Id }, new ClientResponse(
             client.Id,
             client.FullName,
+            client.IdNumber,
             client.Email,
             client.Phone,
             client.Address,
@@ -117,6 +121,7 @@ public class ClientsController : ControllerBase
         if (client == null)
             return NotFound();
         client.FullName = request.FullName;
+        client.IdNumber = request.IdNumber;
         client.Email = request.Email;
         client.Phone = request.Phone;
         client.Address = request.Address;

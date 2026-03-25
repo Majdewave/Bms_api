@@ -6,7 +6,9 @@ public class Tenant
 {
     public Guid Id { get; set; }
 
-    public string Name { get; set; } = default!;
+    public string Name { get; set; } = string.Empty;
+    public string? Phone { get; set; }
+    public string? WhatsApp { get; set; }
     public string Subdomain { get; set; } = default!;
     public string? LogoUrl { get; set; }
 
