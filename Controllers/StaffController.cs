@@ -30,7 +30,7 @@ public class StaffController : ControllerBase
             .Include(bu => bu.User)
             .Where(bu => bu.TenantId == _tenant.TenantId && bu.User.Role == "Staff")
             .Select(bu => new StaffResponse(
-                bu.Id, // BusinessUser Id
+                bu.User.Id, // BusinessUser  Id
                 bu.User.Email,
                 bu.User.FullName ?? string.Empty,
                 bu.User.RoleLabel ?? string.Empty,
