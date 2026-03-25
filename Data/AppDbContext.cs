@@ -36,6 +36,7 @@ public class AppDbContext : DbContext
     public DbSet<PendingTenantRegistration> PendingTenantRegistrations => Set<PendingTenantRegistration>();
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
     public DbSet<Service> Services => Set<Service>();
+    public DbSet<TenantFeatures> TenantFeatures => Set<TenantFeatures>();
     public DbSet<Invoice> Invoices { get; set; } = null!;
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
     public DbSet<Prescription> Prescriptions { get; set; } = null!;
@@ -89,6 +90,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ClientFile>()
             .HasQueryFilter(f => _tenantContext.TenantId == Guid.Empty || f.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<TenantFeatures>()
+            .HasQueryFilter(tf => _tenantContext.TenantId == Guid.Empty || tf.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<UserToken>()
             .HasQueryFilter(ut => _tenantContext.TenantId == Guid.Empty || ut.TenantId == _tenantContext.TenantId);
 
@@ -112,6 +116,28 @@ public class AppDbContext : DbContext
             .HasOne(ut => ut.User)
             .WithMany()
             .HasForeignKey(ut => ut.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TenantFeatures>()
+            .HasIndex(tf => tf.TenantId)
+            .IsUnique();
+
+        modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.ReportsEnabled)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.InvoicesEnabled)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.PrescriptionsEnabled)
+            .HasDefaultValue(false);
+
+        modelBuilder.Entity<TenantFeatures>()
+            .HasOne(tf => tf.Tenant)
+            .WithMany()
+            .HasForeignKey(tf => tf.TenantId)
             .OnDelete(DeleteBehavior.Cascade);
 
         // Explicit FK configuration for Note

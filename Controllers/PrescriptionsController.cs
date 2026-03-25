@@ -16,18 +16,23 @@ namespace Clienta.Api.Controllers;
 public class PrescriptionsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IFeatureService _featureService;
     private readonly ITenantContext _tenant;
 
-    public PrescriptionsController(AppDbContext context, ITenantContext tenant)
+    public PrescriptionsController(AppDbContext context, ITenantContext tenant, IFeatureService featureService)
     {
         _context = context;
         _tenant = tenant;
+        _featureService = featureService;
     }
 
     // ✅ CREATE
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePrescriptionRequest request)
     {
+        if (!await _featureService.IsEnabledAsync("prescriptions"))
+            return Forbid();
+
         var prescription = new Prescription
         {
             Id = Guid.NewGuid(),
@@ -50,6 +55,9 @@ public class PrescriptionsController : ControllerBase
     [HttpGet("client/{clientId}")]
     public async Task<IActionResult> GetByClient(Guid clientId)
     {
+        if (!await _featureService.IsEnabledAsync("prescriptions"))
+            return Forbid();
+
         var prescriptions = await _context.Prescriptions
             .Where(p => p.ClientId == clientId)
             .OrderByDescending(p => p.Date)
@@ -62,6 +70,9 @@ public class PrescriptionsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await _featureService.IsEnabledAsync("prescriptions"))
+            return Forbid();
+
         var prescription = await _context.Prescriptions.FirstOrDefaultAsync(p => p.Id == id);
 
         if (prescription == null)
@@ -77,6 +88,9 @@ public class PrescriptionsController : ControllerBase
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetPdf(Guid id)
     {
+        if (!await _featureService.IsEnabledAsync("prescriptions"))
+            return Forbid();
+
         var prescription = await _context.Prescriptions.FirstOrDefaultAsync(p => p.Id == id);
         if (prescription == null)
             return NotFound();
@@ -85,7 +99,10 @@ public class PrescriptionsController : ControllerBase
         if (client == null)
             return NotFound();
 
-        var tenantId = Guid.Parse("40AFF269-58DB-4D97-B391-CCBB701CD458");
+        var tenantId = _tenant.TenantId;
+        if (tenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
         var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
 
         var idNumber = client.IdNumber ?? "";

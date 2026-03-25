@@ -31,6 +31,7 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<AuthSeedService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<IFeatureService, FeatureService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();

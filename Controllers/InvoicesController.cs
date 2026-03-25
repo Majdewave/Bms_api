@@ -15,17 +15,22 @@ namespace Clienta.Api.Controllers;
 public class InvoicesController : ControllerBase
 {
     private readonly AppDbContext _db;
+    private readonly IFeatureService _featureService;
     private readonly ITenantContext _tenantContext;
 
-    public InvoicesController(AppDbContext db, ITenantContext tenantContext)
+    public InvoicesController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _featureService = featureService;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        if (!await _featureService.IsEnabledAsync("invoices"))
+            return Forbid();
+
         var invoices = await _db.Invoices
             .Include(i => i.LineItems)
             .OrderByDescending(i => i.CreatedAt)
@@ -37,6 +42,9 @@ public class InvoicesController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] Invoice request)
     {
+        if (!await _featureService.IsEnabledAsync("invoices"))
+            return Forbid();
+
         var client = await _db.Clients.FindAsync(request.ClientId);
 
         if (client == null)
@@ -70,6 +78,9 @@ public class InvoicesController : ControllerBase
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetPdf(Guid id)
     {
+        if (!await _featureService.IsEnabledAsync("invoices"))
+            return Forbid();
+
         var invoice = await _db.Invoices
             .Include(i => i.LineItems)
             .FirstOrDefaultAsync(i => i.Id == id);
@@ -347,6 +358,9 @@ public class InvoicesController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, [FromBody] Invoice request)
     {
+        if (!await _featureService.IsEnabledAsync("invoices"))
+            return Forbid();
+
         var invoice = await _db.Invoices
             .Include(i => i.LineItems)
             .FirstOrDefaultAsync(i => i.Id == id);
@@ -389,6 +403,9 @@ public class InvoicesController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await _featureService.IsEnabledAsync("invoices"))
+            return Forbid();
+
         var invoice = await _db.Invoices.FindAsync(id);
 
         if (invoice == null)
