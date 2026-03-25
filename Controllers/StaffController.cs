@@ -155,10 +155,24 @@ public class StaffController : ControllerBase
     public async Task<IActionResult> Delete(Guid id)
     {
         var user = await _context.Users
-            .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Staff");
+            .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user == null)
             return NotFound();
+
+        // Remove related permissions
+        var userPermissions = await _context.UserPermissions
+            .Where(up => up.UserId == user.Id)
+            .ToListAsync();
+
+        _context.UserPermissions.RemoveRange(userPermissions);
+
+        // Remove business user link
+        var businessUser = await _context.BusinessUsers
+            .Where(bu => bu.UserId == user.Id)
+            .ToListAsync();
+
+        _context.BusinessUsers.RemoveRange(businessUser);
 
         _context.Users.Remove(user);
         await _context.SaveChangesAsync();
