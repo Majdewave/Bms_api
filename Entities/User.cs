@@ -13,5 +13,7 @@ public class User
 
     public string? FullName { get; set; }
     public string? RoleLabel { get; set; }
+    public string? StampUrl { get; set; }
+    public bool UseStamp { get; set; } = false;
     public List<UserPermission> Permissions { get; set; } = new();
 }

@@ -18,12 +18,14 @@ public class PrescriptionsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly IFeatureService _featureService;
     private readonly ITenantContext _tenant;
+    private readonly IWebHostEnvironment _env;
 
-    public PrescriptionsController(AppDbContext context, ITenantContext tenant, IFeatureService featureService)
+    public PrescriptionsController(AppDbContext context, ITenantContext tenant, IFeatureService featureService, IWebHostEnvironment env)
     {
         _context = context;
         _tenant = tenant;
         _featureService = featureService;
+        _env = env;
     }
 
     // ✅ CREATE
@@ -37,6 +39,7 @@ public class PrescriptionsController : ControllerBase
         {
             Id = Guid.NewGuid(),
             ClientId = request.ClientId,
+            StaffId = request.StaffId,
             Date = request.Date,
             Drugs = request.Drugs ?? new List<string>(),
             Instructions = request.Instructions ?? string.Empty,
@@ -48,7 +51,33 @@ public class PrescriptionsController : ControllerBase
         _context.Prescriptions.Add(prescription);
         await _context.SaveChangesAsync();
 
-        return Ok(prescription);
+        User? staff = null;
+        if (prescription.StaffId.HasValue)
+        {
+            // StaffId now contains BusinessUser.Id, so look up User via BusinessUser
+            var businessUser = await _context.BusinessUsers
+                .Include(bu => bu.User)
+                .FirstOrDefaultAsync(bu => bu.Id == prescription.StaffId.Value && bu.TenantId == _tenant.TenantId);
+            
+            if (businessUser != null)
+            {
+                staff = businessUser.User;
+            }
+        }
+
+        return Ok(new PrescriptionResponse
+        {
+            Id = prescription.Id,
+            ClientId = prescription.ClientId,
+            StaffId = prescription.StaffId,
+            Date = prescription.Date,
+            Drugs = prescription.Drugs,
+            Instructions = prescription.Instructions,
+            DoctorName = prescription.DoctorName,
+            Notes = prescription.Notes,
+            CreatedAt = prescription.CreatedAt,
+            StaffStampUrl = staff?.UseStamp == true ? staff.StampUrl : null
+        });
     }
 
     // ✅ GET BY CLIENT
@@ -63,7 +92,40 @@ public class PrescriptionsController : ControllerBase
             .OrderByDescending(p => p.Date)
             .ToListAsync();
 
-        return Ok(prescriptions);
+        var staffIds = prescriptions
+            .Where(p => p.StaffId.HasValue)
+            .Select(p => p.StaffId!.Value)
+            .Distinct()
+            .ToList();
+
+        // ✅ Look up BusinessUsers (StaffId = BusinessUser.Id) and include their User data
+        var staffMap = await _context.BusinessUsers
+            .Include(bu => bu.User)
+            .Where(bu => staffIds.Contains(bu.Id) && bu.TenantId == _tenant.TenantId)
+            .ToDictionaryAsync(bu => bu.Id, bu => bu.User);
+
+        var response = prescriptions.Select(p =>
+        {
+            User? staff = null;
+            if (p.StaffId.HasValue)
+                staffMap.TryGetValue(p.StaffId.Value, out staff);
+
+            return new PrescriptionResponse
+            {
+                Id = p.Id,
+                ClientId = p.ClientId,
+                StaffId = p.StaffId,
+                Date = p.Date,
+                Drugs = p.Drugs,
+                Instructions = p.Instructions,
+                DoctorName = p.DoctorName,
+                Notes = p.Notes,
+                CreatedAt = p.CreatedAt,
+                StaffStampUrl = staff?.UseStamp == true ? staff.StampUrl : null
+            };
+        }).ToList();
+
+        return Ok(response);
     }
 
     // ✅ DELETE
@@ -119,6 +181,38 @@ public class PrescriptionsController : ControllerBase
             logoBytes = await http.GetByteArrayAsync(logoUrl);
         }
         catch { }
+
+        byte[]? stampBytes = null;
+
+        if (prescription.StaffId.HasValue)
+        {
+            // ✅ Look up BusinessUser (StaffId = BusinessUser.Id) and include User data
+            var businessUser = await _context.BusinessUsers
+                .Include(bu => bu.User)
+                .FirstOrDefaultAsync(bu =>
+                    bu.Id == prescription.StaffId.Value &&
+                    bu.TenantId == _tenant.TenantId);
+
+            var staff = businessUser?.User;
+
+            if (staff?.UseStamp == true && !string.IsNullOrWhiteSpace(staff.StampUrl))
+            {
+                var relativePath = staff.StampUrl.TrimStart('/');
+                var fullPath = Path.Combine(
+                    _env.WebRootPath,
+                    relativePath.Replace("/", Path.DirectorySeparatorChar.ToString())
+                );
+
+                Console.WriteLine("StampUrl: " + staff.StampUrl);
+                Console.WriteLine("FullPath: " + fullPath);
+                Console.WriteLine("Exists: " + System.IO.File.Exists(fullPath));
+
+                if (System.IO.File.Exists(fullPath))
+                {
+                    stampBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
+                }
+            }
+        }
 
         var pdf = Document.Create(container =>
         {
@@ -232,7 +326,20 @@ public class PrescriptionsController : ControllerBase
                             row.RelativeItem().AlignRight().Column(c =>
                             {
                                 c.Item().Text("חתימה").Bold();
-                                c.Item().Width(150);
+
+                                if (stampBytes != null && stampBytes.Length > 0)
+                                {
+                                    c.Item()
+                                        .AlignRight()
+                                        .Width(120)
+                                        .Height(50)
+                                        .Image(stampBytes)
+                                        .FitWidth();
+                                }
+                                else
+                                {
+                                    c.Item().AlignRight().Width(120).Text("__________");
+                                }
                             });
                         });
 

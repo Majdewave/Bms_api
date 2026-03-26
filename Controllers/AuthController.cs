@@ -58,7 +58,9 @@ public class AuthController : ControllerBase
                 name = user.FullName,
                 role = user.Role,
                 businessId = user.TenantId,
-                permissions = permissions
+                permissions = permissions,
+                stampUrl = user.StampUrl,
+                useStamp = user.UseStamp
             }
         });
     }
@@ -96,7 +98,9 @@ public class AuthController : ControllerBase
             name = user.FullName,
             role = user.Role.ToLower(),
             businessId = user.TenantId.ToString(),
-            permissions = permissions
+            permissions = permissions,
+            stampUrl = user.StampUrl,
+            useStamp = user.UseStamp
         });
     }
 

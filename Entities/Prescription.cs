@@ -4,6 +4,7 @@ public class Prescription
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid ClientId { get; set; }
+    public Guid? StaffId { get; set; }
     public DateTime Date { get; set; }
     public List<string> Drugs { get; set; } = new();
     public string Instructions { get; set; } = string.Empty;

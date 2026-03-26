@@ -15,11 +15,13 @@ public class StaffController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
+    private readonly IWebHostEnvironment _env;
 
-    public StaffController(AppDbContext context, ITenantContext tenant)
+    public StaffController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env)
     {
         _context = context;
         _tenant = tenant;
+        _env = env;
     }
 
     // GET /api/staff
@@ -30,17 +32,52 @@ public class StaffController : ControllerBase
             .Include(bu => bu.User)
             .Where(bu => bu.TenantId == _tenant.TenantId)
             .Select(bu => new StaffResponse(
-                bu.User.Id, // BusinessUser  Id
+                bu.Id,
                 bu.User.Email,
                 bu.User.FullName ?? string.Empty,
                 bu.User.RoleLabel ?? string.Empty,
                 bu.User.Role,
                 bu.User.IsActive,
-                bu.User.Permissions.Select(p => p.Permission.Key).ToList()
+                bu.User.Permissions.Select(p => p.Permission.Key).ToList(),
+                bu.User.StampUrl,
+                bu.User.UseStamp
             ))
             .ToListAsync();
 
         return Ok(staff);
+    }
+
+    // GET /api/staff/{id}
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var user = await _context.Users
+            .Include(u => u.Permissions)
+            .ThenInclude(up => up.Permission)
+            .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == _tenant.TenantId);
+
+        if (user == null)
+            return NotFound();
+
+        // Get the associated BusinessUser to return its Id instead of User.Id
+        var businessUser = await _context.BusinessUsers
+            .FirstOrDefaultAsync(bu => bu.UserId == user.Id && bu.TenantId == _tenant.TenantId);
+
+        Guid staffId = businessUser?.Id ?? id;
+
+        var response = new StaffResponse(
+            staffId,
+            user.Email,
+            user.FullName ?? string.Empty,
+            user.RoleLabel ?? string.Empty,
+            user.Role,
+            user.IsActive,
+            user.Permissions.Select(p => p.Permission.Key).ToList(),
+            user.StampUrl,
+            user.UseStamp
+        );
+
+        return Ok(response);
     }
 
     // POST /api/staff
@@ -61,6 +98,7 @@ public class StaffController : ControllerBase
             Role = role,
             RoleLabel = request.RoleLabel,
             FullName = request.FullName,
+            UseStamp = request.UseStamp,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             TenantId = _tenant.TenantId
@@ -101,7 +139,9 @@ public class StaffController : ControllerBase
             user.RoleLabel,
             user.Role,
             user.IsActive,
-            role == "Staff" ? request.Permissions ?? new List<string>() : new List<string>()
+            role == "Staff" ? request.Permissions ?? new List<string>() : new List<string>(),
+            user.StampUrl,
+            user.UseStamp
         ));
     }
 
@@ -111,7 +151,7 @@ public class StaffController : ControllerBase
     {
         var user = await _context.Users
             .Include(u => u.Permissions)
-            .FirstOrDefaultAsync(u => u.Id == id && u.Role == "Staff");
+            .FirstOrDefaultAsync(u => u.Id == id);
 
         if (user == null)
             return NotFound();
@@ -119,6 +159,7 @@ public class StaffController : ControllerBase
         user.FullName = request.FullName;
         user.RoleLabel = request.RoleLabel;
         user.IsActive = request.IsActive;
+        user.UseStamp = request.UseStamp;
 
         // Remove old permissions
         var existingPermissions = await _context.UserPermissions
@@ -148,6 +189,53 @@ public class StaffController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    // POST /api/staff/{id}/stamp
+    [HttpPost("{id}/stamp")]
+    public async Task<IActionResult> UploadStamp(Guid id, IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest("No file uploaded");
+
+        var allowedMimeTypes = new[] { "image/jpeg", "image/png", "image/gif", "image/webp" };
+        if (!allowedMimeTypes.Contains(file.ContentType?.ToLower()))
+            return BadRequest("Only image files are allowed (JPEG, PNG, GIF, WebP)");
+
+        const long maxFileSize = 2 * 1024 * 1024;
+        if (file.Length > maxFileSize)
+            return BadRequest("File size must not exceed 2MB");
+
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Id == id);
+
+        if (user == null)
+            return NotFound("Staff not found");
+
+        var uploadsDir = Path.Combine(_env.WebRootPath, "uploads", "tenants", _tenant.TenantId.ToString(), "staff", id.ToString());
+        Directory.CreateDirectory(uploadsDir);
+
+        var fileExtension = Path.GetExtension(file.FileName).ToLower();
+        var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
+        var fileName = $"stamp_{id}_{timestamp}{fileExtension}";
+        var filePath = Path.Combine(uploadsDir, fileName);
+
+        foreach (var existingFile in Directory.GetFiles(uploadsDir, "stamp_*"))
+        {
+            System.IO.File.Delete(existingFile);
+        }
+
+        await using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        user.StampUrl = $"/uploads/tenants/{_tenant.TenantId}/staff/{id}/{fileName}";
+        user.UseStamp = true;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(new { user.StampUrl, user.UseStamp });
     }
 
     // DELETE /api/staff/{id}

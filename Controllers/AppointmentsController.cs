@@ -102,6 +102,26 @@ public class AppointmentsController : ControllerBase
         if (request.EndTime <= request.StartTime)
             return BadRequest("End time must be after start time.");
 
+        // Validate ServiceId if provided
+        if (request.ServiceId.HasValue)
+        {
+            var serviceExists = await _context.Services
+                .AnyAsync(s => s.Id == request.ServiceId);
+
+            if (!serviceExists)
+                return BadRequest("Invalid service.");
+        }
+
+        // Validate StaffId if provided
+        if (request.StaffId.HasValue)
+        {
+            var staffExists = await _context.BusinessUsers
+                .AnyAsync(b => b.Id == request.StaffId);
+
+            if (!staffExists)
+                return BadRequest("Invalid staff.");
+        }
+
         try
         {
             await _planEnforcement.EnsureMessageLimitAsync(_tenant.TenantId);
