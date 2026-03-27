@@ -184,35 +184,43 @@ public class PrescriptionsController : ControllerBase
 
         byte[]? stampBytes = null;
 
-        if (prescription.StaffId.HasValue)
-        {
-            // ✅ Look up BusinessUser (StaffId = BusinessUser.Id) and include User data
-            var businessUser = await _context.BusinessUsers
-                .Include(bu => bu.User)
-                .FirstOrDefaultAsync(bu =>
-                    bu.Id == prescription.StaffId.Value &&
-                    bu.TenantId == _tenant.TenantId);
+User? staff = null;
 
-            var staff = businessUser?.User;
+// 🔥 מביא staff בלי תלות ב-Tenant
+if (prescription.StaffId.HasValue)
+{
+    var businessUser = await _context.BusinessUsers
+        .IgnoreQueryFilters()
+        .Include(bu => bu.User)
+        .FirstOrDefaultAsync(bu => bu.Id == prescription.StaffId.Value);
 
-            if (staff?.UseStamp == true && !string.IsNullOrWhiteSpace(staff.StampUrl))
-            {
-                try
-                {
-                    var baseUrl = $"{Request.Scheme}://{Request.Host}";
-                    var fullUrl = baseUrl + staff.StampUrl;
+    staff = businessUser?.User;
+}
 
-                    using var http = new HttpClient();
-                    stampBytes = await http.GetByteArrayAsync(fullUrl);
+//  fallback אם אין חותמת
+if (staff == null || string.IsNullOrWhiteSpace(staff.StampUrl))
+{
+    staff = await _context.Users
+        .IgnoreQueryFilters()
+        .FirstOrDefaultAsync(u => u.UseStamp && !string.IsNullOrEmpty(u.StampUrl));
+}
 
-                    Console.WriteLine("STAMP LOADED FROM URL ✅");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("STAMP ERROR ❌ " + ex.Message);
-                }
-            }
-        }
+//  טעינת חותמת
+if (!string.IsNullOrWhiteSpace(staff?.StampUrl))
+{
+    try
+    {
+        var baseUrl = $"{Request.Scheme}://{Request.Host}";
+        var fullUrl = baseUrl + staff.StampUrl;
+
+        using var http = new HttpClient();
+        stampBytes = await http.GetByteArrayAsync(fullUrl);
+    }
+    catch
+    {
+        stampBytes = null;
+    }
+}
 
         var pdf = Document.Create(container =>
         {
