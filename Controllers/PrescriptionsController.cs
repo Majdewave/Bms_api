@@ -197,19 +197,19 @@ public class PrescriptionsController : ControllerBase
 
             if (staff?.UseStamp == true && !string.IsNullOrWhiteSpace(staff.StampUrl))
             {
-                var relativePath = staff.StampUrl.TrimStart('/');
-                var fullPath = Path.Combine(
-                    _env.WebRootPath,
-                    relativePath.Replace("/", Path.DirectorySeparatorChar.ToString())
-                );
-
-                Console.WriteLine("StampUrl: " + staff.StampUrl);
-                Console.WriteLine("FullPath: " + fullPath);
-                Console.WriteLine("Exists: " + System.IO.File.Exists(fullPath));
-
-                if (System.IO.File.Exists(fullPath))
+                try
                 {
-                    stampBytes = await System.IO.File.ReadAllBytesAsync(fullPath);
+                    var baseUrl = $"{Request.Scheme}://{Request.Host}";
+                    var fullUrl = baseUrl + staff.StampUrl;
+
+                    using var http = new HttpClient();
+                    stampBytes = await http.GetByteArrayAsync(fullUrl);
+
+                    Console.WriteLine("STAMP LOADED FROM URL ✅");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("STAMP ERROR ❌ " + ex.Message);
                 }
             }
         }
@@ -315,34 +315,41 @@ public class PrescriptionsController : ControllerBase
 
                         details.Item().PaddingVertical(10);
 
-                        details.Item().Row(row =>
+                  details.Item().Row(row =>
+                {
+                    row.RelativeItem().AlignRight().Column(c =>
+                    {
+                        c.Item().Text("שם הרופא").Bold();
+
+                        c.Item()
+                            .Width(150)
+                            .AlignRight()
+                            .Text(prescription.DoctorName)
+                            .DirectionFromRightToLeft(); // ✅ RTL FIX
+                    });
+
+                    row.RelativeItem().AlignRight().Column(c =>
+                    {
+                        c.Item().Text("חתימה").Bold();
+
+                        if (stampBytes != null && stampBytes.Length > 0)
                         {
-                            row.RelativeItem().AlignRight().Column(c =>
-                            {
-                                c.Item().Text("שם הרופא").Bold();
-                                c.Item().Width(150).Text(prescription.DoctorName);
-                            });
-
-                            row.RelativeItem().AlignRight().Column(c =>
-                            {
-                                c.Item().Text("חתימה").Bold();
-
-                                if (stampBytes != null && stampBytes.Length > 0)
-                                {
-                                    c.Item()
-                                        .AlignRight()
-                                        .Width(120)
-                                        .Height(50)
-                                        .Image(stampBytes)
-                                        .FitWidth();
-                                }
-                                else
-                                {
-                                    c.Item().AlignRight().Width(120).Text("__________");
-                                }
-                            });
-                        });
-
+                            c.Item()
+                                .AlignRight()
+                                .Width(120)
+                                .Height(60) // 👈 קצת יותר גובה (נראה טוב יותר)
+                                .Image(stampBytes)
+                                .FitArea(); // 👈 הכי חשוב — שלא יימרח
+                        }
+                        else
+                        {
+                            c.Item()
+                                .AlignRight()
+                                .Width(120)
+                                .Text("______________");
+                        }
+                    });
+                });
                         details.Item().PaddingVertical(10);
 
                         details.Item().AlignCenter()

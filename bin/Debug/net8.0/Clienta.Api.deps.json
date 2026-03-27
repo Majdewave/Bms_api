@@ -16,7 +16,7 @@
           "Microsoft.EntityFrameworkCore.SqlServer": "8.0.0",
           "Microsoft.EntityFrameworkCore.Sqlite": "8.0.0",
           "Microsoft.EntityFrameworkCore.Tools": "8.0.0",
-          "QuestPDF": "2026.2.3",
+          "QuestPDF": "2026.2.4",
           "Stripe.net": "50.3.0",
           "Swashbuckle.AspNetCore": "6.5.0"
         },
@@ -695,11 +695,11 @@
           }
         }
       },
-      "QuestPDF/2026.2.3": {
+      "QuestPDF/2026.2.4": {
         "runtime": {
           "lib/net8.0/QuestPDF.dll": {
-            "assemblyVersion": "2026.2.3.0",
-            "fileVersion": "2026.2.3.0"
+            "assemblyVersion": "2026.2.4.0",
+            "fileVersion": "2026.2.4.0"
           }
         },
         "runtimeTargets": {
@@ -1546,12 +1546,12 @@
       "path": "newtonsoft.json/13.0.3",
       "hashPath": "newtonsoft.json.13.0.3.nupkg.sha512"
     },
-    "QuestPDF/2026.2.3": {
+    "QuestPDF/2026.2.4": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-el20n2otRqY6AXsijlwPcTf12A54vm2KucQZ67k+9N5htrzfsXaBxh+/gU44HhTS4kmRFdYerY6WE47ybHhFYA==",
-      "path": "questpdf/2026.2.3",
-      "hashPath": "questpdf.2026.2.3.nupkg.sha512"
+      "sha512": "sha512-fajBdRJFr3hu2Mr6mEVsXjvVKD9Q/Q6hfPEUMpV/xlwxWdFebmpGdi0FLQTApMvpapy72v9dvcGuk7e7NQmQyQ==",
+      "path": "questpdf/2026.2.4",
+      "hashPath": "questpdf.2026.2.4.nupkg.sha512"
     },
     "SQLitePCLRaw.bundle_e_sqlite3/2.1.6": {
       "type": "package",

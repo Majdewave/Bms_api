@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Clienta.Api.Services;
 using QuestPDF.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,6 +19,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddScoped<TenantResolver>();
+builder.Services.AddScoped<IFeatureService, FeatureService>();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"))
@@ -31,7 +33,6 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<AuthSeedService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<IFeatureService, FeatureService>();
 builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();
