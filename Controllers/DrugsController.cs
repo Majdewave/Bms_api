@@ -18,6 +18,28 @@ public class DrugsController : ControllerBase
         _context = context;
     }
 
+    // GET /api/drugs/search
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(string q)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+            return Ok(new List<object>());
+
+        var drugs = await _context.Drugs
+            .Where(d => d.Name.ToLower().Contains(q.ToLower()))
+            .OrderBy(d => d.Name)
+            .Take(20)
+            .Select(d => new
+            {
+                d.Id,
+                d.Name,
+                d.Dosage
+            })
+            .ToListAsync();
+
+        return Ok(drugs);
+    }
+
     // GET /api/drugs
     [HttpGet]
     public async Task<IActionResult> GetAll()

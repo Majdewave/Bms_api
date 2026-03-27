@@ -11,6 +11,8 @@ using Clienta.Api.Services;
 using QuestPDF.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
+// Register DrugSeedService
+builder.Services.AddScoped<DrugSeedService>();
 
 // QuestPDF License
 QuestPDF.Settings.License = LicenseType.Community;
@@ -149,6 +151,10 @@ using (var scope = app.Services.CreateScope())
 
     var seeder = services.GetRequiredService<AuthSeedService>();
     await seeder.SeedAsync();
+
+    // Seed drugs
+    var drugSeeder = services.GetRequiredService<DrugSeedService>();
+    await drugSeeder.SeedAsync();
 }
 
 
