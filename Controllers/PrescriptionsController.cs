@@ -296,7 +296,7 @@ if (!string.IsNullOrWhiteSpace(staff?.StampUrl))
                         details.Item().Border(1).Padding(10).Column(c =>
                         {
                             c.Item().AlignRight().Text("תרופה").Bold().FontSize(16);
-                            c.Item().PaddingTop(10);
+                            c.Item().PaddingTop(15);
 
                             foreach (var drug in prescription.Drugs)
                             {
@@ -323,41 +323,45 @@ if (!string.IsNullOrWhiteSpace(staff?.StampUrl))
 
                         details.Item().PaddingVertical(10);
 
-                  details.Item().Row(row =>
-                {
-                    row.RelativeItem().AlignRight().Column(c =>
-                    {
-                        c.Item().Text("שם הרופא").Bold();
-
-                        c.Item()
-                            .Width(150)
-                            .AlignRight()
-                            .Text(prescription.DoctorName)
-                            .DirectionFromRightToLeft(); // ✅ RTL FIX
-                    });
-
-                    row.RelativeItem().AlignRight().Column(c =>
-                    {
-                        c.Item().Text("חתימה").Bold();
-
-                        if (stampBytes != null && stampBytes.Length > 0)
+                        details.Item().Row(row =>
                         {
-                            c.Item()
-                                .AlignRight()
-                                .Width(120)
-                                .Height(60) // 👈 קצת יותר גובה (נראה טוב יותר)
-                                .Image(stampBytes)
-                                .FitArea(); // 👈 הכי חשוב — שלא יימרח
-                        }
-                        else
-                        {
-                            c.Item()
-                                .AlignRight()
-                                .Width(120)
-                                .Text("______________");
-                        }
-                    });
-                });
+                            //  צד ימין — חתימה
+                            row.RelativeItem().AlignRight().Column(c =>
+                            {
+                                c.Item().AlignRight().Text("חתימה").Bold();
+
+                                if (stampBytes != null && stampBytes.Length > 0)
+                                {
+                                    c.Item()
+                                        .AlignRight()
+                                        .Width(120)
+                                        .Height(60)
+                                        .Image(stampBytes)
+                                        .FitArea();
+                                }
+                                else
+                                {
+                                    c.Item()
+                                        .AlignRight()
+                                        .Width(120)
+                                        .LineHorizontal(1)
+                                        .LineColor(Colors.Grey.Medium);
+                                }
+                            });
+
+                            // צד שמאל — שם רופא
+                            row.RelativeItem().AlignRight().Column(c =>
+                            {
+                                c.Item().AlignRight().Text("שם הרופא").Bold();
+
+                                c.Item()
+                                    .Width(150)
+                                    .AlignRight()
+                                    .Text(prescription.DoctorName)
+                                    .FontSize(11)
+                                    .DirectionFromRightToLeft();
+                            });
+                        });
                         details.Item().PaddingVertical(10);
 
                         details.Item().AlignCenter()
