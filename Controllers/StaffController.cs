@@ -32,7 +32,8 @@ public class StaffController : ControllerBase
             .Include(bu => bu.User)
             .Where(bu => bu.TenantId == _tenant.TenantId)
             .Select(bu => new StaffResponse(
-                bu.Id,
+                bu.Id, // BusinessUserId
+                bu.User.Id, // UserId
                 bu.User.Email,
                 bu.User.FullName ?? string.Empty,
                 bu.User.RoleLabel ?? string.Empty,
@@ -51,22 +52,20 @@ public class StaffController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var user = await _context.Users
-            .Include(u => u.Permissions)
+        // Find BusinessUser by Id and TenantId
+        var businessUser = await _context.BusinessUsers
+            .Include(bu => bu.User)
+            .ThenInclude(u => u.Permissions)
             .ThenInclude(up => up.Permission)
-            .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == _tenant.TenantId);
-
-        if (user == null)
+            .FirstOrDefaultAsync(bu =>(bu.Id == id || bu.UserId == id) && bu.TenantId == _tenant.TenantId);
+      
+        if (businessUser == null)
             return NotFound();
 
-        // Get the associated BusinessUser to return its Id instead of User.Id
-        var businessUser = await _context.BusinessUsers
-            .FirstOrDefaultAsync(bu => bu.UserId == user.Id && bu.TenantId == _tenant.TenantId);
-
-        Guid staffId = businessUser?.Id ?? id;
-
+        var user = businessUser.User;
         var response = new StaffResponse(
-            staffId,
+            businessUser.Id, // BusinessUserId
+            user.Id, // UserId
             user.Email,
             user.FullName ?? string.Empty,
             user.RoleLabel ?? string.Empty,
@@ -131,12 +130,13 @@ public class StaffController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
-
+        var businessUser = await _context.BusinessUsers.FirstOrDefaultAsync(bu => bu.UserId == user.Id && bu.TenantId == _tenant.TenantId);
         return CreatedAtAction(nameof(GetAll), new StaffResponse(
-            user.Id,
+            businessUser?.Id ?? Guid.Empty, // BusinessUserId
+            user.Id, // UserId
             user.Email,
-            user.FullName,
-            user.RoleLabel,
+            user.FullName ?? string.Empty,
+            user.RoleLabel ?? string.Empty,
             user.Role,
             user.IsActive,
             role == "Staff" ? request.Permissions ?? new List<string>() : new List<string>(),
@@ -149,12 +149,16 @@ public class StaffController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateStaffRequest request)
     {
-        var user = await _context.Users
-            .Include(u => u.Permissions)
-            .FirstOrDefaultAsync(u => u.Id == id);
+        // Find BusinessUser by Id and TenantId
+        var businessUser = await _context.BusinessUsers
+            .Include(bu => bu.User)
+            .ThenInclude(u => u.Permissions)
+            .FirstOrDefaultAsync(bu => bu.Id == id && bu.TenantId == _tenant.TenantId);
 
-        if (user == null)
+        if (businessUser == null)
             return NotFound();
+
+        var user = businessUser.User;
 
         user.FullName = request.FullName;
         user.RoleLabel = request.RoleLabel;
@@ -206,10 +210,12 @@ public class StaffController : ControllerBase
         if (file.Length > maxFileSize)
             return BadRequest("File size must not exceed 2MB");
 
-        var user = await _context.Users
-            .FirstOrDefaultAsync(u => u.Id == id);
+        // Find BusinessUser by id (not User)
+        var businessUser = await _context.BusinessUsers
+            .Include(bu => bu.User)
+            .FirstOrDefaultAsync(bu => bu.Id == id && bu.TenantId == _tenant.TenantId);
 
-        if (user == null)
+        if (businessUser == null)
             return NotFound("Staff not found");
 
         var uploadsDir = Path.Combine(_env.WebRootPath, "uploads", "tenants", _tenant.TenantId.ToString(), "staff", id.ToString());
@@ -230,37 +236,58 @@ public class StaffController : ControllerBase
             await file.CopyToAsync(stream);
         }
 
-        user.StampUrl = $"/uploads/tenants/{_tenant.TenantId}/staff/{id}/{fileName}";
-        user.UseStamp = true;
+        // Set stamp info on BusinessUser
+        businessUser.User.StampUrl = $"/uploads/tenants/{_tenant.TenantId}/staff/{id}/{fileName}";
+        businessUser.User.UseStamp = true;
 
         await _context.SaveChangesAsync();
 
-        return Ok(new { user.StampUrl, user.UseStamp });
+        return Ok(new { stampUrl = businessUser.User.StampUrl, useStamp = businessUser.User.UseStamp });
     }
 
     // DELETE /api/staff/{id}
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var user = await _context.Users
-            .FirstOrDefaultAsync(u => u.Id == id);
+        // 1. Log current tenant
+        var currentTenant = _tenant.TenantId;
+        Console.WriteLine($"[DELETE Staff] Current TenantId: {currentTenant}");
 
-        if (user == null)
+        // 2. Find business user with IgnoreQueryFilters for debugging
+        var businessUser = await _context.BusinessUsers
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(bu => bu.Id == id);
+
+        if (businessUser == null)
+        {
+            Console.WriteLine($"[DELETE Staff] BusinessUser not found for Id: {id}");
             return NotFound();
+        }
+
+        // 2. Compare with DB TenantId
+        Console.WriteLine($"[DELETE Staff] BusinessUser.TenantId: {businessUser.TenantId}");
+        if (businessUser.TenantId != currentTenant)
+        {
+            Console.WriteLine($"[DELETE Staff] TenantId mismatch! Request: {currentTenant}, DB: {businessUser.TenantId}");
+            return Forbid();
+        }
+
+        // 3. Find user
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == businessUser.UserId);
+        if (user == null)
+        {
+            Console.WriteLine($"[DELETE Staff] User not found for BusinessUser.UserId: {businessUser.UserId}");
+            return NotFound();
+        }
 
         // Remove related permissions
         var userPermissions = await _context.UserPermissions
             .Where(up => up.UserId == user.Id)
             .ToListAsync();
-
         _context.UserPermissions.RemoveRange(userPermissions);
 
         // Remove business user link
-        var businessUser = await _context.BusinessUsers
-            .Where(bu => bu.UserId == user.Id)
-            .ToListAsync();
-
-        _context.BusinessUsers.RemoveRange(businessUser);
+        _context.BusinessUsers.Remove(businessUser);
 
         var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         Guid? performedByUserId = null;

@@ -19,7 +19,8 @@ public record UpdateStaffRequest(
 );
 
 public record StaffResponse(
-    Guid Id,
+    Guid Id, // BusinessUserId
+    Guid UserId, // User.Id
     string Email,
     string FullName,
     string RoleLabel,
