@@ -75,6 +75,28 @@ public class DrugsController : ControllerBase
 
         return CreatedAtAction(nameof(GetAll), new { id = drug.Id }, drug);
     }
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, CreateDrugRequest request)
+    {
+        var drug = await _context.Drugs.FindAsync(id);
+        if (drug == null)
+            return NotFound();
+        drug.Name = request.Name;
+        drug.Dosage = request.Dosage;
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var drug = await _context.Drugs.FindAsync(id);
+        if (drug == null)
+            return NotFound();
+        _context.Drugs.Remove(drug);
+        await _context.SaveChangesAsync();
+        return NoContent();
+    }
 }
 
 public record CreateDrugRequest(string Name, string? Dosage);
