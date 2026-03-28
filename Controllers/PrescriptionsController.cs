@@ -192,17 +192,15 @@ if (prescription.StaffId.HasValue)
     var businessUser = await _context.BusinessUsers
         .IgnoreQueryFilters()
         .Include(bu => bu.User)
-        .FirstOrDefaultAsync(bu => bu.Id == prescription.StaffId.Value);
-
+        .FirstOrDefaultAsync(bu => bu.UserId == prescription.StaffId.Value);
     staff = businessUser?.User;
 }
 
 //  fallback אם אין חותמת
-if (staff == null || string.IsNullOrWhiteSpace(staff.StampUrl))
+// אם אין חותמת — פשוט לא מציגים
+if (staff == null || !staff.UseStamp || string.IsNullOrWhiteSpace(staff.StampUrl))
 {
-    staff = await _context.Users
-        .IgnoreQueryFilters()
-        .FirstOrDefaultAsync(u => u.UseStamp && !string.IsNullOrEmpty(u.StampUrl));
+    stampBytes = null;
 }
 
 //  טעינת חותמת

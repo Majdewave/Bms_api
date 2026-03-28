@@ -164,16 +164,17 @@ public class StaffController : ControllerBase
         user.RoleLabel = request.RoleLabel;
         user.IsActive = request.IsActive;
         user.UseStamp = request.UseStamp;
+        user.Role = request.Role == "Admin" ? "Admin" : "Staff";
 
-        // Remove old permissions
+       // Remove old permissions
         var existingPermissions = await _context.UserPermissions
             .Where(up => up.UserId == user.Id)
             .ToListAsync();
 
         _context.UserPermissions.RemoveRange(existingPermissions);
 
-        // Assign new permissions
-        if (request.Permissions?.Any() == true)
+        // Assign permissions ONLY if Staff
+        if (user.Role == "Staff" && request.Permissions?.Any() == true)
         {
             var permissions = await _context.Permissions
                 .Where(p => request.Permissions.Contains(p.Key))
