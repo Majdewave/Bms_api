@@ -32,18 +32,22 @@ public class ClientsController : ControllerBase
             .IgnoreQueryFilters()
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new ClientResponse(
-                c.Id,
-                c.FullName,
-                c.IdNumber,
-                c.Email,
-                c.Phone,
-                c.Address,
-                c.InternalNote,
-                c.IsActive,
-                c.CreatedAt,
-                c.Status,
-                null // LastVisit not present
-            ))
+            c.Id,
+            c.FullName,
+            c.IdNumber,
+            c.Email,
+            c.Phone,
+            c.Address,
+            c.InternalNote,
+            c.IsActive,
+            c.CreatedAt,
+            c.Status,
+            _context.Prescriptions
+                .Where(p => p.ClientId == c.Id)
+                .OrderByDescending(p => p.Date)
+                .Select(p => (DateTime?)p.Date)
+                .FirstOrDefault()
+        ))
             .ToListAsync();
         return Ok(clients);
     }
@@ -65,7 +69,11 @@ public class ClientsController : ControllerBase
                 c.IsActive,
                 c.CreatedAt,
                 c.Status,
-                null // LastVisit not present
+                _context.Prescriptions
+                    .Where(p => p.ClientId == c.Id)
+                    .OrderByDescending(p => p.Date)
+                    .Select(p => (DateTime?)p.Date)
+                    .FirstOrDefault()
             ))
             .FirstOrDefaultAsync();
         if (client == null)
