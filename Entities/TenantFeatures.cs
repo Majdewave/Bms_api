@@ -7,6 +7,7 @@ public class TenantFeatures : ITenantEntity
     public bool ReportsEnabled { get; set; } = true;
     public bool InvoicesEnabled { get; set; } = true;
     public bool PrescriptionsEnabled { get; set; } = false;
+    public bool DrugsEnabled { get; set; } = false;
 
     public virtual Tenant Tenant { get; set; } = default!;
 }

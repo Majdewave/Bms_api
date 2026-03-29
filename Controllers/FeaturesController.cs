@@ -43,6 +43,7 @@ public class FeaturesController : ControllerBase
         features.ReportsEnabled = request.ReportsEnabled;
         features.InvoicesEnabled = request.InvoicesEnabled;
         features.PrescriptionsEnabled = request.PrescriptionsEnabled;
+        features.DrugsEnabled = request.DrugsEnabled;
 
         await _context.SaveChangesAsync();
 

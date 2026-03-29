@@ -32,7 +32,8 @@ public class FeatureService : IFeatureService
                 TenantId = Guid.Empty,
                 ReportsEnabled = true,
                 InvoicesEnabled = true,
-                PrescriptionsEnabled = false
+                PrescriptionsEnabled = false,
+                DrugsEnabled = false
             };
         }
 
@@ -48,7 +49,8 @@ public class FeatureService : IFeatureService
             TenantId = tenantId,
             ReportsEnabled = true,
             InvoicesEnabled = true,
-            PrescriptionsEnabled = false
+            PrescriptionsEnabled = false,
+            DrugsEnabled = false
         };
 
         _db.TenantFeatures.Add(features);
@@ -69,6 +71,7 @@ public class FeatureService : IFeatureService
             "reports" => features.ReportsEnabled,
             "invoices" => features.InvoicesEnabled,
             "prescriptions" => features.PrescriptionsEnabled,
+            "drugs" => features.DrugsEnabled,
             _ => true
         };
     }
