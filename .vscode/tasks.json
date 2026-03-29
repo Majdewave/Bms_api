@@ -10,6 +10,12 @@
 				"$msCompile"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build .NET Project",
+			"type": "shell",
+			"command": "dotnet build",
+			"group": "build"
 		}
 	]
 }

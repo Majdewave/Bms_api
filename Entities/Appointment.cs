@@ -24,8 +24,8 @@ public class Appointment : ITenantEntity
     public DateTime EndTime { get; set; }
 
     [Required]
-    public string Status { get; set; } = "Scheduled"; 
-    // Scheduled / Completed / Cancelled
+    public string Status { get; set; } = AppointmentStatuses.Scheduled;
+    // Allowed: Scheduled, Waiting, InProgress, Completed, Cancelled, NoShow
 
     public string? Notes { get; set; }
 

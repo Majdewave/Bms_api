@@ -13,6 +13,66 @@ namespace Clienta.Api.Controllers;
 [Authorize(Policy = "manage_appointments")]
 public class AppointmentsController : ControllerBase
 {
+    // (Fields already declared above)
+
+    // GET /appointments/queue
+    [Authorize(Policy = "manage_appointments")]
+    [HttpGet("queue")]
+    public async Task<IActionResult> GetQueue()
+    {
+        var tenantId = _tenant.TenantId;
+        var inProgress = await _context.Appointments
+            .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Staff)
+            .Where(a => a.TenantId == tenantId && a.Status == AppointmentStatuses.InProgress)
+            .OrderBy(a => a.StartTime)
+            .FirstOrDefaultAsync();
+
+        var nextWaiting = await _context.Appointments
+            .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Staff)
+            .Where(a => a.TenantId == tenantId && a.Status == AppointmentStatuses.Waiting)
+            .OrderBy(a => a.StartTime)
+            .FirstOrDefaultAsync();
+
+        var waitingCount = await _context.Appointments
+            .CountAsync(a => a.TenantId == tenantId && a.Status == AppointmentStatuses.Waiting);
+
+        return Ok(new
+        {
+            current = inProgress == null ? null : new AppointmentDto(
+                inProgress.Id,
+                inProgress.ClientId,
+                inProgress.Client.FullName,
+                inProgress.ServiceId,
+                inProgress.Service != null ? inProgress.Service.Name : null,
+                inProgress.StaffId,
+                inProgress.Staff != null ? inProgress.Staff.User.FullName : null,
+                inProgress.StartTime,
+                inProgress.EndTime,
+                inProgress.Status,
+                inProgress.Notes,
+                inProgress.CreatedAt
+            ),
+            next = nextWaiting == null ? null : new AppointmentDto(
+                nextWaiting.Id,
+                nextWaiting.ClientId,
+                nextWaiting.Client.FullName,
+                nextWaiting.ServiceId,
+                nextWaiting.Service != null ? nextWaiting.Service.Name : null,
+                nextWaiting.StaffId,
+                nextWaiting.Staff != null ? nextWaiting.Staff.User.FullName : null,
+                nextWaiting.StartTime,
+                nextWaiting.EndTime,
+                nextWaiting.Status,
+                nextWaiting.Notes,
+                nextWaiting.CreatedAt
+            ),
+            waitingCount
+        });
+    }
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IPlanEnforcementService _planEnforcement;
@@ -99,8 +159,11 @@ public class AppointmentsController : ControllerBase
         if (client == null)
             return BadRequest("Invalid client.");
 
-        if (request.EndTime <= request.StartTime)
+        if (request.StartTime != default && request.EndTime != default &&
+            request.EndTime <= request.StartTime)
+        {
             return BadRequest("End time must be after start time.");
+        }
 
         // Validate ServiceId if provided
         if (request.ServiceId.HasValue)
@@ -182,17 +245,46 @@ public class AppointmentsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateAppointmentRequest request)
     {
-        var appointment = await _context.Appointments
-            .FirstOrDefaultAsync(a => a.Id == id);
-
+        var appointment = await _context.Appointments.FirstOrDefaultAsync(a => a.Id == id);
         if (appointment == null)
             return NotFound();
 
         if (request.EndTime <= request.StartTime)
             return BadRequest("End time must be after start time.");
 
-        appointment.StartTime = request.StartTime;
-        appointment.EndTime = request.EndTime;
+        // Validate status value
+        if (!AppointmentStatuses.All.Contains(request.Status))
+            return BadRequest($"Invalid status. Allowed: {string.Join(", ", AppointmentStatuses.All)}");
+
+        // Enforce allowed transitions
+        var allowedTransitions = new Dictionary<string, string[]>
+        {
+            { AppointmentStatuses.Scheduled, new[] { AppointmentStatuses.Waiting, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
+            { AppointmentStatuses.Waiting, new[] { AppointmentStatuses.InProgress, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
+            { AppointmentStatuses.InProgress, new[] { AppointmentStatuses.Completed, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
+            { AppointmentStatuses.Completed, Array.Empty<string>() },
+            { AppointmentStatuses.Cancelled, Array.Empty<string>() },
+            { AppointmentStatuses.NoShow, Array.Empty<string>() }
+        };
+        if (request.Status != appointment.Status &&
+            (!allowedTransitions.TryGetValue(appointment.Status, out var allowed) || !allowed.Contains(request.Status)))
+        {
+            return BadRequest($"Invalid status transition from {appointment.Status} to {request.Status}.");
+        }
+
+        // Only one InProgress per tenant
+         if (request.Status == "InProgress")
+        {
+            var inProgressExists = await _context.Appointments.AnyAsync(a => a.TenantId == appointment.TenantId && a.Status == "InProgress" && a.Id != appointment.Id);
+            if (inProgressExists)
+                return BadRequest("Only one appointment can be InProgress at a time for this tenant.");
+        }
+
+        if (request.StartTime != default)
+            appointment.StartTime = request.StartTime;
+
+        if (request.EndTime != default)
+            appointment.EndTime = request.EndTime;
         appointment.Status = request.Status;
         appointment.Notes = request.Notes;
         appointment.ServiceId = request.ServiceId;
