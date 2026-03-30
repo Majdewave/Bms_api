@@ -249,53 +249,80 @@ public class AppointmentsController : ControllerBase
         if (appointment == null)
             return NotFound();
 
-        if (request.EndTime <= request.StartTime)
+        // ✅ Time validation (only if provided)
+        if (request.StartTime != default && request.EndTime != default &&
+            request.EndTime <= request.StartTime)
+        {
             return BadRequest("End time must be after start time.");
+        }
 
-        // Validate status value
-        if (!AppointmentStatuses.All.Contains(request.Status))
+        // ✅ Normalize statuses (fix ALL your bugs)
+        var currentStatus = appointment.Status?.Trim();
+        var newStatus = request.Status?.Trim();
+
+        // ✅ Validate status (case insensitive)
+        if (!AppointmentStatuses.All
+            .Any(s => s.Equals(newStatus, StringComparison.OrdinalIgnoreCase)))
+        {
             return BadRequest($"Invalid status. Allowed: {string.Join(", ", AppointmentStatuses.All)}");
+        }
 
-        // Enforce allowed transitions
+        // ✅ Map to correct casing (important!)
+        currentStatus = AppointmentStatuses.All
+            .First(s => s.Equals(currentStatus, StringComparison.OrdinalIgnoreCase));
+
+        newStatus = AppointmentStatuses.All
+            .First(s => s.Equals(newStatus, StringComparison.OrdinalIgnoreCase));
+
+        // ✅ Allowed transitions (FIXED)
         var allowedTransitions = new Dictionary<string, string[]>
         {
             { AppointmentStatuses.Scheduled, new[] { AppointmentStatuses.Waiting, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
             { AppointmentStatuses.Waiting, new[] { AppointmentStatuses.InProgress, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
             { AppointmentStatuses.InProgress, new[] { AppointmentStatuses.Completed, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
-            { AppointmentStatuses.Completed, Array.Empty<string>() },
-            { AppointmentStatuses.Cancelled, Array.Empty<string>() },
-            { AppointmentStatuses.NoShow, Array.Empty<string>() }
+
+            // 🔥 FIX HERE (restore support)
+            { AppointmentStatuses.Completed, new[] { AppointmentStatuses.Scheduled, AppointmentStatuses.Waiting } },
+            { AppointmentStatuses.Cancelled, new[] { AppointmentStatuses.Scheduled } },
+            { AppointmentStatuses.NoShow, new[] { AppointmentStatuses.Scheduled } }
         };
-        if (request.Status != appointment.Status &&
-            (!allowedTransitions.TryGetValue(appointment.Status, out var allowed) || !allowed.Contains(request.Status)))
+
+        if (newStatus != currentStatus &&
+            (!allowedTransitions.TryGetValue(currentStatus, out var allowed) || !allowed.Contains(newStatus)))
         {
-            return BadRequest($"Invalid status transition from {appointment.Status} to {request.Status}.");
+            return BadRequest($"Invalid status transition from {currentStatus} to {newStatus}.");
         }
 
-        // Only one InProgress per tenant
-         if (request.Status == "InProgress")
+        // ✅ Only one InProgress
+        if (newStatus == AppointmentStatuses.InProgress)
         {
-            var inProgressExists = await _context.Appointments.AnyAsync(a => a.TenantId == appointment.TenantId && a.Status == "InProgress" && a.Id != appointment.Id);
-            if (inProgressExists)
-                return BadRequest("Only one appointment can be InProgress at a time for this tenant.");
+            var exists = await _context.Appointments.AnyAsync(a =>
+                a.TenantId == appointment.TenantId &&
+                a.Status == AppointmentStatuses.InProgress &&
+                a.Id != appointment.Id);
+
+            if (exists)
+                return BadRequest("Only one appointment can be InProgress at a time.");
         }
 
+        // ✅ Update fields safely
         if (request.StartTime != default)
             appointment.StartTime = request.StartTime;
 
         if (request.EndTime != default)
             appointment.EndTime = request.EndTime;
-        appointment.Status = request.Status;
+
+        appointment.Status = newStatus;
         appointment.Notes = request.Notes;
         appointment.ServiceId = request.ServiceId;
         appointment.StaffId = request.StaffId;
 
         await _context.SaveChangesAsync();
 
-        // Fetch related entities for response
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Id == appointment.ClientId);
         var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
-        var staff = appointment.StaffId.HasValue ? await _context.BusinessUsers.FirstOrDefaultAsync(bu => bu.Id == appointment.StaffId) : null;
+        var staff = appointment.StaffId.HasValue ? await _context.BusinessUsers.FirstOrDefaultAsync(b => b.Id == appointment.StaffId) : null;
+
         string? staffName = null;
         if (staff != null)
         {
@@ -306,7 +333,7 @@ public class AppointmentsController : ControllerBase
         return Ok(new AppointmentDto(
             appointment.Id,
             appointment.ClientId,
-            client?.FullName ?? string.Empty,
+            client?.FullName ?? "",
             appointment.ServiceId,
             service?.Name,
             appointment.StaffId,
