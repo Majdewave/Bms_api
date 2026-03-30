@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Clienta.Api.Services;
+using Clienta.Api.Hubs;
 using QuestPDF.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -100,6 +101,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+// SignalR
+builder.Services.AddSignalR();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactDev",
@@ -178,5 +182,8 @@ app.UseMiddleware<TenantMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// SignalR Hubs
+app.MapHub<AppointmentsHub>("/hubs/appointments");
 
 app.Run();

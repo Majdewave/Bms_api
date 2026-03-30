@@ -5,6 +5,8 @@ using Clienta.Api.Data;
 using Clienta.Api.Services;
 using Clienta.Api.Entities;
 using Clienta.Api.DTOs;
+using Microsoft.AspNetCore.SignalR;
+using Clienta.Api.Hubs;
 
 namespace Clienta.Api.Controllers;
 
@@ -76,15 +78,18 @@ public class AppointmentsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IPlanEnforcementService _planEnforcement;
+    private readonly IHubContext<AppointmentsHub> _hubContext;
 
     public AppointmentsController(
         AppDbContext context,
         ITenantContext tenant,
-        IPlanEnforcementService planEnforcement)
+        IPlanEnforcementService planEnforcement,
+        IHubContext<AppointmentsHub> hubContext)
     {
         _context = context;
         _tenant = tenant;
         _planEnforcement = planEnforcement;
+        _hubContext = hubContext;
     }
 
     // GET /appointments
@@ -210,7 +215,13 @@ public class AppointmentsController : ControllerBase
         };
 
         _context.Appointments.Add(appointment);
+
         await _context.SaveChangesAsync();
+
+        // SignalR: Notify all users in the tenant group
+        await _hubContext.Clients
+            .Group(_tenant.TenantId.ToString())
+            .SendAsync("AppointmentUpdated");
 
         // Fetch related entities for response
         var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
@@ -318,6 +329,9 @@ public class AppointmentsController : ControllerBase
         appointment.StaffId = request.StaffId;
 
         await _context.SaveChangesAsync();
+        await _hubContext.Clients
+        .Group(_tenant.TenantId.ToString())
+        .SendAsync("AppointmentUpdated");
 
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Id == appointment.ClientId);
         var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
