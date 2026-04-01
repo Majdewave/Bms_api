@@ -52,12 +52,12 @@ public class AppointmentsController : ControllerBase
                 inProgress.Service != null ? inProgress.Service.Name : null,
                 inProgress.StaffId,
                 inProgress.Staff != null ? inProgress.Staff.User.FullName : null,
-                inProgress.StartTime,
-                inProgress.EndTime,
+                inProgress.StartTime.ToLocalTime(),
+                inProgress.EndTime.ToLocalTime(),
                 inProgress.Status,
                 inProgress.Notes,
                 inProgress.CreatedAt,
-                inProgress.IsDocumented ?? false
+                inProgress.IsDocumented
             ),
             next = nextWaiting == null ? null : new AppointmentDto(
                 nextWaiting.Id,
@@ -67,12 +67,12 @@ public class AppointmentsController : ControllerBase
                 nextWaiting.Service != null ? nextWaiting.Service.Name : null,
                 nextWaiting.StaffId,
                 nextWaiting.Staff != null ? nextWaiting.Staff.User.FullName : null,
-                nextWaiting.StartTime,
-                nextWaiting.EndTime,
+                nextWaiting.StartTime.ToLocalTime(),
+                nextWaiting.EndTime.ToLocalTime(),
                 nextWaiting.Status,
                 nextWaiting.Notes,
                 nextWaiting.CreatedAt,
-                nextWaiting.IsDocumented ?? false
+                nextWaiting.IsDocumented
             ),
             waitingCount
         });
@@ -112,12 +112,12 @@ public class AppointmentsController : ControllerBase
                 a.Service != null ? a.Service.Name : null,
                 a.StaffId,
                 a.Staff != null ? a.Staff.User.FullName : null,
-                a.StartTime,
-                a.EndTime,
+                a.StartTime.ToLocalTime(),
+                a.EndTime.ToLocalTime(),
                 a.Status,
                 a.Notes,
                 a.CreatedAt,
-                a.IsDocumented ?? false
+                a.IsDocumented
             ))
             .ToListAsync();
 
@@ -142,12 +142,12 @@ public class AppointmentsController : ControllerBase
                 a.Service != null ? a.Service.Name : null,
                 a.StaffId,
                 a.Staff != null ? a.Staff.User.FullName : null,
-                a.StartTime,
-                a.EndTime,
+                a.StartTime.ToLocalTime(),
+                a.EndTime.ToLocalTime(),
                 a.Status,
                 a.Notes,
                 a.CreatedAt,
-                a.IsDocumented ?? false
+                a.IsDocumented
             ))
             .FirstOrDefaultAsync();
 
@@ -211,8 +211,8 @@ public class AppointmentsController : ControllerBase
             ServiceId = request.ServiceId,
             StaffId = request.StaffId,
             CreatedByUserId = _tenant.UserId!.Value,
-            StartTime = request.StartTime,
-            EndTime = request.EndTime,
+            StartTime = DateTime.SpecifyKind(request.StartTime, DateTimeKind.Utc),
+            EndTime = DateTime.SpecifyKind(request.EndTime, DateTimeKind.Utc),
             Status = "Scheduled",
             Notes = request.Notes,
             CreatedAt = DateTime.UtcNow
@@ -247,12 +247,12 @@ public class AppointmentsController : ControllerBase
                 service?.Name,
                 appointment.StaffId,
                 staffName,
-                appointment.StartTime,
-                appointment.EndTime,
+                appointment.StartTime.ToLocalTime(),
+                appointment.EndTime.ToLocalTime(),
                 appointment.Status,
                 appointment.Notes,
                 appointment.CreatedAt,
-                appointment.IsDocumented ?? false
+                appointment.IsDocumented
             ));
     }
 
@@ -322,10 +322,10 @@ public class AppointmentsController : ControllerBase
 
         // ✅ Update fields safely
         if (request.StartTime != default)
-            appointment.StartTime = request.StartTime;
+            appointment.StartTime = DateTime.SpecifyKind(request.StartTime, DateTimeKind.Utc);
 
         if (request.EndTime != default)
-            appointment.EndTime = request.EndTime;
+            appointment.EndTime = DateTime.SpecifyKind(request.EndTime, DateTimeKind.Utc);
 
         appointment.Status = newStatus;
         appointment.Notes = request.Notes;
@@ -361,12 +361,12 @@ public class AppointmentsController : ControllerBase
             service?.Name,
             appointment.StaffId,
             staffName,
-            appointment.StartTime,
-            appointment.EndTime,
+            appointment.StartTime.ToLocalTime(),
+            appointment.EndTime.ToLocalTime(),
             appointment.Status,
             appointment.Notes,
             appointment.CreatedAt,
-            appointment.IsDocumented ?? false
+            appointment.IsDocumented
         ));
     }
 
