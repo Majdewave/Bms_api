@@ -36,4 +36,7 @@ public class Appointment : ITenantEntity
 
     public Guid? StaffId { get; set; }
     public BusinessUser? Staff { get; set; }
+
+    // Indicates if appointment is documented
+    public bool IsDocumented { get; set; } = true;
 }

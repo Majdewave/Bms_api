@@ -6,7 +6,8 @@ public record CreateAppointmentRequest(
     DateTime EndTime,
     string? Notes,
     Guid? ServiceId,
-    Guid? StaffId
+    Guid? StaffId,
+    bool IsDocumented = true
 );
 
 public record UpdateAppointmentRequest(
@@ -15,7 +16,8 @@ public record UpdateAppointmentRequest(
     string Status,
     string? Notes,
     Guid? ServiceId,
-    Guid? StaffId
+    Guid? StaffId,
+    bool? IsDocumented = true
 );
 
 
@@ -31,7 +33,8 @@ public record AppointmentDto(
     DateTime EndTime,
     string Status,
     string? Notes,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    bool IsDocumented
 );
 
 public record AppointmentResponse(
@@ -46,5 +49,6 @@ public record AppointmentResponse(
     Guid? ServiceId,
     Guid? StaffId,
     string? StaffName,
-    string? ServiceName
+    string? ServiceName,
+    bool IsDocumented
 );

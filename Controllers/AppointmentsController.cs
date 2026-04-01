@@ -56,7 +56,8 @@ public class AppointmentsController : ControllerBase
                 inProgress.EndTime,
                 inProgress.Status,
                 inProgress.Notes,
-                inProgress.CreatedAt
+                inProgress.CreatedAt,
+                inProgress.IsDocumented ?? false
             ),
             next = nextWaiting == null ? null : new AppointmentDto(
                 nextWaiting.Id,
@@ -70,7 +71,8 @@ public class AppointmentsController : ControllerBase
                 nextWaiting.EndTime,
                 nextWaiting.Status,
                 nextWaiting.Notes,
-                nextWaiting.CreatedAt
+                nextWaiting.CreatedAt,
+                nextWaiting.IsDocumented ?? false
             ),
             waitingCount
         });
@@ -114,7 +116,8 @@ public class AppointmentsController : ControllerBase
                 a.EndTime,
                 a.Status,
                 a.Notes,
-                a.CreatedAt
+                a.CreatedAt,
+                a.IsDocumented ?? false
             ))
             .ToListAsync();
 
@@ -143,7 +146,8 @@ public class AppointmentsController : ControllerBase
                 a.EndTime,
                 a.Status,
                 a.Notes,
-                a.CreatedAt
+                a.CreatedAt,
+                a.IsDocumented ?? false
             ))
             .FirstOrDefaultAsync();
 
@@ -247,7 +251,8 @@ public class AppointmentsController : ControllerBase
                 appointment.EndTime,
                 appointment.Status,
                 appointment.Notes,
-                appointment.CreatedAt
+                appointment.CreatedAt,
+                appointment.IsDocumented ?? false
             ));
     }
 
@@ -269,7 +274,7 @@ public class AppointmentsController : ControllerBase
 
         // ✅ Normalize statuses (fix ALL your bugs)
         var currentStatus = appointment.Status?.Trim();
-        var newStatus = request.Status?.Trim();
+        var newStatus = request.Status?.Trim() ?? appointment.Status;
 
         // ✅ Validate status (case insensitive)
         if (!AppointmentStatuses.All
@@ -292,7 +297,6 @@ public class AppointmentsController : ControllerBase
             { AppointmentStatuses.Waiting, new[] { AppointmentStatuses.InProgress, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
             { AppointmentStatuses.InProgress, new[] { AppointmentStatuses.Completed, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
 
-            // 🔥 FIX HERE (restore support)
             { AppointmentStatuses.Completed, new[] { AppointmentStatuses.Scheduled, AppointmentStatuses.Waiting } },
             { AppointmentStatuses.Cancelled, new[] { AppointmentStatuses.Scheduled } },
             { AppointmentStatuses.NoShow, new[] { AppointmentStatuses.Scheduled } }
@@ -327,6 +331,11 @@ public class AppointmentsController : ControllerBase
         appointment.Notes = request.Notes;
         appointment.ServiceId = request.ServiceId;
         appointment.StaffId = request.StaffId;
+       
+       if (request.IsDocumented.HasValue)
+        {
+            appointment.IsDocumented = request.IsDocumented.Value;
+        }
 
         await _context.SaveChangesAsync();
         await _hubContext.Clients
@@ -356,7 +365,8 @@ public class AppointmentsController : ControllerBase
             appointment.EndTime,
             appointment.Status,
             appointment.Notes,
-            appointment.CreatedAt
+            appointment.CreatedAt,
+            appointment.IsDocumented ?? false
         ));
     }
 
