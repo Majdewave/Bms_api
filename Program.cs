@@ -43,6 +43,7 @@ builder.Services.AddScoped<ITenantSeedService, TenantSeedService>();
 builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
+builder.Services.AddHostedService<CleanupService>();
  
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<Clienta.Api.Repositories.AppointmentsRepository>();

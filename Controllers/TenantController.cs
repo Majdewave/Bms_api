@@ -45,7 +45,8 @@ public class TenantController : ControllerBase
             tenant.Name,
             tenant.Phone,
             tenant.WhatsApp,
-            tenant.LogoUrl
+            tenant.LogoUrl,
+            tenant.AutoDeleteNotDocumentedAfterDays
         });
     }
 
@@ -89,7 +90,9 @@ public class TenantController : ControllerBase
             tenant.LogoUrl,
             tenant.Plan.ToString(),
             tenant.SubscriptionStatus.ToString(),
-            tenant.CreatedAt
+            tenant.CreatedAt,
+            tenant.AutoDeleteNotDocumentedAfterDays,
+            tenant.EnableAutoDeleteNotDocumented
         ));
     }
 
@@ -121,8 +124,46 @@ public class TenantController : ControllerBase
             tenant.LogoUrl,
             tenant.Plan.ToString(),
             tenant.SubscriptionStatus.ToString(),
-            tenant.CreatedAt
+            tenant.CreatedAt,
+            tenant.AutoDeleteNotDocumentedAfterDays,
+            tenant.EnableAutoDeleteNotDocumented
         ));
+    }
+
+    [HttpPut("auto-delete-setting")]
+    public async Task<IActionResult> UpdateAutoDeleteSetting([FromBody] AutoDeleteSettingsRequest request)
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        var tenant = await _context.Tenants.FindAsync(tenantId);
+
+        if (tenant == null)
+            return NotFound();
+
+        tenant.AutoDeleteNotDocumentedAfterDays = request.Days;
+        tenant.EnableAutoDeleteNotDocumented = request.Enabled;
+
+        await _context.SaveChangesAsync();
+
+        return Ok();
+    }
+
+    [HttpPost("run-cleanup")]
+    public async Task<IActionResult> RunCleanup()
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        var clientsToDelete = _context.Clients
+            .Where(c =>
+                c.TenantId == tenantId &&
+                !c.IsDocumented)
+            .ToList();
+
+        _context.Clients.RemoveRange(clientsToDelete);
+
+        await _context.SaveChangesAsync();
+
+        return Ok();
     }
 
     // POST /api/tenant/logo (לא שיניתי כלום)
@@ -175,7 +216,9 @@ public class TenantController : ControllerBase
                 tenant.LogoUrl,
                 tenant.Plan.ToString(),
                 tenant.SubscriptionStatus.ToString(),
-                tenant.CreatedAt
+                tenant.CreatedAt,
+                tenant.AutoDeleteNotDocumentedAfterDays,
+                tenant.EnableAutoDeleteNotDocumented
             ));
         }
         catch (Exception ex)

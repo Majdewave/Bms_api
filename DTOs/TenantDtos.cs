@@ -7,5 +7,12 @@ public record TenantResponse(
     string? LogoUrl,
     string Plan,
     string SubscriptionStatus,
-    DateTime CreatedAt
+    DateTime CreatedAt,
+    int AutoDeleteNotDocumentedAfterDays,
+    bool EnableAutoDeleteNotDocumented
+);
+
+public record AutoDeleteSettingsRequest(
+    int Days,
+    bool Enabled
 );

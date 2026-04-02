@@ -13,6 +13,7 @@ public class Client : ITenantEntity
     public string? Phone { get; set; }
     public string? Address { get; set; }
     public string? InternalNote { get; set; }
+    public bool IsDocumented { get; set; } = true;
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

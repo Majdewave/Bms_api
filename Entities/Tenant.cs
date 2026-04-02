@@ -21,6 +21,8 @@ public class Tenant
 
     public int UserLimit { get; set; } = 10;
     public int MessageLimit { get; set; } = 100;
+    public int AutoDeleteNotDocumentedAfterDays { get; set; } = 1;
+    public bool EnableAutoDeleteNotDocumented { get; set; } = true;
 
     public string? StripeCustomerId { get; set; }
     public string? StripeSubscriptionId { get; set; }
