@@ -171,6 +171,32 @@ public class TenantController : ControllerBase
         return Ok(new { deleted = clientsToDelete.Count });
     }
 
+    [HttpDelete("logo")]
+    public async Task<IActionResult> DeleteLogo()
+    {
+        var tenantId = _tenantContext.TenantId;
+
+        var tenant = await _context.Tenants
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
+
+        if (tenant == null)
+            return NotFound();
+
+        if (!string.IsNullOrEmpty(tenant.LogoUrl))
+        {
+            var filePath = Path.Combine("wwwroot", tenant.LogoUrl.TrimStart('/'));
+
+            if (System.IO.File.Exists(filePath))
+                System.IO.File.Delete(filePath);
+        }
+
+        tenant.LogoUrl = null;
+
+        await _context.SaveChangesAsync();
+
+        return Ok();
+    }
+
     // POST /api/tenant/logo (לא שיניתי כלום)
     [HttpPost("logo")]
     public async Task<IActionResult> UploadLogo(IFormFile file)
