@@ -46,7 +46,9 @@ public class ClientsController : ControllerBase
                 .Where(p => p.ClientId == c.Id)
                 .OrderByDescending(p => p.Date)
                 .Select(p => (DateTime?)p.Date)
-                .FirstOrDefault()
+                .FirstOrDefault(),
+            _context.Appointments
+                .Any(a => a.ClientId == c.Id && !a.IsDocumented)
         ))
             .ToListAsync();
         return Ok(clients);
@@ -73,7 +75,9 @@ public class ClientsController : ControllerBase
                     .Where(p => p.ClientId == c.Id)
                     .OrderByDescending(p => p.Date)
                     .Select(p => (DateTime?)p.Date)
-                    .FirstOrDefault()
+                    .FirstOrDefault(),
+                _context.Appointments
+                    .Any(a => a.ClientId == c.Id && !a.IsDocumented)
             ))
             .FirstOrDefaultAsync();
         if (client == null)
@@ -116,7 +120,8 @@ public class ClientsController : ControllerBase
             client.IsActive,
             client.CreatedAt,
             client.Status,
-            null // LastVisit not present
+            null, // LastVisit not present
+            client.IsNotDocumented
         ));
     }
 

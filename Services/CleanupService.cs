@@ -35,13 +35,20 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 
             var days = tenant.AutoDeleteNotDocumentedAfterDays;
             List<Client> clientsToDelete;
+            var clientIdsToDelete = context.Appointments
+                .Where(a =>
+                    a.TenantId == tenant.Id &&
+                    !a.IsDocumented)
+                .Select(a => a.ClientId)
+                .Distinct()
+                .ToList();
 
             if (days == 0)
             {
                 clientsToDelete = context.Clients
                     .Where(c =>
                         c.TenantId == tenant.Id &&
-                        !c.IsDocumented)
+                        clientIdsToDelete.Contains(c.Id))
                     .ToList();
             }
             else
@@ -51,7 +58,7 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
                 clientsToDelete = context.Clients
                     .Where(c =>
                         c.TenantId == tenant.Id &&
-                        !c.IsDocumented &&
+                        clientIdsToDelete.Contains(c.Id) &&
                         c.CreatedAt <= cutoff)
                     .ToList();
             }

@@ -30,5 +30,6 @@ public record ClientResponse(
     bool IsActive,
     DateTime CreatedAt,
     string Status,
-    DateTime? LastVisit
+    DateTime? LastVisit,
+    bool IsNotDocumented
 );

@@ -46,7 +46,8 @@ public class TenantController : ControllerBase
             tenant.Phone,
             tenant.WhatsApp,
             tenant.LogoUrl,
-            tenant.AutoDeleteNotDocumentedAfterDays
+            tenant.AutoDeleteNotDocumentedAfterDays,
+            tenant.EnableAutoDeleteNotDocumented
         });
     }
 
@@ -151,19 +152,23 @@ public class TenantController : ControllerBase
     [HttpPost("run-cleanup")]
     public async Task<IActionResult> RunCleanup()
     {
-        var tenantId = _tenantContext.TenantId;
+        var clientIdsToDelete = _context.Appointments
+            .IgnoreQueryFilters()
+            .Where(a => !a.IsDocumented)
+            .Select(a => a.ClientId)
+            .Distinct()
+            .ToList();
 
         var clientsToDelete = _context.Clients
-            .Where(c =>
-                c.TenantId == tenantId &&
-                !c.IsDocumented)
+            .IgnoreQueryFilters()
+            .Where(c => clientIdsToDelete.Contains(c.Id))
             .ToList();
 
         _context.Clients.RemoveRange(clientsToDelete);
 
         await _context.SaveChangesAsync();
 
-        return Ok();
+        return Ok(new { deleted = clientsToDelete.Count });
     }
 
     // POST /api/tenant/logo (לא שיניתי כלום)

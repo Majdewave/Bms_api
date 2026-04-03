@@ -335,6 +335,23 @@ public class AppointmentsController : ControllerBase
        if (request.IsDocumented.HasValue)
         {
             appointment.IsDocumented = request.IsDocumented.Value;
+
+            var appointmentClient = await _context.Clients.FindAsync(appointment.ClientId);
+
+            if (appointmentClient != null)
+            {
+                if (!appointment.IsDocumented)
+                {
+                    appointmentClient.IsNotDocumented = true;
+                }
+                else
+                {
+                    var hasUndocumented = _context.Appointments
+                        .Any(a => a.ClientId == appointment.ClientId && !a.IsDocumented);
+
+                    appointmentClient.IsNotDocumented = hasUndocumented;
+                }
+            }
         }
 
         await _context.SaveChangesAsync();
