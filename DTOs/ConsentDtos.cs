@@ -55,9 +55,18 @@ public class ConsentResponse
     [JsonPropertyName("clientSignatureUrl")]
     public string? ClientSignatureUrl { get; set; }
 
+    [JsonPropertyName("doctorSignatureUrl")]
+    public string? DoctorSignatureUrl { get; set; }
+
     [JsonPropertyName("signedAt")]
     public DateTime SignedAt { get; set; }
 
     [JsonPropertyName("createdAt")]
     public DateTime CreatedAt { get; set; }
+
+    [JsonPropertyName("templateName")]
+    public string? TemplateName { get; set; }
+
+    [JsonPropertyName("serviceName")]
+    public string? ServiceName { get; set; }
 }

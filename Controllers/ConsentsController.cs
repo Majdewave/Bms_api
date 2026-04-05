@@ -127,6 +127,13 @@ public class ConsentsController : ControllerBase
         if (appointment == null)
             return NotFound("Appointment not found");
 
+        ConsentTemplate? template = null;
+        if (request.TemplateId != Guid.Empty)
+        {
+            template = await _context.ConsentTemplates
+                .FirstOrDefaultAsync(t => t.Id == request.TemplateId);
+        }
+
         Service? service = null;
         if (appointment?.ServiceId.HasValue == true)
         {
@@ -145,6 +152,8 @@ public class ConsentsController : ControllerBase
             TenantId = _tenant.TenantId,
             ClientId = request.ClientId,
             AppointmentId = appointment.Id,
+            TemplateId = request.TemplateId == Guid.Empty ? null : request.TemplateId,
+            ServiceId = service?.Id,
             ConsentContent = ReplaceConsentPlaceholders(request.ConsentContent, service?.Name),
             ClientSignatureUrl = clientSignatureUrl,
             SignedAt = DateTime.UtcNow,
@@ -154,25 +163,106 @@ public class ConsentsController : ControllerBase
         _context.ClientConsents.Add(consent);
         await _context.SaveChangesAsync();
 
-        return Ok(ToResponse(consent));
+        return Ok(new ConsentResponse
+        {
+            Id = consent.Id,
+            ClientId = consent.ClientId,
+            AppointmentId = consent.AppointmentId,
+            ConsentContent = consent.ConsentContent,
+            ClientSignatureUrl = consent.ClientSignatureUrl,
+            SignedAt = consent.SignedAt,
+            CreatedAt = consent.CreatedAt,
+            TemplateName = template?.Name,
+            ServiceName = service?.Name
+        });
     }
 
     [HttpGet("client/{clientId}")]
     public async Task<IActionResult> GetByClient(Guid clientId)
     {
         var consents = await _context.ClientConsents
+            .Include(c => c.Appointment)
+                .ThenInclude(a => a.Service)
+            .Include(c => c.Appointment)
+                .ThenInclude(a => a.Staff)
+                    .ThenInclude(s => s.User)
             .Where(c => c.ClientId == clientId)
             .OrderByDescending(c => c.SignedAt)
+            .Select(c => new ConsentResponse
+            {
+                Id = c.Id,
+                ClientId = c.ClientId,
+                AppointmentId = c.AppointmentId,
+                ConsentContent = c.ConsentContent,
+                ClientSignatureUrl = c.ClientSignatureUrl,
+                DoctorSignatureUrl = c.Appointment != null
+                    && c.Appointment.Staff != null
+                    && c.Appointment.Staff.User != null
+                    && c.Appointment.Staff.User.UseStamp
+                    ? c.Appointment.Staff.User.StampUrl
+                    : null,
+                SignedAt = c.SignedAt,
+                CreatedAt = c.CreatedAt,
+                ServiceName = c.Appointment != null && c.Appointment.Service != null
+                    ? c.Appointment.Service.Name
+                    : null,
+                TemplateName = _context.ConsentTemplates
+                    .Where(t => t.ServiceId == c.Appointment.ServiceId)
+                    .OrderByDescending(t => t.CreatedAt)
+                    .Select(t => t.Name)
+                    .FirstOrDefault()
+            })
             .ToListAsync();
 
-        var response = consents.Select(ToResponse).ToList();
-        return Ok(response);
+        return Ok(consents);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var consent = await _context.ClientConsents
+            .Include(c => c.Appointment)
+                .ThenInclude(a => a.Service)
+            .Include(c => c.Appointment)
+                .ThenInclude(a => a.Staff)
+                    .ThenInclude(s => s.User)
+            .Where(c => c.Id == id)
+            .Select(c => new ConsentResponse
+            {
+                Id = c.Id,
+                ClientId = c.ClientId,
+                AppointmentId = c.AppointmentId,
+                ConsentContent = c.ConsentContent,
+                ClientSignatureUrl = c.ClientSignatureUrl,
+                DoctorSignatureUrl = c.Appointment != null
+                    && c.Appointment.Staff != null
+                    && c.Appointment.Staff.User != null
+                    && c.Appointment.Staff.User.UseStamp
+                    ? c.Appointment.Staff.User.StampUrl
+                    : null,
+                SignedAt = c.SignedAt,
+                CreatedAt = c.CreatedAt,
+                ServiceName = c.Appointment != null && c.Appointment.Service != null
+                    ? c.Appointment.Service.Name
+                    : null,
+                TemplateName = _context.ConsentTemplates
+                    .Where(t => t.ServiceId == c.Appointment.ServiceId)
+                    .OrderByDescending(t => t.CreatedAt)
+                    .Select(t => t.Name)
+                    .FirstOrDefault()
+            })
+            .FirstOrDefaultAsync();
+
+        if (consent == null)
+            return NotFound();
+
+        return Ok(consent);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var consent = await _context.ClientConsents.FirstOrDefaultAsync(c => c.Id == id);
+        var consent = await _context.ClientConsents.FindAsync(id);
         if (consent == null)
             return NotFound();
 

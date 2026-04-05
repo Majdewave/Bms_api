@@ -11,6 +11,12 @@ public class ClientConsent : ITenantEntity
     public Guid AppointmentId { get; set; }
     public Appointment Appointment { get; set; } = null!;
 
+    public Guid? TemplateId { get; set; }
+    public ConsentTemplate? Template { get; set; }
+
+    public Guid? ServiceId { get; set; }
+    public Service? Service { get; set; }
+
     public string ConsentContent { get; set; } = string.Empty;
     public string? ClientSignatureUrl { get; set; }
 
