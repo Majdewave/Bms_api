@@ -237,37 +237,81 @@ public class ConsentsController : ControllerBase
                         section.Item().AlignRight().Text($"שם מטופל: {client.FullName}");
                         section.Item().AlignRight().Text($"שירות: {appointment.Service?.Name ?? string.Empty}");
                         section.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-                        section.Item().PaddingTop(10).AlignRight().Text(consent.ConsentContent).FontSize(12);
+                        section.Item().PaddingTop(10).AlignRight().Column(col =>
+                        {
+                            col.Spacing(6);
+
+                            var content = consent.ConsentContent;
+
+                            if (content.Contains("<h2>"))
+                            {
+                                var title = ExtractBetween(content, "<h2>", "</h2>");
+                                if (!string.IsNullOrWhiteSpace(title))
+                                {
+                                    col.Item().Text(title)
+                                        .FontSize(16)
+                                        .Bold()
+                                        .AlignRight();
+                                }
+                            }
+
+                            var paragraphs = ExtractAll(content, "<p>", "</p>");
+
+                            foreach (var p in paragraphs)
+                            {
+                                if (!string.IsNullOrWhiteSpace(p))
+                                {
+                                    col.Item().AlignRight().Text(text =>
+                                    {
+                                        var parts = SplitByStrongTags(p);
+
+                                        foreach (var part in parts)
+                                        {
+                                            if (part.isBold)
+                                            {
+                                                text.Span(part.text).FontSize(12).Bold();
+                                            }
+                                            else
+                                            {
+                                                text.Span(part.text).FontSize(12);
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        });
                     });
 
                     col.Item().PaddingTop(20).Row(row =>
                     {
-                        row.RelativeItem().AlignRight().Column(sig =>
+                        row.RelativeItem().AlignCenter().Column(sig =>
                         {
-                            sig.Item().AlignRight().Text("חתימת מטופל").Bold();
+                            sig.Spacing(6);
+                            sig.Item().AlignCenter().Text("חתימת מטופל").Bold();
                             if (clientSignatureBytes != null)
                             {
-                                sig.Item().AlignRight().Width(150).Height(70).Image(clientSignatureBytes).FitArea();
+                                sig.Item().AlignCenter().Width(120).Height(50).Image(clientSignatureBytes).FitArea();
                             }
                             else
                             {
-                                sig.Item().AlignRight().Width(150).LineHorizontal(1).LineColor(Colors.Grey.Medium);
+                                sig.Item().AlignCenter().Width(120).LineHorizontal(1).LineColor(Colors.Grey.Medium);
                             }
                         });
 
-                        row.RelativeItem().AlignRight().Column(sig =>
+                        row.RelativeItem().AlignCenter().Column(sig =>
                         {
-                            sig.Item().AlignRight().Text("חותמת רופא").Bold();
+                            sig.Spacing(6);
+                            sig.Item().AlignCenter().Text("חותמת רופא").Bold();
                             if (doctorStampBytes != null)
                             {
-                                sig.Item().AlignRight().Width(150).Height(70).Image(doctorStampBytes).FitArea();
+                                sig.Item().AlignCenter().Width(120).Height(50).Image(doctorStampBytes).FitArea();
                             }
                             else
                             {
-                                sig.Item().AlignRight().Width(150).LineHorizontal(1).LineColor(Colors.Grey.Medium);
+                                sig.Item().AlignCenter().Width(120).LineHorizontal(1).LineColor(Colors.Grey.Medium);
                             }
 
-                            sig.Item().PaddingTop(6).AlignRight().Text(doctor?.FullName ?? string.Empty).FontSize(11);
+                            sig.Item().PaddingTop(6).AlignCenter().Text(doctor?.FullName ?? string.Empty).FontSize(11);
                         });
                     });
                 });
@@ -291,6 +335,75 @@ public class ConsentsController : ControllerBase
     private static string ReplaceConsentPlaceholders(string template, string? serviceName)
     {
         return template.Replace("{{serviceName}}", serviceName ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ExtractBetween(string text, string start, string end)
+    {
+        var startIndex = text.IndexOf(start);
+        var endIndex = text.IndexOf(end);
+
+        if (startIndex == -1 || endIndex == -1)
+            return string.Empty;
+
+        startIndex += start.Length;
+        return text.Substring(startIndex, endIndex - startIndex);
+    }
+
+    private static List<string> ExtractAll(string text, string start, string end)
+    {
+        var result = new List<string>();
+        int index = 0;
+
+        while (true)
+        {
+            var startIndex = text.IndexOf(start, index);
+            if (startIndex == -1) break;
+
+            var endIndex = text.IndexOf(end, startIndex);
+            if (endIndex == -1) break;
+
+            startIndex += start.Length;
+            result.Add(text.Substring(startIndex, endIndex - startIndex));
+
+            index = endIndex + end.Length;
+        }
+
+        return result;
+    }
+
+    private static List<(string text, bool isBold)> SplitByStrongTags(string input)
+    {
+        var result = new List<(string, bool)>();
+
+        int index = 0;
+
+        while (index < input.Length)
+        {
+            var start = input.IndexOf("<strong>", index);
+
+            if (start == -1)
+            {
+                result.Add((input.Substring(index), false));
+                break;
+            }
+
+            if (start > index)
+            {
+                result.Add((input.Substring(index, start - index), false));
+            }
+
+            var end = input.IndexOf("</strong>", start);
+
+            if (end == -1)
+                break;
+
+            var boldText = input.Substring(start + 8, end - (start + 8));
+            result.Add((boldText, true));
+
+            index = end + 9;
+        }
+
+        return result;
     }
 
     private byte[]? LoadFileBytesFromUrlOrPath(string? rawPath)
