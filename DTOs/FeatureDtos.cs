@@ -4,5 +4,6 @@ public record UpdateTenantFeaturesRequest(
     bool ReportsEnabled,
     bool InvoicesEnabled,
     bool PrescriptionsEnabled,
-    bool DrugsEnabled
+    bool DrugsEnabled,
+    bool BeforeAfterPhotosEnabled
 );

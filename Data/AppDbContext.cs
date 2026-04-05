@@ -41,6 +41,7 @@ public class AppDbContext : DbContext
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
     public DbSet<Prescription> Prescriptions { get; set; } = null!;
     public DbSet<ClientConsent> ClientConsents { get; set; } = null!;
+    public DbSet<ClientTreatmentPhoto> ClientTreatmentPhotos { get; set; } = null!;
     public DbSet<ConsentTemplate> ConsentTemplates { get; set; } = null!;
     public DbSet<Drug> Drugs { get; set; } = null!;
     public DbSet<Business> Businesses { get; set; } = null!;
@@ -92,6 +93,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ClientConsent>()
             .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<ClientTreatmentPhoto>()
+            .HasQueryFilter(p => _tenantContext.TenantId == Guid.Empty || p.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<ConsentTemplate>()
             .HasQueryFilter(t => _tenantContext.TenantId == Guid.Empty || t.TenantId == _tenantContext.TenantId);
 
@@ -141,6 +145,16 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<TenantFeatures>()
             .Property(tf => tf.PrescriptionsEnabled)
             .HasDefaultValue(false);
+
+        modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.BeforeAfterPhotosEnabled)
+            .HasDefaultValue(true);
+
+        modelBuilder.Entity<ClientTreatmentPhoto>()
+            .HasOne(p => p.Client)
+            .WithMany()
+            .HasForeignKey(p => p.ClientId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<TenantFeatures>()
             .HasOne(tf => tf.Tenant)

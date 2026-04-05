@@ -37,6 +37,10 @@ public class TenantController : ControllerBase
         var tenant = await _context.Tenants
             .FirstOrDefaultAsync(t => t.Id == tenantId);
 
+        var features = await _context.TenantFeatures
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(tf => tf.TenantId == tenantId);
+
         if (tenant == null)
             return NotFound();
 
@@ -47,7 +51,8 @@ public class TenantController : ControllerBase
             tenant.WhatsApp,
             tenant.LogoUrl,
             tenant.AutoDeleteNotDocumentedAfterDays,
-            tenant.EnableAutoDeleteNotDocumented
+            tenant.EnableAutoDeleteNotDocumented,
+            beforeAfterPhotosEnabled = features?.BeforeAfterPhotosEnabled ?? true
         });
     }
 
