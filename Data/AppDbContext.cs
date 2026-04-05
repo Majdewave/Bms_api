@@ -40,6 +40,8 @@ public class AppDbContext : DbContext
     public DbSet<Invoice> Invoices { get; set; } = null!;
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
     public DbSet<Prescription> Prescriptions { get; set; } = null!;
+    public DbSet<ClientConsent> ClientConsents { get; set; } = null!;
+    public DbSet<ConsentTemplate> ConsentTemplates { get; set; } = null!;
     public DbSet<Drug> Drugs { get; set; } = null!;
     public DbSet<Business> Businesses { get; set; } = null!;
     // Removed Staffs DbSet
@@ -86,6 +88,12 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Note>()
             .HasQueryFilter(n => _tenantContext.TenantId == Guid.Empty || n.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ClientConsent>()
+            .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ConsentTemplate>()
+            .HasQueryFilter(t => _tenantContext.TenantId == Guid.Empty || t.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<ClientFile>()
             .HasQueryFilter(f => _tenantContext.TenantId == Guid.Empty || f.TenantId == _tenantContext.TenantId);
