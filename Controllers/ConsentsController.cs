@@ -41,13 +41,15 @@ public class ConsentsController : ControllerBase
         if (!serviceExists)
             return NotFound("Service not found");
 
+        var normalizedTemplateContent = NormalizeTemplateToHebrewOnly(request.Content);
+
         var template = new ConsentTemplate
         {
             Id = Guid.NewGuid(),
             TenantId = _tenant.TenantId,
             ServiceId = request.ServiceId,
             Name = request.Name ?? request.Title ?? string.Empty,
-            Content = request.Content,
+            Content = normalizedTemplateContent,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -239,45 +241,62 @@ public class ConsentsController : ControllerBase
                         section.Item().PaddingTop(10).LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
                         section.Item().PaddingTop(10).AlignRight().Column(col =>
                         {
-                            col.Spacing(6);
+                            col.Spacing(8);
 
-                            var content = consent.ConsentContent;
+                            // DEBUG: Log raw database content
+                            Console.WriteLine("=== RAW CONSENT CONTENT FROM DB ===");
+                            Console.WriteLine(consent.ConsentContent);
+                            Console.WriteLine("=== END CONTENT ===");
+
+                            var content = (consent.ConsentContent ?? string.Empty)
+                                .Replace("&quot;", "\"")
+                                .Replace("&nbsp;", " ")
+                                .Replace('\u00A0', ' ');
+
+                            content = NormalizeConsentStructure(
+                                content,
+                                client.FullName,
+                                appointment.Service?.Name ?? string.Empty,
+                                consent.SignedAt);
 
                             if (content.Contains("<h2>"))
                             {
                                 var title = ExtractBetween(content, "<h2>", "</h2>");
-                                if (!string.IsNullOrWhiteSpace(title))
+                                var fixedTitle = FixMixedText(title).Trim();
+                                if (!string.IsNullOrWhiteSpace(fixedTitle))
                                 {
-                                    col.Item().Text(title)
-                                        .FontSize(16)
+                                    col.Item().AlignRight().Text(fixedTitle)
+                                        .FontSize(18)
                                         .Bold()
+                                        .DirectionFromRightToLeft()
                                         .AlignRight();
                                 }
                             }
 
                             var paragraphs = ExtractAll(content, "<p>", "</p>");
+                            if (paragraphs.Count == 0 && !string.IsNullOrWhiteSpace(content))
+                                paragraphs.Add(content);
 
                             foreach (var p in paragraphs)
                             {
-                                if (!string.IsNullOrWhiteSpace(p))
+                                var parts = SplitByStrongTags(p);
+                                col.Item().AlignRight().Text(text =>
                                 {
-                                    col.Item().AlignRight().Text(text =>
+                                    foreach (var part in parts)
                                     {
-                                        var parts = SplitByStrongTags(p);
+                                        var fixedText = FixMixedText(part.text
+                                            .Replace("&quot;", "\"")
+                                            .Replace("&nbsp;", " ")
+                                            .Replace('\u00A0', ' '));
 
-                                        foreach (var part in parts)
-                                        {
-                                            if (part.isBold)
-                                            {
-                                                text.Span(part.text).FontSize(12).Bold();
-                                            }
-                                            else
-                                            {
-                                                text.Span(part.text).FontSize(12);
-                                            }
-                                        }
-                                    });
-                                }
+                                        if (string.IsNullOrWhiteSpace(fixedText))
+                                            continue;
+
+                                        var span = text.Span(fixedText).FontSize(13).DirectionFromRightToLeft();
+                                        if (part.isBold)
+                                            span.Bold();
+                                    }
+                                });
                             }
                         });
                     });
@@ -286,7 +305,7 @@ public class ConsentsController : ControllerBase
                     {
                         row.RelativeItem().AlignCenter().Column(sig =>
                         {
-                            sig.Spacing(6);
+                            sig.Spacing(4);
                             sig.Item().AlignCenter().Text("חתימת מטופל").Bold();
                             if (clientSignatureBytes != null)
                             {
@@ -296,6 +315,7 @@ public class ConsentsController : ControllerBase
                             {
                                 sig.Item().AlignCenter().Width(120).LineHorizontal(1).LineColor(Colors.Grey.Medium);
                             }
+                            sig.Item().PaddingTop(6).AlignCenter().Text(client.FullName).FontSize(10);
                         });
 
                         row.RelativeItem().AlignCenter().Column(sig =>
@@ -373,37 +393,76 @@ public class ConsentsController : ControllerBase
 
     private static List<(string text, bool isBold)> SplitByStrongTags(string input)
     {
-        var result = new List<(string, bool)>();
-
-        int index = 0;
+        var result = new List<(string text, bool isBold)>();
+        var index = 0;
 
         while (index < input.Length)
         {
-            var start = input.IndexOf("<strong>", index);
+            var start = input.IndexOf("<strong>", index, StringComparison.OrdinalIgnoreCase);
 
             if (start == -1)
             {
-                result.Add((input.Substring(index), false));
+                result.Add((input[index..], false));
                 break;
             }
 
             if (start > index)
-            {
                 result.Add((input.Substring(index, start - index), false));
+
+            var end = input.IndexOf("</strong>", start, StringComparison.OrdinalIgnoreCase);
+            if (end == -1)
+            {
+                result.Add((input[start..], false));
+                break;
             }
 
-            var end = input.IndexOf("</strong>", start);
+            var boldStart = start + "<strong>".Length;
+            result.Add((input.Substring(boldStart, end - boldStart), true));
 
-            if (end == -1)
-                break;
-
-            var boldText = input.Substring(start + 8, end - (start + 8));
-            result.Add((boldText, true));
-
-            index = end + 9;
+            index = end + "</strong>".Length;
         }
 
         return result;
+    }
+
+    private static string NormalizeConsentStructure(string input, string clientName, string serviceName, DateTime date)
+    {
+        var hebrewSentence = $"הנני {clientName} נותן/ת הסכמתי לקבל טיפול {serviceName} בתאריך {date:yyyy-MM-dd}";
+
+        return input
+            .Replace("I, {{clientName}}, consent to receive treatment {{serviceName}} on {{date}}", hebrewSentence, StringComparison.OrdinalIgnoreCase)
+            .Replace("I, {{clientName}}, consent to receive...", hebrewSentence, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeTemplateToHebrewOnly(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        var hebrewTemplate = "הנני {{clientName}} נותן/ת הסכמתי לקבל טיפול {{serviceName}} בתאריך {{date}}";
+
+        return input
+            .Replace("&quot;", "\"")
+            .Replace("&nbsp;", " ")
+            .Replace('\u00A0', ' ')
+            .Replace("I, {{clientName}}, consent to receive treatment {{serviceName}} on {{date}}", hebrewTemplate, StringComparison.OrdinalIgnoreCase)
+            .Replace("I, {{clientName}}, consent to receive...", hebrewTemplate, StringComparison.OrdinalIgnoreCase)
+            .Trim();
+    }
+
+    private static string FixMixedText(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        var RLM = "\u200F";
+
+        return RLM + input
+            .Replace("IV", RLM + "IV")
+            .Replace(":", ":" + RLM)
+            .Replace("/", "/" + RLM)
+            .Replace(",", "," + RLM)
+            .Replace(".", "." + RLM);
     }
 
     private byte[]? LoadFileBytesFromUrlOrPath(string? rawPath)
