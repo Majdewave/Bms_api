@@ -1,0 +1,12 @@
+{
+  "region": "us-east-1",
+  "configuration": "Debug",
+  "framework": "net8.0",
+  "self-contained": true,
+  "application": "Clienta",
+  "environment": "Clienta-env",
+  "enable-xray": false,
+  "enhanced-health-type": "basic",
+  "additional-options": "",
+  "proxy-server": "nginx"
+}

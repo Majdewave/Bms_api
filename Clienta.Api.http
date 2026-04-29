@@ -1,0 +1,6 @@
+@Clienta.Api_HostAddress = https://clienta.digitalpenpro.com
+
+GET {{Clienta.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

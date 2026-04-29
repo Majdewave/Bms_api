@@ -1,0 +1,21 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Backend (API)",
+			"type": "shell",
+			"command": "dotnet run",
+			"isBackground": true,
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build .NET Project",
+			"type": "shell",
+			"command": "dotnet build",
+			"group": "build"
+		}
+	]
+}

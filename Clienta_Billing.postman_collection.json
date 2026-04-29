@@ -1,0 +1,312 @@
+{
+  "info": {
+    "name": "Clienta API - Billing & Stripe",
+    "description": "Complete billing and Stripe integration endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"your_password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Billing",
+      "item": [
+        {
+          "name": "Get Billing Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/billing/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upgrade to Basic Monthly",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planType\": 1,\n  \"billingCycle\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/upgrade",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "upgrade"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upgrade to Basic Yearly (Save 2 months!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planType\": 1,\n  \"billingCycle\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/upgrade",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "upgrade"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upgrade to Pro Monthly",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planType\": 2,\n  \"billingCycle\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/upgrade",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "upgrade"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upgrade to Pro Yearly (Save 2 months!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planType\": 2,\n  \"billingCycle\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/upgrade",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "upgrade"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Plan (Monthly to Yearly)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPlan\": 1,\n  \"newCycle\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/change-plan",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "change-plan"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Plan (Basic to Pro)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPlan\": 2,\n  \"newCycle\": 0\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/change-plan",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "change-plan"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Downgrade Plan (Pro to Basic)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPlan\": 1,\n  \"newCycle\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/billing/change-plan",
+              "host": ["{{base_url}}"],
+              "path": ["api", "billing", "change-plan"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard with Upgrade Recommendations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwt_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/dashboard",
+              "host": ["{{base_url}}"],
+              "path": ["api", "dashboard"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stripe Webhook",
+      "item": [
+        {
+          "name": "Handle Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Stripe-Signature",
+                "value": "{{stripe_signature}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_test_webhook\",\n  \"object\": \"event\",\n  \"type\": \"checkout.session.completed\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/stripe/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "stripe", "webhook"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://clienta.digitalpenpro.com",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "stripe_signature",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

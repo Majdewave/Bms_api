@@ -1,0 +1,14 @@
+namespace Clienta.Api.Entities;
+
+public class TenantFeatures : ITenantEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
+    public bool ReportsEnabled { get; set; } = true;
+    public bool InvoicesEnabled { get; set; } = true;
+    public bool PrescriptionsEnabled { get; set; } = false;
+    public bool DrugsEnabled { get; set; } = false;
+    public bool BeforeAfterPhotosEnabled { get; set; } = true;
+
+    public virtual Tenant Tenant { get; set; } = default!;
+}
