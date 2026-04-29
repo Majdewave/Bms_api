@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Clienta.Api.Data;
 
-namespace Clienta.Api.Authorization;
+namespace Clienta.Api.Authorization; 
 
 public class PermissionHandler : AuthorizationHandler<PermissionRequirement>
 {
