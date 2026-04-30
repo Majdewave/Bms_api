@@ -46,6 +46,7 @@ public class AppDbContext : DbContext
     public DbSet<Drug> Drugs { get; set; } = null!;
     public DbSet<Business> Businesses { get; set; } = null!;
     // Removed Staffs DbSet
+    public DbSet<VisitSummary> VisitSummaries { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
