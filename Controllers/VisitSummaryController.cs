@@ -75,7 +75,17 @@ namespace Clienta.Api.Controllers
         [HttpGet("{id}/pdf")]
         public async Task<IActionResult> GetPdf(Guid id)
         {
-            var summary = await _context.VisitSummaries.FindAsync(id);
+            var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+
+            if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
+                return Unauthorized();
+
+            var summary = await _context.VisitSummaries
+                .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId);
+
+            if (summary == null)
+                return NotFound();
+
             if (summary == null)
                 return NotFound();
 
@@ -95,36 +105,195 @@ namespace Clienta.Api.Controllers
                 stampBytes = LoadFileBytesFromUrlOrPath(businessUser.User.StampUrl);
             }
 
-            var pdfBytes = GenerateVisitSummaryPdf(summary, client.FullName, stampBytes);
+             tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+
+            byte[]? logoBytes = null;
+
+            if (tenantClaim != null)
+            {
+                var logoUrl = $"https://clienta.digitalpenpro.com/uploads/tenants/{tenantClaim.Value}/logo.png?v={DateTime.UtcNow.Ticks}";
+
+                try
+                {
+                    using var http = new HttpClient();
+                    logoBytes = await http.GetByteArrayAsync(logoUrl);
+                }
+                catch { }
+            }
+
+            var pdfBytes = GenerateVisitSummaryPdf(summary,client.FullName,client.IdNumber,client.Phone, businessUser?.User?.FullName ?? "", logoBytes,stampBytes); 
             return File(pdfBytes, "application/pdf", $"VisitSummary_{summary.Id}.pdf");
         }
 
-        private byte[] GenerateVisitSummaryPdf(VisitSummary summary, string clientName, byte[]? stampBytes)
+        private byte[] GenerateVisitSummaryPdf(VisitSummary summary, string clientName,string? idNumber,
+         string? phone,
+         string doctorName,
+         byte[]? logoBytes,
+         byte[]? stampBytes)
         {
             var document = Document.Create(container =>
             {
                 container.Page(page =>
                 {
-                    page.Margin(30);
-                    page.Content().Column(column =>
+                    page.Margin(20);
+
+                    page.Content().Column(col =>
                     {
-                        column.Item().Text("סיכום ביקור").Bold().FontSize(18);
-                        column.Item().Text($"תאריך: {summary.CreatedAt:dd/MM/yyyy}");
-                        column.Item().Text($"שם מטופל: {clientName}");
-                        column.Item().Text("בדיקה:");
-                        column.Item().Text(summary.Examination);
-                        column.Item().Text("אבחנה:");
-                        column.Item().Text(summary.Diagnosis);
-                        column.Item().Text("המלצות:");
-                        column.Item().Text(summary.Recommendations);
-                        if (stampBytes != null)
+                        // לוגו
+                        if (logoBytes != null)
+                            col.Item().AlignCenter().Height(100).Image(logoBytes);
+
+                        // שם עסק
+                        col.Item().AlignCenter()
+                            .Text("Majd Salon")
+                            .FontFamily("Noto Sans Hebrew")
+                            .FontSize(18)
+                            .Bold()
+                            .DirectionFromRightToLeft();
+
+                        col.Item().LineHorizontal(1);
+
+                        // כותרת
+                        col.Item().AlignCenter()
+                            .Text("סיכום ביקור")
+                            .FontFamily("Noto Sans Hebrew")
+                            .FontSize(24)
+                            .Bold()
+                            .DirectionFromRightToLeft();
+
+                        col.Item().PaddingVertical(10);
+
+                        // פרטי מטופל
+                        col.Item().Border(1).Padding(10).Column(details =>
                         {
-                            column.Item().PaddingTop(20).Image(stampBytes).FitArea();
+                            void Row(string label, string value)
+                            {
+                                details.Item().AlignRight().Text($"{label}: {value}")
+                                    .FontFamily("Noto Sans Hebrew")
+                                    .DirectionFromRightToLeft();
+                            }
+
+                            Row("תאריך", summary.CreatedAt.ToString("dd/MM/yyyy") ?? "");
+                            Row("שם מטופל", clientName);
+                            Row("ת.ז", idNumber ?? "");
+                            Row("טלפון", phone ?? "");
+                        });
+
+                        col.Item().PaddingVertical(10);
+
+                        // תוכן
+                        void Section(string title, string value)
+                        {
+                            col.Item().Border(1).Padding(10).Column(c =>
+                            {
+                                c.Item().AlignRight()
+                                    .Text(title)
+                                    .FontFamily("Noto Sans Hebrew")
+                                    .FontSize(16)
+                                    .Bold()
+                                    .DirectionFromRightToLeft();
+
+                                c.Item().PaddingTop(5);
+
+                                c.Item().AlignRight()
+                                    .Text(value ?? "")
+                                    .FontFamily("Noto Sans Hebrew")
+                                    .DirectionFromRightToLeft();
+                            });
                         }
+
+                        Section("בדיקה", summary.Examination);
+                        Section("אבחנה", summary.Diagnosis);
+                        Section("המלצות", summary.Recommendations);
+
+                        col.Item().PaddingVertical(20);
+
+                        // חתימה + רופא
+                        col.Item().Row(row =>
+                        {
+                            row.Spacing(40);
+
+                            // חתימה
+                            row.RelativeItem().AlignCenter().Column(c =>
+                            {
+                                c.Item().Text("חתימה")
+                                    .FontFamily("Noto Sans Hebrew")
+                                    .Bold()
+                                    .DirectionFromRightToLeft();
+
+                                if (stampBytes != null)
+                                {
+                                    c.Item().Width(120).Height(60).Image(stampBytes);
+                                }
+                                else
+                                {
+                                    c.Item().Width(120).LineHorizontal(1);
+                                }
+                            });
+
+                            // שם רופא
+                            row.RelativeItem().AlignCenter().Column(c =>
+                            {
+                                c.Item().Text("שם הרופא")
+                                    .FontFamily("Noto Sans Hebrew")
+                                    .Bold()
+                                    .DirectionFromRightToLeft();
+
+                                c.Item().Text(doctorName)
+                                    .FontFamily("Noto Sans Hebrew")
+                                    .DirectionFromRightToLeft();
+                            });
+                        });
                     });
                 });
             });
+
             return document.GeneratePdf();
+        }
+
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update(Guid id, [FromBody] VisitSummary updated)
+        {
+            var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+
+            if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
+                return Unauthorized();
+
+            var summary = await _context.VisitSummaries
+                .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId);
+
+            if (summary == null)
+                return NotFound();
+
+            summary.Examination = updated.Examination;
+            summary.Diagnosis = updated.Diagnosis;
+            summary.Recommendations = updated.Recommendations;
+
+            await _context.SaveChangesAsync();
+
+            return Ok(summary);
+        }
+
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> Delete(Guid id)
+        {
+            var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+
+            if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
+                return Unauthorized();
+
+            var summary = await _context.VisitSummaries
+                .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId);
+
+            if (summary == null)
+                return NotFound();
+
+            _context.VisitSummaries.Remove(summary);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
         }
 
         private byte[]? LoadFileBytesFromUrlOrPath(string urlOrPath)
