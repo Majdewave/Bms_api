@@ -216,18 +216,24 @@ namespace Clienta.Api.Controllers
                             // חתימה
                             row.RelativeItem().AlignCenter().Column(c =>
                             {
-                                c.Item().Text("חתימה")
+                                c.Item().AlignCenter().Text("חתימה")
                                     .FontFamily("Noto Sans Hebrew")
                                     .Bold()
                                     .DirectionFromRightToLeft();
 
-                                if (stampBytes != null)
+                                if (stampBytes != null && stampBytes.Length > 0)
                                 {
-                                    c.Item().Width(120).Height(60).Image(stampBytes);
+                                    c.Item()
+                                        .Width(120)
+                                        .Height(60)
+                                        .Image(stampBytes);
                                 }
                                 else
                                 {
-                                    c.Item().Width(120).LineHorizontal(1);
+                                    c.Item()
+                                        .Width(120)
+                                        .AlignCenter()
+                                        .LineHorizontal(1);
                                 }
                             });
 
@@ -296,14 +302,32 @@ namespace Clienta.Api.Controllers
             return NoContent();
         }
 
-        private byte[]? LoadFileBytesFromUrlOrPath(string urlOrPath)
+        private byte[]? LoadFileBytesFromUrlOrPath(string? rawPath)
         {
-            // Implement logic to load bytes from a URL or local path
-            // For now, only local file system is supported
-            if (System.IO.File.Exists(urlOrPath))
-                return System.IO.File.ReadAllBytes(urlOrPath);
-            // Optionally, add logic for URLs
-            return null;
+            if (string.IsNullOrWhiteSpace(rawPath))
+                return null;
+
+            var normalized = rawPath.Trim();
+            // אם זה path מלא
+            if (Path.IsPathRooted(normalized) && System.IO.File.Exists(normalized))
+                return System.IO.File.ReadAllBytes(normalized);
+            // אם זה URL → לקחת רק את ה־path
+            if (Uri.TryCreate(normalized, UriKind.Absolute, out var absolute))
+                normalized = absolute.LocalPath;
+
+            // לנקות prefix
+            normalized = normalized
+                .TrimStart('~')
+                .TrimStart('/')
+                .Replace('/', Path.DirectorySeparatorChar);
+
+            var webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+            var fullPath = Path.Combine(webRootPath, normalized);
+
+            if (!System.IO.File.Exists(fullPath))
+                return null;
+
+            return System.IO.File.ReadAllBytes(fullPath);
         }
     }
 }
