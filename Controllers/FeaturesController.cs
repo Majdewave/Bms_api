@@ -29,7 +29,15 @@ public class FeaturesController : ControllerBase
             return Unauthorized("Tenant not resolved");
 
         var features = await _featureService.GetAsync();
-        return Ok(features);
+        var dto = new UpdateTenantFeaturesRequest(
+            features.ReportsEnabled,
+            features.InvoicesEnabled,
+            features.PrescriptionsEnabled,
+            features.DrugsEnabled,
+            features.BeforeAfterPhotosEnabled,
+            features.VisitSummariesEnabled
+        );
+        return Ok(dto);
     }
 
     [HttpPut]
@@ -40,11 +48,13 @@ public class FeaturesController : ControllerBase
             return Unauthorized("Tenant not resolved");
 
         var features = await _featureService.GetAsync();
+
         features.ReportsEnabled = request.ReportsEnabled;
         features.InvoicesEnabled = request.InvoicesEnabled;
         features.PrescriptionsEnabled = request.PrescriptionsEnabled;
         features.DrugsEnabled = request.DrugsEnabled;
         features.BeforeAfterPhotosEnabled = request.BeforeAfterPhotosEnabled;
+        features.VisitSummariesEnabled = request.VisitSummariesEnabled;
 
         await _context.SaveChangesAsync();
 
