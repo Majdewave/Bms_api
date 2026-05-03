@@ -65,8 +65,7 @@ builder.Services.AddScoped<Clienta.Api.Repositories.AppointmentsRepository>();
 builder.Services.AddScoped<Clienta.Api.Repositories.ClientsRepository>();
 builder.Services.AddScoped<Clienta.Api.Repositories.BusinessUsersRepository>();
 
-builder.Services.AddMemoryCache();
-builder.Services.AddScoped<ResetRateLimiter>();
+
 
 // JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
