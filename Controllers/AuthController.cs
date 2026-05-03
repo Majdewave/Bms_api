@@ -1,4 +1,5 @@
-﻿using Clienta.Api.Data;
+﻿using Microsoft.Extensions.Caching.Memory;
+using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
 using Clienta.Api.Models;
@@ -18,17 +19,20 @@ public class AuthController : ControllerBase
     private readonly JwtService _jwtService;
     private readonly IAuthService _authService;
     private readonly ILogger<AuthController> _logger;
+    private readonly ResetRateLimiter _rateLimiter;
 
     public AuthController(
         AppDbContext context,
         JwtService jwtService,
         IAuthService authService,
-        ILogger<AuthController> logger)
+        ILogger<AuthController> logger,
+        ResetRateLimiter rateLimiter)
     {
         _context = context;
         _jwtService = jwtService;
         _authService = authService;
         _logger = logger;
+        _rateLimiter = rateLimiter;
     }
 
     [HttpPost("register")]
@@ -303,10 +307,23 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Email))
             return BadRequest("Email is required");
 
-        // Always return success to prevent account enumeration
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        // ✔ Rate limit
+        if (!_rateLimiter.CanRequest(request.Email, ip))
+        {
+            return Ok(new
+            {
+                message = "If an account exists, a password reset email will be sent"
+            });
+        }
+
         await _authService.RequestPasswordResetAsync(request.Email);
 
-        return Ok(new { message = "If an account exists, a password reset email will be sent" });
+        return Ok(new
+        {
+            message = "If an account exists, a password reset email will be sent"
+        });
     }
 
     /// <summary>
