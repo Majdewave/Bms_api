@@ -143,12 +143,20 @@ public class AuthService : IAuthService
         _context.UserTokens.Add(userToken);
         await _context.SaveChangesAsync();
 
-        var baseUrl = _config["App:BaseUrl"] ?? "http://localhost:5173";
+        var baseUrl = _config["App:BaseUrl"] ?? "https://clienta.digitalpenpro.com";
 
-        var resetLink = $"{baseUrl}/account/reset-password?token={rawToken}";
+        var encodedToken = Uri.EscapeDataString(rawToken);
+        var resetLink = $"{baseUrl}/reset-password?token={encodedToken}";
 
-        await _emailService.SendPasswordResetEmailAsync(email, resetLink);
-
+        try
+        {
+            await _emailService.SendPasswordResetEmailAsync(email, resetLink);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("EMAIL ERROR: " + ex.Message);
+            Console.WriteLine("RESET LINK: " + resetLink);
+        }
         return true;
     }
 
@@ -160,8 +168,9 @@ public class AuthService : IAuthService
     {
         var tokenHash = _tokenService.HashToken(token);
 
+        Console.WriteLine("TOKEN HASH: " + tokenHash);
         var userToken = await _context.UserTokens
-            .IgnoreQueryFilters()
+            //.IgnoreQueryFilters()
             .Include(ut => ut.User)
             .FirstOrDefaultAsync(ut =>
                 ut.TokenHash == tokenHash &&

@@ -3,7 +3,6 @@ using Clienta.Api.Data;
 using Clienta.Api.Hubs;
 using Clienta.Api.Middleware;
 using Clienta.Api.Services;
-using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -32,7 +31,8 @@ FontManager.RegisterFont(
     File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))
 );
 
-builder.WebHost.UseUrls("http://0.0.0.0:5000");
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
@@ -51,7 +51,7 @@ builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<AuthSeedService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<TokenService>();
-builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();
 builder.Services.AddScoped<ITenantSeedService, TenantSeedService>();
@@ -59,11 +59,14 @@ builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
 builder.Services.AddHostedService<CleanupService>();
- 
+
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<Clienta.Api.Repositories.AppointmentsRepository>();
 builder.Services.AddScoped<Clienta.Api.Repositories.ClientsRepository>();
 builder.Services.AddScoped<Clienta.Api.Repositories.BusinessUsersRepository>();
+
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ResetRateLimiter>();
 
 // JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
@@ -210,7 +213,6 @@ using (var scope = app.Services.CreateScope())
     var services = scope.ServiceProvider;
 
     var db = services.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
 
     var seeder = services.GetRequiredService<AuthSeedService>();
     await seeder.SeedAsync();

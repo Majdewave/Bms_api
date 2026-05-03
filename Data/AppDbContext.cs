@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// ...existing code...
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Clienta.Api.Entities;
 using Clienta.Api.Services;
@@ -11,6 +12,8 @@ public class AppDbContext : DbContext
 {
     private readonly ITenantContext _tenantContext;
     private readonly ILogger<AppDbContext> _logger;
+
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
     public AppDbContext(
         DbContextOptions<AppDbContext> options,
