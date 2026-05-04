@@ -1,11 +1,12 @@
-using Microsoft.AspNetCore.Mvc;
-using Stripe;
-using Stripe.Checkout;
 using Clienta.Api.Data;
 using Clienta.Api.Entities;
 using Clienta.Api.Models;
+using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Stripe;
+using Stripe.Checkout;
 
 namespace Clienta.Api.Controllers;
 
@@ -18,13 +19,16 @@ public class StripeController : ControllerBase
     private readonly IConfiguration _config;
     private readonly Clienta.Api.Services.TokenService _tokenService;
     private readonly Clienta.Api.Services.IStripeService _stripeService;
+    private readonly IEmailService _emailService;
 
-    public StripeController(AppDbContext context, IConfiguration config, Clienta.Api.Services.TokenService tokenService, Clienta.Api.Services.IStripeService stripeService)
+    public StripeController(AppDbContext context, IConfiguration config, Clienta.Api.Services.TokenService tokenService, Clienta.Api.Services.IStripeService stripeService, IEmailService emailService)
     {
         _context = context;
         _config = config;
         _tokenService = tokenService;
         _stripeService = stripeService;
+        _emailService = emailService;
+
     }
     /// <summary>
     /// Create a Stripe checkout session for Pro/Monthly
@@ -179,6 +183,21 @@ public class StripeController : ControllerBase
                 var customerId = session.CustomerId;
                 var subscriptionId = session.SubscriptionId;
                 Console.WriteLine("CONFIRM customerId: " + customerId);
+
+                // send mail to TENANT after Register
+                session = stripeEvent.Data.Object as Session;
+
+                var email = session?.CustomerDetails?.Email;
+
+                if (!string.IsNullOrEmpty(email))
+                {
+                    await _emailService.SendEmailAsync(
+                        email,
+                        "התשלום התקבל 🎉",
+                        "<h2>התשלום בוצע בהצלחה</h2><p>החשבון שלך שודרג.</p>"
+                    );
+                }
+
 
                 if (string.IsNullOrEmpty(customerId))
                     return Ok();
