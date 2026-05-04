@@ -188,15 +188,42 @@ public class StripeController : ControllerBase
                 session = stripeEvent.Data.Object as Session;
 
                 var email = session?.CustomerDetails?.Email;
+                var html = "Payment Suucceed";
 
                 if (!string.IsNullOrEmpty(email))
                 {
                     await _emailService.SendEmailAsync(
                         email,
-                        "התשלום התקבל 🎉",
-                        "<h2>התשלום בוצע בהצלחה</h2><p>החשבון שלך שודרג.</p>"
-                    );
-                }
+                         "🎉 התשלום בוצע בהצלחה",
+
+                         html = @"<div style='font-family:Arial, sans-serif; direction:rtl; background:#f9fafb; padding:40px'>
+                                <div style='max-width:500px; margin:auto; background:white; border-radius:10px; padding:30px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.05)'>
+
+                                    <p style='font-size:16px; color:#374151; margin-bottom:20px;'>
+                                        החשבון שלך שודרג בהצלחה לתוכנית פרימיום.
+                                    </p>
+
+                                    <div style='margin:25px 0;'>
+                                        <a href='https://clienta.digitalpenpro.com/login'
+                                           style='background:#2563eb; color:white; padding:12px 24px; border-radius:6px; text-decoration:none; font-size:14px;'>
+                                            מעבר למערכת
+                                        </a>
+                                    </div>
+
+                                    <hr style='margin:30px 0; border:none; border-top:1px solid #e5e7eb;' />
+
+                                    <p style='font-size:13px; color:#6b7280; margin:0;'>
+                                        תודה שבחרת ב־Clienta 💙
+                                    </p>
+
+                                    <p style='font-size:13px; color:#6b7280; margin-top:5px;'>
+                                        Clienta Team
+                                    </p>
+
+                                </div>
+                            </div>"
+                        );
+                    }
 
 
                 if (string.IsNullOrEmpty(customerId))

@@ -85,7 +85,7 @@ public class SmtpEmailService : IEmailService
     public async Task SendTrialExpiredAsync(string email, string companyName, string subdomain)
     {
         var subject = "Your Trial Has Expired";
-        var upgradeUrl = $"https://{subdomain}.yourapp.com/billing/upgrade";
+        var upgradeUrl = $"https://{subdomain}.digitalpenpro.com/billing/upgrade";
         
         var body = $@"
             <h2>Hello {companyName}!</h2>

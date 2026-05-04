@@ -43,9 +43,26 @@ public class SendGridEmailService : IEmailService
         }
     }
 
-    // לא חובה עכשיו – אבל כדי שלא יישבר
-    public Task SendEmailAsync(string to, string subject, string html)
-        => SendPasswordResetEmailAsync(to, html);
+    public async Task SendEmailAsync(string to, string subject, string html)
+    {
+        var apiKey = _config["SendGrid:ApiKey"];
+        var client = new SendGridClient(apiKey);
+
+        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var toEmail = new EmailAddress(to);
+
+        var msg = MailHelper.CreateSingleEmail(from, toEmail, subject, "", html);
+
+        var response = await client.SendEmailAsync(msg);
+
+        Console.WriteLine("SENDGRID STATUS: " + response.StatusCode);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Body.ReadAsStringAsync();
+            throw new Exception($"SendGrid error: {body}");
+        }
+    }
 
     public Task SendTrialReminderAsync(string email, string name, string subdomain, int days)
         => Task.CompletedTask;
