@@ -178,33 +178,15 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 
 // ------------ migrate sqlight DB before everything 
-using (var scope = app.Services.CreateScope())
+if (app.Environment.IsDevelopment())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-}
-
-// ---------- TEMPORARY DATA FIX ----------
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var tenant = db.Tenants.FirstOrDefault();
-
-    if (tenant != null)
+    using (var scope = app.Services.CreateScope())
     {
-        var clients = db.Clients
-            .IgnoreQueryFilters()
-            .Where(c => c.TenantId == Guid.Empty)
-            .ToList();
-
-        foreach (var client in clients)
-        {
-            client.TenantId = tenant.Id;
-        }
-
-        db.SaveChanges();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        db.Database.Migrate();
     }
-}
+} 
+
 
 
 // ---------- DATABASE + SEED ----------
@@ -223,11 +205,13 @@ using (var scope = app.Services.CreateScope())
 }
 
 
-// ---------- MIDDLEWARE ----------
 
 app.UseCors("AllowReactDev");
 
 app.UseRouting();
+
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 //if (app.Environment.IsDevelopment())
 //{
@@ -240,6 +224,8 @@ app.UseAuthentication();
 // Tenant AFTER authentication
 app.UseMiddleware<TenantMiddleware>();
 
+app.UseMiddleware<SubscriptionMiddleware>();
+
 app.UseAuthorization();
 
 var forwardOptions = new ForwardedHeadersOptions
@@ -251,17 +237,6 @@ forwardOptions.KnownNetworks.Clear();
 forwardOptions.KnownProxies.Clear();
 
 app.UseForwardedHeaders(forwardOptions);
-
-//app.UseHttpsRedirection(); // for Proxy -> https cloudflare
-
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
-//app.Use(async (context, next) =>
-//{
-//    context.Request.Host = new HostString("clienta.com");
-//    await next();
-//});
 
 app.MapControllers();
 

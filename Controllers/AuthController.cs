@@ -83,17 +83,22 @@ public class AuthController : ControllerBase
                 });
             }
 
+
             var tenant = new Tenant
             {
                 Id = Guid.NewGuid(),
                 Name = request.BusinessName,
-                Subdomain = request.BusinessName.ToLower().Replace(" ", ""),
+                Subdomain = subdomain,
                 Plan = PlanType.Trial,
                 SubscriptionStatus = SubscriptionStatus.Trialing,
                 TrialEndsAt = DateTime.UtcNow.AddDays(7),
                 IsSuspended = false,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
             };
+
+            _context.Tenants.Add(tenant);
+            await _context.SaveChangesAsync();
+
 
             var user = new User
             {
@@ -106,10 +111,15 @@ public class AuthController : ControllerBase
                 FullName = request.FullName.Trim()
             };
 
-            _context.Tenants.Add(tenant);
             _context.Users.Add(user);
-
             await _context.SaveChangesAsync();
+
+
+            await _context.Tenants
+                .Where(t => t.Id == tenant.Id)
+                .ExecuteUpdateAsync(t => t
+                    .SetProperty(x => x.OwnerUserId, user.Id));
+
 
             var token = _jwtService.GenerateToken(user, tenant.Id);
 

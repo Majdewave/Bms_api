@@ -38,4 +38,8 @@ public class Tenant
 
     // Navigation
     public ICollection<User> Users { get; set; } = new List<User>();
+    public bool IsTrialExpiredEmailSent { get; set; }
+
+    public Guid? OwnerUserId { get; set; }
+    public User OwnerUser { get; set; }
 }

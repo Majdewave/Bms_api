@@ -59,6 +59,12 @@ public class AppDbContext : DbContext
             .HasForeignKey(a => a.StaffId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<Tenant>()
+            .HasOne(t => t.OwnerUser)
+            .WithMany()
+            .HasForeignKey(t => t.OwnerUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         var drugsComparer = new ValueComparer<List<string>>(
             (left, right) =>
                 (left ?? new List<string>()).SequenceEqual(right ?? new List<string>()),
@@ -324,13 +330,12 @@ public class AppDbContext : DbContext
 
         if (tenantId == Guid.Empty)
         {
-            _logger.LogWarning("ApplyTenantId: TenantId is empty");
             return;
         }
 
         var entries = ChangeTracker
             .Entries<ITenantEntity>()
-            .Where(e => e.State == EntityState.Added);
+            .Where(e => e.State == EntityState.Added && e.Entity.TenantId == Guid.Empty);
 
         foreach (var entry in entries)
         {
