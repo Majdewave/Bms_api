@@ -50,7 +50,14 @@ public class SubscriptionMiddleware
             path.Contains("/reset-password") ||
             path.Contains("/billing") ||
             path.Contains("/plans")
+
         ))
+        {
+            await _next(context);
+            return;
+        }
+
+        if (path.Contains("/api/stripe/create-checkout-session"))
         {
             await _next(context);
             return;
@@ -66,7 +73,7 @@ public class SubscriptionMiddleware
         var cacheKey = $"tenant_{tenantContext.TenantId}";
         var tenant = await cache.GetOrCreateAsync(cacheKey, async entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(10);
             return await db.Tenants
                 .AsNoTracking()
                 .FirstOrDefaultAsync(t => t.Id == tenantContext.TenantId);
@@ -84,10 +91,9 @@ public class SubscriptionMiddleware
         }
 
         var now = DateTime.UtcNow;
-        var trialExpired = tenant.TrialEndsAt < now;
-        var hasActiveSubscription =
-             tenant.SubscriptionStatus == SubscriptionStatus.Active ||
-             tenant.SubscriptionStatus == SubscriptionStatus.Trialing;
+        var trialExpired = tenant.TrialEndsAt != null && tenant.TrialEndsAt < now;
+
+        var hasActiveSubscription = !string.IsNullOrEmpty(tenant.StripeSubscriptionId);
 
         if (trialExpired && !hasActiveSubscription)
         {

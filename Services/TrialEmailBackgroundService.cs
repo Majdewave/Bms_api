@@ -50,7 +50,8 @@ public class TrialEmailBackgroundService : BackgroundService
                     tenant.OwnerUser.Email,
                     tenant.Name,
                     tenant.Subdomain,
-                    daysLeft
+                    daysLeft,
+                    tenant.Id
                 );
             }
 
@@ -60,7 +61,8 @@ public class TrialEmailBackgroundService : BackgroundService
                 await emailService.SendTrialExpiredAsync(
                     tenant.OwnerUser.Email,
                     tenant.Name,
-                    tenant.Subdomain
+                    tenant.Subdomain,
+                    tenant.Id
                 );
 
                 tenant.IsTrialExpiredEmailSent = true;

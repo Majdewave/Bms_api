@@ -64,11 +64,78 @@ public class SendGridEmailService : IEmailService
         }
     }
 
-    public Task SendTrialReminderAsync(string email, string name, string subdomain, int days)
-        => Task.CompletedTask;
 
-    public Task SendTrialExpiredAsync(string email, string name, string subdomain)
-        => Task.CompletedTask;
+    public async Task SendTrialReminderAsync(string email, string companyName, string subdomain, int daysLeft, Guid tenantId)
+    {
+        var apiKey = _config["SendGrid:ApiKey"];
+        var client = new SendGridClient(apiKey);
+
+        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var to = new EmailAddress(email);
+
+        var subject = $"Your Trial Expires in {daysLeft} Days";
+        var upgradeUrl = $"https://clienta.digitalpenpro.com/upgrade?tenantId={tenantId}";
+
+        var htmlContent = $@"
+            <h2>Hello {companyName}!</h2>
+            <p>Your trial period will end in <strong>{daysLeft} days</strong>.</p>
+            <p>Don't lose access to your account! Upgrade now to continue using all features.</p>
+            <p><a href='{upgradeUrl}' style='background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>Upgrade Now</a></p>
+            <p>What you'll get with Pro:</p>
+            <ul>
+                <li>✅ Unlimited users</li>
+                <li>✅ Unlimited messages</li>
+                <li>✅ Custom branding</li>
+                <li>✅ 24/7 Priority support</li>
+            </ul>
+            <p>Questions? Reply to this email.</p>
+        ";
+
+        var msg = MailHelper.CreateSingleEmail(from, to, subject, "", htmlContent);
+        var response = await client.SendEmailAsync(msg);
+        Console.WriteLine("SENDGRID STATUS: " + response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Body.ReadAsStringAsync();
+            throw new Exception($"SendGrid error: {body}");
+        }
+    }
+
+    public async Task SendTrialExpiredAsync(string email, string companyName, string subdomain, Guid tenantId)
+    {
+        var apiKey = _config["SendGrid:ApiKey"];
+        var client = new SendGridClient(apiKey);
+
+        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var to = new EmailAddress(email);
+
+        var subject = "Your Trial Has Expired";
+        var upgradeUrl = $"https://clienta.digitalpenpro.com/upgrade?tenantId={tenantId}"; ;
+
+        var htmlContent = $@"
+            <h2>Hello {companyName}!</h2>
+            <p>Your trial period has ended and your account has been suspended.</p>
+            <p>To restore access to your account, please upgrade to our Pro plan.</p>
+            <p><a href='{upgradeUrl}' style='background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>Upgrade Now to Restore Access</a></p>
+            <p>Pro Plan includes:</p>
+            <ul>
+                <li>✅ Unlimited users</li>
+                <li>✅ Unlimited messages</li>
+                <li>✅ Custom branding</li>
+                <li>✅ 24/7 Priority support</li>
+            </ul>
+            <p>We'd love to have you back!</p>
+        ";
+
+        var msg = MailHelper.CreateSingleEmail(from, to, subject, "", htmlContent);
+        var response = await client.SendEmailAsync(msg);
+        Console.WriteLine("SENDGRID STATUS: " + response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Body.ReadAsStringAsync();
+            throw new Exception($"SendGrid error: {body}");
+        }
+    }
 
 
     public async Task SendInviteEmailAsync(string toEmail, string inviteLink)

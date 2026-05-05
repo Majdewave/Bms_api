@@ -1,3 +1,5 @@
+using Clienta.Api.Entities;
+
 namespace Clienta.Api.Services;
 
 public interface IEmailService
@@ -5,8 +7,8 @@ public interface IEmailService
     Task SendInviteEmailAsync(string email, string inviteLink);
     Task SendPasswordResetEmailAsync(string email, string resetLink);
     Task SendEmailAsync(string email, string subject, string body);
-    Task SendTrialReminderAsync(string email, string companyName, string subdomain, int daysLeft);
-    Task SendTrialExpiredAsync(string email, string companyName, string subdomain);
+    Task SendTrialReminderAsync(string email, string companyName, string subdomain, int daysLeft, Guid tenantId);
+    Task SendTrialExpiredAsync(string email, string companyName, string subdomain, Guid tenantId);
 }
 
 public class SmtpEmailService : IEmailService
@@ -59,11 +61,11 @@ public class SmtpEmailService : IEmailService
         await SendEmailCoreAsync(email, subject, body);
     }
 
-    public async Task SendTrialReminderAsync(string email, string companyName, string subdomain, int daysLeft)
+    public async Task SendTrialReminderAsync(string email, string companyName, string subdomain, int daysLeft, Guid tenantId)
     {
         var subject = $"Your Trial Expires in {daysLeft} Days";
-        var upgradeUrl = $"https://{subdomain}.yourapp.com/billing/upgrade";
-        
+        var upgradeUrl = $"https://clienta.digitalpenpro.com/upgrade?tenantId={tenantId}";
+
         var body = $@"
             <h2>Hello {companyName}!</h2>
             <p>Your trial period will end in <strong>{daysLeft} days</strong>.</p>
@@ -82,11 +84,11 @@ public class SmtpEmailService : IEmailService
         await SendEmailCoreAsync(email, subject, body);
     }
 
-    public async Task SendTrialExpiredAsync(string email, string companyName, string subdomain)
+    public async Task SendTrialExpiredAsync(string email, string companyName, string subdomain, Guid tenantId)
     {
         var subject = "Your Trial Has Expired";
-        var upgradeUrl = $"https://{subdomain}.digitalpenpro.com/billing/upgrade";
-        
+        var upgradeUrl = $"https://clienta.digitalpenpro.com/upgrade?tenantId={tenantId}";
+
         var body = $@"
             <h2>Hello {companyName}!</h2>
             <p>Your trial period has ended and your account has been suspended.</p>

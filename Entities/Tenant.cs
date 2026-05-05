@@ -17,6 +17,11 @@ public class Tenant
     public SubscriptionStatus SubscriptionStatus { get; set; } = SubscriptionStatus.Trialing;
 
     public DateTime? TrialEndsAt { get; set; }
+    public bool IsTrial { get; set; }
+
+    // מניעת כפילויות
+    public bool TrialReminderSent { get; set; }
+    public bool TrialExpiredSent { get; set; }
     public bool IsSuspended { get; set; }
 
     public int UserLimit { get; set; } = 10;

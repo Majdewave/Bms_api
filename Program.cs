@@ -25,7 +25,8 @@ builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddScoped<TenantResolver>();
 builder.Services.AddScoped<IFeatureService, FeatureService>();
-
+builder.Services.AddScoped<TrialService>();
+builder.Services.AddHostedService<TrialBackgroundService>();
 
 FontManager.RegisterFont(
     File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))

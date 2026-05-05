@@ -79,7 +79,9 @@ public class TrialReminderService : BackgroundService
                         adminEmail,
                         tenant.Name,
                         tenant.Subdomain,
-                        7);
+                        7, 
+                        tenant.Id
+                        );
                     _logger.LogInformation("Sent 7-day reminder to {Email}", adminEmail);
                 }
 
@@ -90,7 +92,9 @@ public class TrialReminderService : BackgroundService
                         adminEmail,
                         tenant.Name,
                         tenant.Subdomain,
-                        2);
+                        2, 
+                        tenant.Id
+                        );
                     _logger.LogInformation("Sent 2-day reminder to {Email}", adminEmail);
                 }
 
@@ -102,7 +106,9 @@ public class TrialReminderService : BackgroundService
                     await emailService.SendTrialExpiredAsync(
                         adminEmail,
                         tenant.Name,
-                        tenant.Subdomain);
+                        tenant.Subdomain,
+                        tenant.Id
+                        );
                     _logger.LogInformation("Trial expired for {TenantName}, account suspended", tenant.Name);
                 }
             }

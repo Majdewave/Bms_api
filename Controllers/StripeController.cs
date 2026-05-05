@@ -34,18 +34,17 @@ public class StripeController : ControllerBase
     /// Create a Stripe checkout session for Pro/Monthly
     /// </summary>
     [HttpPost("create-checkout-session")]
-    [Authorize]
-    public async Task<IActionResult> CreateCheckoutSession()
+    [AllowAnonymous]
+    public async Task<IActionResult> CreateCheckoutSession([FromBody] CheckoutRequest request)
     {
         try
         {
-            // Get tenantId from JWT claims
-            var tenantIdClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id" || c.Type.EndsWith("/tenantid", StringComparison.OrdinalIgnoreCase));
-            if (tenantIdClaim == null || !Guid.TryParse(tenantIdClaim.Value, out var tenantId))
-            {
-                return Unauthorized(new { error = "Tenant ID not found in token." });
-            }
+            var tenantId = request.TenantId;
 
+            if (tenantId == Guid.Empty)
+            {
+                return BadRequest(new { error = "TenantId is required" });
+            }
             // Call StripeService
             var url = await _stripeService.CreateCheckoutSessionAsync(tenantId, Clienta.Api.Models.PlanType.Pro, Clienta.Api.Models.BillingCycle.Monthly);
             return Ok(new { url });
@@ -258,5 +257,11 @@ public class StripeController : ControllerBase
             Console.WriteLine("🔥 WEBHOOK ERROR: " + ex);
             return Ok(); //  לא מחזירים 400 ל-Stripe
         }
+    }
+
+    public class CheckoutRequest
+    {
+        public string Plan { get; set; }
+        public Guid TenantId { get; set; }
     }
 }
