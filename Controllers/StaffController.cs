@@ -164,6 +164,7 @@ public class StaffController : ControllerBase
         var user = businessUser.User;
 
         user.FullName = request.FullName;
+        user.Email = request.Email;
         user.RoleLabel = request.RoleLabel;
         user.IsActive = request.IsActive;
         user.UseStamp = request.UseStamp;
