@@ -17,17 +17,19 @@ public class ClientPhotosController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
     private readonly IFeatureService _featureService;
+    private readonly IFileStorage _fileStorage;
 
     private const long MaxImageSizeBytes = 5 * 1024 * 1024;
     private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
     private static readonly string[] AllowedContentTypes = ["image/jpeg", "image/png", "image/webp"];
 
-    public ClientPhotosController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFeatureService featureService)
+    public ClientPhotosController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFeatureService featureService, IFileStorage fileStorage)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
         _featureService = featureService;
+        _fileStorage = fileStorage;
     }
 
     [HttpPost]
@@ -131,10 +133,10 @@ public class ClientPhotosController : ControllerBase
             return NotFound();
 
         if (!string.IsNullOrEmpty(photo.BeforeImageUrl))
-            DeleteFile(photo.BeforeImageUrl);
+            await DeleteFile(photo.BeforeImageUrl);
 
         if (!string.IsNullOrEmpty(photo.AfterImageUrl))
-            DeleteFile(photo.AfterImageUrl);
+            await DeleteFile(photo.AfterImageUrl);
 
         _context.ClientTreatmentPhotos.Remove(photo);
         await _context.SaveChangesAsync();
@@ -154,7 +156,7 @@ public class ClientPhotosController : ControllerBase
 
         if (!string.IsNullOrEmpty(photo.BeforeImageUrl))
         {
-            DeleteFile(photo.BeforeImageUrl);
+            await DeleteFile(photo.BeforeImageUrl);
             photo.BeforeImageUrl = null;
         }
 
@@ -174,7 +176,7 @@ public class ClientPhotosController : ControllerBase
 
         if (!string.IsNullOrEmpty(photo.AfterImageUrl))
         {
-            DeleteFile(photo.AfterImageUrl);
+            await DeleteFile(photo.AfterImageUrl);
             photo.AfterImageUrl = null;
         }
 
@@ -204,28 +206,35 @@ public class ClientPhotosController : ControllerBase
         return null;
     }
 
-    private async Task<string> SaveImageAsync(IFormFile file, string absoluteDirectory, string relativeDirectory, string label)
+    private async Task<string> SaveImageAsync(
+    IFormFile file,
+    string absoluteDirectory,
+    string relativeDirectory,
+    string label)
     {
         var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
         var fileName = $"{Guid.NewGuid()}-{label}{extension}";
-        var absolutePath = Path.Combine(absoluteDirectory, fileName);
 
-        await using var stream = new FileStream(absolutePath, FileMode.Create);
-        await file.CopyToAsync(stream);
+        var key =
+            $"tenants/{_tenant.TenantId}/clients/{Guid.NewGuid()}/photos/{fileName}";
 
-        return "/" + Path.Combine(relativeDirectory, fileName).Replace('\\', '/');
+        using var stream = file.OpenReadStream();
+
+        return await _fileStorage.UploadAsync(
+            stream,
+            key,
+            file.ContentType);
     }
 
-    private void DeleteFile(string? relativeUrl)
+    private async Task DeleteFile(string? fileUrl)
     {
-        if (string.IsNullOrWhiteSpace(relativeUrl))
+        if (string.IsNullOrWhiteSpace(fileUrl))
             return;
 
-        var normalized = relativeUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-        var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-        var absolutePath = Path.Combine(webRoot, normalized);
-
-        if (System.IO.File.Exists(absolutePath))
-            System.IO.File.Delete(absolutePath);
+        if (Uri.TryCreate(fileUrl, UriKind.Absolute, out var uri))
+        {
+            var key = uri.AbsolutePath.TrimStart('/');
+            await _fileStorage.DeleteAsync(key);
+        }
     }
 }

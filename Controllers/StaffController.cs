@@ -16,12 +16,14 @@ public class StaffController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
+    private readonly IFileStorage _fileStorage;
 
-    public StaffController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env)
+    public StaffController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFileStorage fileStorage)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
+        _fileStorage = fileStorage;
     }
 
     // GET /api/staff
@@ -226,26 +228,25 @@ public class StaffController : ControllerBase
         if (businessUser == null)
             return NotFound("Staff not found");
 
-        var uploadsDir = Path.Combine(_env.WebRootPath, "uploads", "tenants", _tenant.TenantId.ToString(), "staff", id.ToString());
-        Directory.CreateDirectory(uploadsDir);
 
         var fileExtension = Path.GetExtension(file.FileName).ToLower();
         var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
         var fileName = $"stamp_{id}_{timestamp}{fileExtension}";
-        var filePath = Path.Combine(uploadsDir, fileName);
+        var key = $"tenants/{_tenant.TenantId}/staff/{id}/{fileName}";
 
-        foreach (var existingFile in Directory.GetFiles(uploadsDir, "stamp_*"))
+        if (!string.IsNullOrWhiteSpace(businessUser.User.StampUrl))
         {
-            System.IO.File.Delete(existingFile);
+            if (Uri.TryCreate(businessUser.User.StampUrl, UriKind.Absolute, out var oldUri))
+            {
+                var oldKey = oldUri.AbsolutePath.TrimStart('/');
+                await _fileStorage.DeleteAsync(oldKey);
+            }
         }
 
-        await using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await file.CopyToAsync(stream);
-        }
+        using var stream = file.OpenReadStream();
+        var stampUrl = await _fileStorage.UploadAsync(stream, key, file.ContentType);
 
-        // Set stamp info on BusinessUser
-        businessUser.User.StampUrl = $"/uploads/tenants/{_tenant.TenantId}/staff/{id}/{fileName}";
+        businessUser.User.StampUrl = stampUrl;
         businessUser.User.UseStamp = true;
 
         await _context.SaveChangesAsync();
@@ -334,9 +335,11 @@ public class StaffController : ControllerBase
         // 3. מחיקת חתימה (Stamp)
         if (!string.IsNullOrEmpty(user.StampUrl))
         {
-            var path = Path.Combine("wwwroot", user.StampUrl.TrimStart('/'));
-            if (System.IO.File.Exists(path))
-                System.IO.File.Delete(path);
+            if (Uri.TryCreate(user.StampUrl, UriKind.Absolute, out var uri))
+            {
+                var key = uri.AbsolutePath.TrimStart('/');
+                await _fileStorage.DeleteAsync(key);
+            }
         }
 
 
@@ -371,16 +374,20 @@ public class StaffController : ControllerBase
         {
             if (!string.IsNullOrEmpty(photo.BeforeImageUrl))
             {
-                var beforePath = Path.Combine("wwwroot", photo.BeforeImageUrl.TrimStart('/'));
-                if (System.IO.File.Exists(beforePath))
-                    System.IO.File.Delete(beforePath);
+                if (Uri.TryCreate(photo.BeforeImageUrl, UriKind.Absolute, out var beforeUri))
+                {
+                    var key = beforeUri.AbsolutePath.TrimStart('/');
+                    await _fileStorage.DeleteAsync(key);
+                }
             }
 
             if (!string.IsNullOrEmpty(photo.AfterImageUrl))
             {
-                var afterPath = Path.Combine("wwwroot", photo.AfterImageUrl.TrimStart('/'));
-                if (System.IO.File.Exists(afterPath))
-                    System.IO.File.Delete(afterPath);
+                if (Uri.TryCreate(photo.AfterImageUrl, UriKind.Absolute, out var afterUri))
+                {
+                    var key = afterUri.AbsolutePath.TrimStart('/');
+                    await _fileStorage.DeleteAsync(key);
+                }
             }
         }
 

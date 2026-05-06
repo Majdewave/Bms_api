@@ -15,16 +15,17 @@ public class TenantController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenantContext;
-    private readonly IWebHostEnvironment _webHostEnvironment;
+    private readonly IFileStorage _fileStorage;
 
     public TenantController(
         AppDbContext context,
         ITenantContext tenantContext,
-        IWebHostEnvironment webHostEnvironment)
+        IFileStorage fileStorage)
+        
     {
         _context = context;
         _tenantContext = tenantContext;
-        _webHostEnvironment = webHostEnvironment;
+        _fileStorage = fileStorage;
     }
 
     // GET api/tenant/me
@@ -109,7 +110,7 @@ public class TenantController : ControllerBase
         ));
     }
 
-    // PUT /api/tenant  ✅ FIXED
+    // PUT /api/tenant 
     [HttpPut]
     public async Task<IActionResult> Update([FromBody] UpdateTenantRequest request)
     {
@@ -165,8 +166,9 @@ public class TenantController : ControllerBase
     public async Task<IActionResult> RunCleanup()
     {
         var clientIdsToDelete = _context.Appointments
-// .IgnoreQueryFilters()
-.            Where(a => a.TenantId == _tenantContext.TenantId && !a.IsDocumented).Select(a => a.ClientId)
+         // .IgnoreQueryFilters()
+            .Where(a => a.TenantId == _tenantContext.TenantId && !a.IsDocumented)
+            .Select(a => a.ClientId)
             .Distinct()
             .ToList();
 
@@ -192,12 +194,24 @@ public class TenantController : ControllerBase
         if (tenant == null)
             return NotFound();
 
+        // delete from local path
+        //if (!string.IsNullOrEmpty(tenant.LogoUrl))
+        //{
+        //    var filePath = Path.Combine("wwwroot", tenant.LogoUrl.TrimStart('/'));
+
+        //    if (System.IO.File.Exists(filePath))
+        //        System.IO.File.Delete(filePath);
+        //}
+
+
+        // Delete from s3 aws
         if (!string.IsNullOrEmpty(tenant.LogoUrl))
         {
-            var filePath = Path.Combine("wwwroot", tenant.LogoUrl.TrimStart('/'));
-
-            if (System.IO.File.Exists(filePath))
-                System.IO.File.Delete(filePath);
+            if (Uri.TryCreate(tenant.LogoUrl, UriKind.Absolute, out var uri))
+            {
+                var key = uri.AbsolutePath.TrimStart('/');
+                await _fileStorage.DeleteAsync(key);
+            }
         }
 
         tenant.LogoUrl = null;
@@ -230,23 +244,21 @@ public class TenantController : ControllerBase
             if (tenant == null)
                 return NotFound();
 
-            var uploadsDir = Path.Combine(_webHostEnvironment.WebRootPath, "uploads", "tenants", _tenantContext.TenantId.ToString());
-            Directory.CreateDirectory(uploadsDir);
 
-            var fileExtension = Path.GetExtension(file.FileName).ToLower();
-            var fileName = $"logo{fileExtension}";
-            var filePath = Path.Combine(uploadsDir, fileName);
+            // save local file for dev 
+            //using (var stream = new FileStream(filePath, FileMode.Create))
+            //{
+            //    await file.CopyToAsync(stream);
+            //}
 
-            if (System.IO.File.Exists(filePath))
-                System.IO.File.Delete(filePath);
 
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
+            // save in s3 AWS 
+            using var stream = file.OpenReadStream();
 
-            var logoUrl = $"/uploads/tenants/{_tenantContext.TenantId}/{fileName}";
-            tenant.LogoUrl = logoUrl;
+            var key = $"tenants/{_tenantContext.TenantId}/logo{Path.GetExtension(file.FileName)}";
+            var url = await _fileStorage.UploadAsync(stream, key, file.ContentType);
+            tenant.LogoUrl = url;
+
 
             await _context.SaveChangesAsync();
 

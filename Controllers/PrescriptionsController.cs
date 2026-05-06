@@ -172,15 +172,19 @@ public class PrescriptionsController : ControllerBase
         var patientPhone = client.Phone ?? "";
         var today = DateTime.Now.ToString("yyyy-MM-dd");
 
-        var logoUrl = $"https://clienta.digitalpenpro.com/uploads/tenants/{tenantId}/logo.png?v={DateTime.UtcNow.Ticks}";
+
+        var logoUrl = tenant?.LogoUrl;
 
         byte[]? logoBytes = null;
-        try
+        if (!string.IsNullOrWhiteSpace(logoUrl))
         {
-            using var http = new HttpClient();
-            logoBytes = await http.GetByteArrayAsync(logoUrl);
+            try
+            {
+                using var http = new HttpClient();
+                logoBytes = await http.GetByteArrayAsync(logoUrl);
+            }
+            catch { }
         }
-        catch { }
 
         byte[]? stampBytes = null;
 
@@ -205,17 +209,22 @@ public class PrescriptionsController : ControllerBase
         }
 
 
+
         //  fallback אם אין חותמת
         // אם אין חותמת — פשוט לא מציגים
         if (staff == null || !staff.UseStamp || string.IsNullOrWhiteSpace(staff.StampUrl))
         {
             stampBytes = null;
         }
-
         //  טעינת חותמת
         if (staff?.UseStamp == true && !string.IsNullOrWhiteSpace(staff.StampUrl))
         {
-            stampBytes = LoadFileBytesFromUrlOrPath(staff.StampUrl);
+            try
+            {
+                using var http = new HttpClient();
+                stampBytes = await http.GetByteArrayAsync(staff.StampUrl);
+            }
+            catch { }
         }
 
         var pdf = Document.Create(container =>

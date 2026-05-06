@@ -20,12 +20,14 @@ public class ConsentsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
+    private readonly IFileStorage _fileStorage;
 
-    public ConsentsController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env)
+    public ConsentsController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFileStorage fileStorage)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
+        _fileStorage = fileStorage;
     }
 
     [AllowAnonymous]
@@ -145,7 +147,7 @@ public class ConsentsController : ControllerBase
             service = await _context.Services.FirstOrDefaultAsync(s => s.Id == request.ServiceId.Value);
         }
 
-        var clientSignatureUrl = SaveClientSignatureFromBase64(request.ClientSignatureBase64, request.ClientId);
+        var clientSignatureUrl = await SaveClientSignatureFromBase64(request.ClientSignatureBase64, request.ClientId);
 
         var consent = new ClientConsent
         {
@@ -306,8 +308,31 @@ public class ConsentsController : ControllerBase
             doctor = businessUser?.User;
         }
 
-        byte[]? logoBytes = LoadFileBytesFromUrlOrPath(tenant?.LogoUrl);
-        byte[]? clientSignatureBytes = LoadFileBytesFromUrlOrPath(consent.ClientSignatureUrl);
+        byte[]? logoBytes = null;
+
+        if (!string.IsNullOrWhiteSpace(tenant?.LogoUrl))
+        {
+            try
+            {
+                using var http = new HttpClient();
+                logoBytes = await http.GetByteArrayAsync(tenant.LogoUrl);
+            }
+            catch { }
+        }
+
+        byte[]? clientSignatureBytes = null;
+
+        if (!string.IsNullOrWhiteSpace(consent.ClientSignatureUrl))
+        {
+            try
+            {
+                using var http = new HttpClient();
+                clientSignatureBytes =
+                    await http.GetByteArrayAsync(consent.ClientSignatureUrl);
+            }
+            catch { }
+        }
+
         byte[]? doctorStampBytes = null;
 
 
@@ -322,7 +347,14 @@ public class ConsentsController : ControllerBase
 
             if (bu?.User?.UseStamp == true && !string.IsNullOrWhiteSpace(bu.User.StampUrl))
             {
-                doctorStampBytes = LoadFileBytesFromUrlOrPath(bu.User.StampUrl);
+                try
+                {
+                    using var http = new HttpClient();
+
+                    doctorStampBytes =
+                        await http.GetByteArrayAsync(bu.User.StampUrl);
+                }
+                catch { }
             }
         }
 
@@ -589,31 +621,10 @@ public class ConsentsController : ControllerBase
             .Replace(".", "." + RLM);
     }
 
-    private byte[]? LoadFileBytesFromUrlOrPath(string? rawPath)
-    {
-        if (string.IsNullOrWhiteSpace(rawPath))
-            return null;
-
-        var normalized = rawPath.Trim();
-
-        if (Path.IsPathRooted(normalized) && System.IO.File.Exists(normalized))
-            return System.IO.File.ReadAllBytes(normalized);
-
-        if (Uri.TryCreate(normalized, UriKind.Absolute, out var absolute))
-            normalized = absolute.LocalPath;
-
-        normalized = normalized.TrimStart('~').TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-
-        var webRootPath = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-        var fullPath = Path.Combine(webRootPath, normalized);
-
-        if (!System.IO.File.Exists(fullPath))
-            return null;
-
-        return System.IO.File.ReadAllBytes(fullPath);
-    }
-
-    private string? SaveClientSignatureFromBase64(string? clientSignatureBase64, Guid clientId)
+    
+    private async Task<string?> SaveClientSignatureFromBase64(
+        string? clientSignatureBase64,
+        Guid clientId)
     {
         if (string.IsNullOrWhiteSpace(clientSignatureBase64))
             return null;
@@ -621,22 +632,23 @@ public class ConsentsController : ControllerBase
         try
         {
             var raw = clientSignatureBase64.Trim();
+
             var commaIndex = raw.IndexOf(',');
+
             if (commaIndex >= 0)
                 raw = raw[(commaIndex + 1)..];
 
             var bytes = Convert.FromBase64String(raw);
 
-            var webRoot = _env.WebRootPath ?? Path.Combine(_env.ContentRootPath, "wwwroot");
-            var relativeDir = Path.Combine("uploads", "tenants", _tenant.TenantId.ToString(), "consents", clientId.ToString());
-            var absoluteDir = Path.Combine(webRoot, relativeDir);
-            Directory.CreateDirectory(absoluteDir);
+            using var stream = new MemoryStream(bytes);
 
-            var fileName = $"client-signature-{DateTime.UtcNow:yyyyMMddHHmmssfff}.png";
-            var absoluteFilePath = Path.Combine(absoluteDir, fileName);
-            System.IO.File.WriteAllBytes(absoluteFilePath, bytes);
+            var key =
+                $"tenants/{_tenant.TenantId}/consents/{clientId}/client-signature-{Guid.NewGuid()}.png";
 
-            return "/" + Path.Combine(relativeDir, fileName).Replace('\\', '/');
+            return await _fileStorage.UploadAsync(
+                stream,
+                key,
+                "image/png");
         }
         catch
         {

@@ -12,6 +12,7 @@ using Microsoft.IdentityModel.Tokens;
 using QuestPDF.Drawing;
 using QuestPDF.Infrastructure;
 using System.Text;
+using Amazon.S3;
 
 var builder = WebApplication.CreateBuilder(args);
 // Register DrugSeedService
@@ -27,6 +28,7 @@ builder.Services.AddScoped<TenantResolver>();
 builder.Services.AddScoped<IFeatureService, FeatureService>();
 builder.Services.AddScoped<TrialService>();
 builder.Services.AddHostedService<TrialBackgroundService>();
+builder.Services.AddAWSService<IAmazonS3>(); 
 
 FontManager.RegisterFont(
     File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))
@@ -168,6 +170,10 @@ builder.Services.AddCors(options =>
                   .AllowCredentials();
         });
 });
+
+// S3 and IFileStorage services
+builder.Services.AddAWSService<Amazon.S3.IAmazonS3>();
+builder.Services.AddScoped<IFileStorage, S3FileStorage>();
 
 var app = builder.Build();
 

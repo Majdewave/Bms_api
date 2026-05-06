@@ -102,16 +102,23 @@ namespace Clienta.Api.Controllers
             if (businessUser?.User?.UseStamp == true &&
                 !string.IsNullOrWhiteSpace(businessUser.User.StampUrl))
             {
-                stampBytes = LoadFileBytesFromUrlOrPath(businessUser.User.StampUrl);
+                try
+                {
+                    using var http = new HttpClient();
+                    stampBytes = await http.GetByteArrayAsync(
+                        businessUser.User.StampUrl);
+                }
+                catch { }
             }
 
-             tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+            tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
 
             byte[]? logoBytes = null;
 
             if (tenantClaim != null)
             {
-                var logoUrl = $"https://clienta.digitalpenpro.com/uploads/tenants/{tenantClaim.Value}/logo.png?v={DateTime.UtcNow.Ticks}";
+                var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
+                var logoUrl = tenant?.LogoUrl;
 
                 try
                 {
@@ -300,34 +307,6 @@ namespace Clienta.Api.Controllers
             await _context.SaveChangesAsync();
 
             return NoContent();
-        }
-
-        private byte[]? LoadFileBytesFromUrlOrPath(string? rawPath)
-        {
-            if (string.IsNullOrWhiteSpace(rawPath))
-                return null;
-
-            var normalized = rawPath.Trim();
-            // אם זה path מלא
-            if (Path.IsPathRooted(normalized) && System.IO.File.Exists(normalized))
-                return System.IO.File.ReadAllBytes(normalized);
-            // אם זה URL → לקחת רק את ה־path
-            if (Uri.TryCreate(normalized, UriKind.Absolute, out var absolute))
-                normalized = absolute.LocalPath;
-
-            // לנקות prefix
-            normalized = normalized
-                .TrimStart('~')
-                .TrimStart('/')
-                .Replace('/', Path.DirectorySeparatorChar);
-
-            var webRootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-            var fullPath = Path.Combine(webRootPath, normalized);
-
-            if (!System.IO.File.Exists(fullPath))
-                return null;
-
-            return System.IO.File.ReadAllBytes(fullPath);
         }
     }
 }
