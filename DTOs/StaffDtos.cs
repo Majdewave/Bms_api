@@ -16,7 +16,8 @@ public record UpdateStaffRequest(
     bool IsActive,
     List<string> Permissions,
     bool UseStamp,
-    string Role
+    string Role,
+    string? Password
 );
 
 public record StaffResponse(

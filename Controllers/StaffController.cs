@@ -167,7 +167,13 @@ public class StaffController : ControllerBase
         user.UseStamp = request.UseStamp;
         user.Role = request.Role == "Admin" ? "Admin" : "Staff";
 
-       // Remove old permissions
+        // update password
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+        }
+
+        // Remove old permissions
         var existingPermissions = await _context.UserPermissions
             .Where(up => up.UserId == user.Id)
             .ToListAsync();
