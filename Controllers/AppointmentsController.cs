@@ -15,7 +15,6 @@ namespace Clienta.Api.Controllers;
 [Authorize(Policy = "manage_appointments")]
 public class AppointmentsController : ControllerBase
 {
-    // (Fields already declared above)
 
     // GET /appointments/queue
     [Authorize(Policy = "manage_appointments")]
@@ -226,9 +225,7 @@ public class AppointmentsController : ControllerBase
         await _context.SaveChangesAsync();
 
         // SignalR: Notify all users in the tenant group
-        await _hubContext.Clients
-            .Group(_tenant.TenantId.ToString())
-            .SendAsync("AppointmentUpdated");
+        await _hubContext.Clients.All.SendAsync("AppointmentUpdated");
 
         // Fetch related entities for response
         var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
@@ -358,9 +355,7 @@ public class AppointmentsController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
-        await _hubContext.Clients
-        .Group(_tenant.TenantId.ToString())
-        .SendAsync("AppointmentUpdated");
+        await _hubContext.Clients.All.SendAsync("AppointmentUpdated");
 
         var client = await _context.Clients
             .FirstOrDefaultAsync(c => c.Id == appointment.ClientId && c.TenantId == _tenant.TenantId); var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;

@@ -1,11 +1,20 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Clienta.Api.Hubs;
 
+[Authorize]
 public class AppointmentsHub : Hub
 {
-    public async Task JoinTenant(string tenantId)
+    public override async Task OnConnectedAsync()
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, tenantId);
+        var tenantId = Context.User?.FindFirst("tenant_id")?.Value;
+
+        if (!string.IsNullOrWhiteSpace(tenantId))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, tenantId);
+        }
+
+        await base.OnConnectedAsync();
     }
 }
