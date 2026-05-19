@@ -102,7 +102,17 @@ public class AppointmentsController : ControllerBase
             .Include(a => a.Client)
             .Include(a => a.Service)
             .Include(a => a.Staff)
-            .OrderByDescending(a => a.StartTime)
+
+            // בטיפול ראשון, אחר כך ממתינים, אחר כך כל השאר
+            .OrderBy(a =>
+                a.Status == AppointmentStatuses.InProgress ? 0 :
+                a.Status == AppointmentStatuses.Waiting ? 1 :
+                2
+            )
+
+            // מיון לפי שעה ותאריך מהקרוב לרחוק
+            .ThenBy(a => a.StartTime)
+
             .Select(a => new AppointmentDto(
                 a.Id,
                 a.ClientId,
