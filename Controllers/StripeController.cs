@@ -173,81 +173,141 @@ public class StripeController : ControllerBase
             );
 
 
-            if (stripeEvent.Type == "checkout.session.completed")
+            switch (stripeEvent.Type)
             {
-                var session = stripeEvent.Data.Object as Session;
-                if (session == null)
-                    return Ok();
-
-                var customerId = session.CustomerId;
-                var subscriptionId = session.SubscriptionId;
-                Console.WriteLine("CONFIRM customerId: " + customerId);
-
-                // send mail to TENANT after Register
-                session = stripeEvent.Data.Object as Session;
-
-                var email = session?.CustomerDetails?.Email;
-                var html = "Payment Suucceed";
-
-                if (!string.IsNullOrEmpty(email))
+                case "checkout.session.completed":
                 {
-                    await _emailService.SendEmailAsync(
-                        email,
-                         "🎉 התשלום בוצע בהצלחה",
+                    var session = stripeEvent.Data.Object as Session;
+                    if (session == null)
+                        return Ok();
 
-                         html = @"<div style='font-family:Arial, sans-serif; direction:rtl; background:#f9fafb; padding:40px'>
-                                <div style='max-width:500px; margin:auto; background:white; border-radius:10px; padding:30px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.05)'>
+                    var customerId = session.CustomerId;
+                    var subscriptionId = session.SubscriptionId;
+                    Console.WriteLine("CONFIRM customerId: " + customerId);
 
-                                    <p style='font-size:16px; color:#374151; margin-bottom:20px;'>
-                                        החשבון שלך שודרג בהצלחה לתוכנית פרימיום.
-                                    </p>
+                    // send mail to TENANT after Register
+                    session = stripeEvent.Data.Object as Session;
 
-                                    <div style='margin:25px 0;'>
-                                        <a href='https://clienta.digitalpenpro.com/login'
-                                           style='background:#2563eb; color:white; padding:12px 24px; border-radius:6px; text-decoration:none; font-size:14px;'>
-                                            מעבר למערכת
-                                        </a>
+                    var email = session?.CustomerDetails?.Email;
+                    var html = "Payment Suucceed";
+
+                    if (!string.IsNullOrEmpty(email))
+                    {
+                        await _emailService.SendEmailAsync(
+                            email,
+                             "🎉 התשלום בוצע בהצלחה",
+
+                             html = @"<div style='font-family:Arial, sans-serif; direction:rtl; background:#f9fafb; padding:40px'>
+                                    <div style='max-width:500px; margin:auto; background:white; border-radius:10px; padding:30px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.05)'>
+
+                                        <p style='font-size:16px; color:#374151; margin-bottom:20px;'>
+                                            החשבון שלך שודרג בהצלחה לתוכנית פרימיום.
+                                        </p>
+
+                                        <div style='margin:25px 0;'>
+                                            <a href='https://clienta.digitalpenpro.com/login'
+                                               style='background:#2563eb; color:white; padding:12px 24px; border-radius:6px; text-decoration:none; font-size:14px;'>
+                                                מעבר למערכת
+                                            </a>
+                                        </div>
+
+                                        <hr style='margin:30px 0; border:none; border-top:1px solid #e5e7eb;' />
+
+                                        <p style='font-size:13px; color:#6b7280; margin:0;'>
+                                            תודה שבחרת ב־Clienta 💙
+                                        </p>
+
+                                        <p style='font-size:13px; color:#6b7280; margin-top:5px;'>
+                                            Clienta Team
+                                        </p>
+
                                     </div>
+                                </div>"
+                            );
+                        }
 
-                                    <hr style='margin:30px 0; border:none; border-top:1px solid #e5e7eb;' />
 
-                                    <p style='font-size:13px; color:#6b7280; margin:0;'>
-                                        תודה שבחרת ב־Clienta 💙
-                                    </p>
+                    if (string.IsNullOrEmpty(customerId))
+                        return Ok();
 
-                                    <p style='font-size:13px; color:#6b7280; margin-top:5px;'>
-                                        Clienta Team
-                                    </p>
-
-                                </div>
-                            </div>"
-                        );
+                    if (session.Metadata == null ||
+                        !session.Metadata.TryGetValue("tenant_id", out var tenantIdString) ||
+                        !Guid.TryParse(tenantIdString, out var tenantId))
+                    {
+                        return Ok();
                     }
 
+                    var tenant = await _context.Tenants.FindAsync(tenantId);
+                    if (tenant == null)
+                        return Ok();
 
-                if (string.IsNullOrEmpty(customerId))
-                    return Ok();
+                    // Update tenant on payment success
+                    tenant.StripeCustomerId = customerId;
+                    tenant.StripeSubscriptionId = subscriptionId;
+                    tenant.Plan = PlanType.Pro;
+                    tenant.SubscriptionStatus = SubscriptionStatus.Active;
+                    tenant.IsSuspended = false;
 
-                if (session.Metadata == null ||
-                    !session.Metadata.TryGetValue("tenant_id", out var tenantIdString) ||
-                    !Guid.TryParse(tenantIdString, out var tenantId))
-                {
-                    return Ok();
+                    await _context.SaveChangesAsync();
+                    Console.WriteLine("✅ Tenant updated from webhook (plan upgraded to Pro, subscription active, not suspended)");
+                    break;
                 }
+                case "customer.subscription.updated":
+                {
+                    var subscription = stripeEvent.Data.Object as Subscription;
 
-                var tenant = await _context.Tenants.FindAsync(tenantId);
-                if (tenant == null)
-                    return Ok();
+                    if (subscription == null)
+                        break;
 
-                // Update tenant on payment success
-                tenant.StripeCustomerId = customerId;
-                tenant.StripeSubscriptionId = subscriptionId;
-                tenant.Plan = PlanType.Pro;
-                tenant.SubscriptionStatus = SubscriptionStatus.Active;
-                tenant.IsSuspended = false;
+                    var tenant = await _context.Tenants
+                        .FirstOrDefaultAsync(x => x.StripeSubscriptionId == subscription.Id);
 
-                await _context.SaveChangesAsync();
-                Console.WriteLine("✅ Tenant updated from webhook (plan upgraded to Pro, subscription active, not suspended)");
+                    if (tenant != null)
+                    {
+                        tenant.SubscriptionStatus =
+                            subscription.Status switch
+                            {
+                                "active" => SubscriptionStatus.Active,
+                                "trialing" => SubscriptionStatus.Active,
+                                "past_due" => SubscriptionStatus.PastDue,
+                                "canceled" => SubscriptionStatus.Canceled,
+                                "unpaid" => SubscriptionStatus.Unpaid,
+                                _ => SubscriptionStatus.Canceled
+                            };
+
+                        var currentPeriodEnd =
+                            subscription.Items.Data
+                                .FirstOrDefault()
+                                ?.CurrentPeriodEnd;
+
+                        tenant.SubscriptionEndsAt =
+                            currentPeriodEnd;
+
+                        await _context.SaveChangesAsync();
+                    }
+
+                    break;
+                }
+                case "customer.subscription.deleted":
+                {
+                    var subscription = stripeEvent.Data.Object as Subscription;
+
+                    var tenant = await _context.Tenants
+                        .FirstOrDefaultAsync(x => x.StripeSubscriptionId == subscription.Id);
+
+                    if (tenant != null)
+                    {
+                        tenant.SubscriptionStatus =
+                            SubscriptionStatus.Canceled;
+
+                        tenant.SubscriptionEndsAt =
+                            DateTime.UtcNow;
+
+                        await _context.SaveChangesAsync();
+                    }
+
+                    break;
+                }
             }
 
             return Ok(); //  תמיד OK

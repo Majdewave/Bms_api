@@ -1,3 +1,4 @@
+using Stripe.BillingPortal;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Clienta.Api.Services;
@@ -12,6 +13,7 @@ namespace Clienta.Api.Controllers;
 [Authorize]
 public class BillingController : ControllerBase
 {
+
     private readonly IStripeService _stripeService;
     private readonly ITenantContext _tenantContext;
     private readonly AppDbContext _db;
@@ -25,6 +27,55 @@ public class BillingController : ControllerBase
         _tenantContext = tenantContext;
         _db = db;
     }
+
+
+    [Authorize]
+    [HttpPost("portal")]
+    public async Task<IActionResult> CreatePortalSession()
+        {
+            try
+            {
+                var tenantId =
+                    Guid.Parse(
+                        User.FindFirst("tenant_id")!.Value
+                    );
+
+                var tenant = await _db.Tenants
+                    .FirstOrDefaultAsync(x =>
+                        x.Id == tenantId);
+
+                if (tenant == null)
+                    return BadRequest("Tenant not found");
+
+                if (string.IsNullOrEmpty(tenant.StripeCustomerId))
+                    return BadRequest("Stripe customer missing");
+
+                var options = new SessionCreateOptions
+                {
+                    Customer = tenant.StripeCustomerId,
+                    ReturnUrl =
+                        "https://clienta.digitalpenpro.com/billing"
+                };
+
+                var service = new SessionService();
+
+                var session =
+                    await service.CreateAsync(options);
+
+                return Ok(new
+                {
+                    url = session.Url
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    error = ex.Message
+                });
+            }
+        }
+
 
     [HttpGet("status")]
     public async Task<IActionResult> GetBillingStatus()

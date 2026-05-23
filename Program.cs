@@ -1,4 +1,4 @@
-﻿using Clienta.Api.Authorization;
+using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.Hubs;
 using Clienta.Api.Middleware;
@@ -14,7 +14,12 @@ using QuestPDF.Infrastructure;
 using System.Text;
 using Amazon.S3;
 
+using Stripe;
+
 var builder = WebApplication.CreateBuilder(args);
+// Stripe configuration
+var stripeSecretKey = builder.Configuration["Stripe:SecretKey"];
+StripeConfiguration.ApiKey = stripeSecretKey;
 // Register DrugSeedService
 builder.Services.AddScoped<DrugSeedService>();
 
@@ -31,7 +36,7 @@ builder.Services.AddHostedService<TrialBackgroundService>();
 builder.Services.AddAWSService<IAmazonS3>(); 
 
 FontManager.RegisterFont(
-    File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))
+    System.IO.File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))
 );
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
@@ -53,7 +58,7 @@ builder.Services.AddDbContext<MasterDbContext>(options =>
 builder.Services.AddScoped<JwtService>();
 builder.Services.AddScoped<AuthSeedService>();
 builder.Services.AddScoped<TenantService>();
-builder.Services.AddScoped<TokenService>();
+builder.Services.AddScoped<Clienta.Api.Services.TokenService>();
 builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();
@@ -142,7 +147,7 @@ builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new() { Title = "Clienta API", Version = "v1" });
 
-    // 🔐 JWT Authentication
+    // ?? JWT Authentication
     options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Name = "Authorization",
