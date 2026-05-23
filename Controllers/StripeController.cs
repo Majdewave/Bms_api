@@ -39,6 +39,11 @@ public class StripeController : ControllerBase
     {
         try
         {
+            Console.WriteLine("=== CHECKOUT REQUEST ===");
+            Console.WriteLine($"TenantId: {request.TenantId}");
+            Console.WriteLine($"Plan: {request.Plan}");
+            Console.WriteLine($"BillingCycle: {request.BillingCycle}");
+
             var tenantId = request.TenantId;
 
             if (tenantId == Guid.Empty)
@@ -46,7 +51,7 @@ public class StripeController : ControllerBase
                 return BadRequest(new { error = "TenantId is required" });
             }
             // Call StripeService
-            var url = await _stripeService.CreateCheckoutSessionAsync(tenantId, Clienta.Api.Models.PlanType.Pro, Clienta.Api.Models.BillingCycle.Monthly);
+            var url = await _stripeService.CreateCheckoutSessionAsync(tenantId, Clienta.Api.Models.PlanType.Pro, request.BillingCycle);
             return Ok(new { url });
         }
         catch (InvalidOperationException ex)
@@ -297,20 +302,20 @@ public class StripeController : ControllerBase
 
                     if (tenant != null)
                     {
-                        tenant.SubscriptionStatus =
-                            SubscriptionStatus.Canceled;
+                            tenant.SubscriptionStatus = SubscriptionStatus.Canceled;
+                            tenant.StripeSubscriptionId = null; 
+                            tenant.StripePriceId = null;
+                            tenant.SubscriptionEndsAt = DateTime.UtcNow;
+                            tenant.Plan = PlanType.Trial; 
 
-                        tenant.SubscriptionEndsAt =
-                            DateTime.UtcNow;
-
-                        await _context.SaveChangesAsync();
+                            await _context.SaveChangesAsync();
                     }
 
                     break;
                 }
             }
 
-            return Ok(); //  תמיד OK
+            return Ok();
         }
         catch (Exception ex)
         {
@@ -323,5 +328,6 @@ public class StripeController : ControllerBase
     {
         public string Plan { get; set; }
         public Guid TenantId { get; set; }
+        public BillingCycle BillingCycle { get; set; }
     }
 }
