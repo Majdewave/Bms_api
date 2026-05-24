@@ -209,7 +209,7 @@ namespace Clienta.Api.Controllers
                             });
                         }
 
-                        Section("בדיקה", summary.Examination);
+                        Section("תלונה", summary.Examination);
                         Section("אבחנה", summary.Diagnosis);
                         Section("המלצות", summary.Recommendations);
 

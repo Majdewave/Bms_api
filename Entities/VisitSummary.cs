@@ -12,7 +12,7 @@ namespace Clienta.Api.Entities
 
         public Guid? StaffId { get; set; }
 
-        public string Examination { get; set; } = string.Empty;   // בדיקה
+        public string Examination { get; set; } = string.Empty;   // תלונה
 
         public string Diagnosis { get; set; } = string.Empty;     // אבחנה
 
