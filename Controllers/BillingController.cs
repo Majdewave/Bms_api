@@ -99,6 +99,7 @@ public class BillingController : ControllerBase
                 plan = tenant.Plan.ToString(),
                 billingCycle = tenant.BillingCycle.ToString(),
                 subscriptionStatus = tenant.SubscriptionStatus.ToString(),
+                subscriptionEndsAt = tenant.SubscriptionEndsAt,
                 id = tenant.Id,
                 trialEndsAt = tenant.TrialEndsAt,
                 daysRemaining = daysRemaining > 0 ? daysRemaining : 0,

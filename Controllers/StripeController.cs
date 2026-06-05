@@ -254,14 +254,29 @@ public class StripeController : ControllerBase
                     tenant.IsSuspended = false;
 
                     await _context.SaveChangesAsync();
-                    Console.WriteLine("✅ Tenant updated from webhook (plan upgraded to Pro, subscription active, not suspended)");
+
+                        await _emailService.SendEmailAsync(
+                            "mjd.salman@gmail.com",
+                            "💰 New Paid Subscription in Clienta",
+                            $@"
+                            <h2>New Paid Client</h2>
+
+                            <p><strong>Business:</strong> {tenant.Name}</p>
+                            <p><strong>Subdomain:</strong> {tenant.Subdomain}</p>
+
+                            <p><strong>Customer Id:</strong> {customerId}</p>
+                            <p><strong>Subscription Id:</strong> {subscriptionId}</p>
+
+                            <p><strong>Plan:</strong> Pro</p>
+                        ");
+                        Console.WriteLine("✅ Tenant updated from webhook (plan upgraded to Pro, subscription active, not suspended)");
                     break;
                 }
                 case "customer.subscription.updated":
                 {
                     var subscription = stripeEvent.Data.Object as Subscription;
 
-                    if (subscription == null)
+                        if (subscription == null)
                         break;
 
                     var tenant = await _context.Tenants
@@ -280,16 +295,30 @@ public class StripeController : ControllerBase
                                 _ => SubscriptionStatus.Canceled
                             };
 
-                        var currentPeriodEnd =
-                            subscription.Items.Data
-                                .FirstOrDefault()
-                                ?.CurrentPeriodEnd;
 
-                        tenant.SubscriptionEndsAt =
-                            currentPeriodEnd;
+                            var currentPeriodEnd =
+                                subscription.Items.Data
+                                    .FirstOrDefault()
+                                    ?.CurrentPeriodEnd;
 
-                        await _context.SaveChangesAsync();
-                    }
+                            // Cancellation scheduled
+                            if (subscription.CancelAt != null)
+                            {
+                                tenant.SubscriptionEndsAt = subscription.CancelAt;
+                            }
+                            else
+                            {
+                                tenant.SubscriptionEndsAt = null;
+                            }
+
+                            Console.WriteLine(
+                                $"Stripe Update => Status={subscription.Status}, " +
+                                $"CancelAt={subscription.CancelAt}, " +
+                                $"CurrentPeriodEnd={currentPeriodEnd}, " +
+                                $"SavedEndsAt={tenant.SubscriptionEndsAt}");
+
+                            await _context.SaveChangesAsync();
+                        }
 
                     break;
                 }

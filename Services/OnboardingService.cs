@@ -146,7 +146,7 @@ public class OnboardingService : IOnboardingService
 
             await transaction.CommitAsync();
 
-            return $"{pending.Subdomain}.yourapp.com";
+            return $"{pending.Subdomain}.digitalpenpro.com";
         }
         catch
         {

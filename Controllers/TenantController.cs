@@ -57,6 +57,7 @@ public class TenantController : ControllerBase
             plan = tenant.Plan.ToString(),
             subscriptionStatus = tenant.SubscriptionStatus.ToString(),
             trialEndsAt = tenant.TrialEndsAt,
+            SubscriptionEndsAt = tenant.SubscriptionEndsAt,
             isSuspended = tenant.IsSuspended
         });
     }

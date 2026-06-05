@@ -20,19 +20,22 @@ public class AuthController : ControllerBase
     private readonly IAuthService _authService;
     private readonly ILogger<AuthController> _logger;
     private readonly ResetRateLimiter _rateLimiter;
+    private readonly IEmailService _emailService;
 
     public AuthController(
         AppDbContext context,
         JwtService jwtService,
         IAuthService authService,
         ILogger<AuthController> logger,
-        ResetRateLimiter rateLimiter)
+        ResetRateLimiter rateLimiter,
+        IEmailService emailService)
     {
         _context = context;
         _jwtService = jwtService;
         _authService = authService;
         _logger = logger;
         _rateLimiter = rateLimiter;
+        _emailService = emailService;
     }
 
     [HttpPost("register")]
@@ -119,6 +122,29 @@ public class AuthController : ControllerBase
                 .Where(t => t.Id == tenant.Id)
                 .ExecuteUpdateAsync(t => t
                     .SetProperty(x => x.OwnerUserId, user.Id));
+
+
+
+            // sending mail for me about every new Tenant (Trial)
+            try
+            {
+                await _emailService.SendEmailAsync(
+                    "mjd.salman@gmail.com",
+                    "🎉 New Clienta Trial Registration",
+                    $@"
+                    <h2>New Trial Registration</h2>
+
+                    <p><strong>Business:</strong> {tenant.Name}</p>
+                    <p><strong>Email:</strong> {user.Email}</p>
+                    <p><strong>Full Name:</strong> {user.FullName}</p>
+                    <p><strong>Tenant Id:</strong> {tenant.Id}</p>
+                     "
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed sending admin registration notification");
+            }
 
 
             var token = _jwtService.GenerateToken(user, tenant.Id);
