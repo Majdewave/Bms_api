@@ -3,6 +3,7 @@ namespace Clienta.Api.DTOs;
 public record CreateClientRequest(
     string FullName,
     string? IdNumber,
+    DateTime? BirthDate,
     string? Email,
     string? Phone,
     string? Address,
@@ -12,6 +13,7 @@ public record CreateClientRequest(
 public record UpdateClientRequest(
     string FullName,
     string? IdNumber,
+    DateTime? BirthDate,
     string? Email,
     string? Phone,
     string? Address,
@@ -23,6 +25,7 @@ public record ClientResponse(
     Guid Id,
     string FullName,
     string? IdNumber,
+    DateTime? BirthDate,
     string? Email,
     string? Phone,
     string? Address,
@@ -33,3 +36,4 @@ public record ClientResponse(
     DateTime? LastVisit,
     bool IsNotDocumented
 );
+

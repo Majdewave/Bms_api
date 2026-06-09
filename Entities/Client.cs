@@ -9,6 +9,7 @@ public class Client : ITenantEntity
     public virtual Tenant Tenant { get; set; } = default!;
     public string FullName { get; set; } = string.Empty;
     public string? IdNumber { get; set; }
+    public DateTime? BirthDate { get; set; }
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? Address { get; set; }

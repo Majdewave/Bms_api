@@ -34,6 +34,7 @@ public class ClientsController : ControllerBase
             c.Id,
             c.FullName,
             c.IdNumber,
+            c.BirthDate,
             c.Email,
             c.Phone,
             c.Address,
@@ -63,6 +64,7 @@ public class ClientsController : ControllerBase
                 c.Id,
                 c.FullName,
                 c.IdNumber,
+                c.BirthDate,
                 c.Email,
                 c.Phone,
                 c.Address,
@@ -98,6 +100,9 @@ public class ClientsController : ControllerBase
             TenantId = _tenantContext.TenantId,
             FullName = request.FullName,
             IdNumber = request.IdNumber,
+            BirthDate = request.BirthDate.HasValue
+                        ? DateTime.SpecifyKind(request.BirthDate.Value, DateTimeKind.Utc)
+                        : null,
             Email = request.Email,
             Phone = request.Phone,
             Address = request.Address,
@@ -112,6 +117,7 @@ public class ClientsController : ControllerBase
             client.Id,
             client.FullName,
             client.IdNumber,
+            client.BirthDate,
             client.Email,
             client.Phone,
             client.Address,
@@ -134,6 +140,9 @@ public class ClientsController : ControllerBase
             return NotFound();
         client.FullName = request.FullName;
         client.IdNumber = request.IdNumber;
+        client.BirthDate = request.BirthDate.HasValue
+                            ? DateTime.SpecifyKind(request.BirthDate.Value, DateTimeKind.Utc)
+                            : null;
         client.Email = request.Email;
         client.Phone = request.Phone;
         client.Address = request.Address;

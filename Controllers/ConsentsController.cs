@@ -383,6 +383,12 @@ public class ConsentsController : ControllerBase
                         section.Item().AlignRight().Text($"שם מטופל: {client.FullName}")
                             .Style(HebrewStyle());
 
+                        section.Item().AlignRight().Text($"ת.ז: {client.IdNumber ?? string.Empty}")
+                             .Style(HebrewStyle());
+
+                        section.Item().AlignRight().Text($"תאריך לידה: {(client.BirthDate.HasValue ? client.BirthDate.Value.ToString("dd/MM/yyyy") : string.Empty)}"
+                        ).Style(HebrewStyle());
+
                         section.Item().AlignRight().Text($"שירות: {appointment.Service?.Name ?? string.Empty}")
                             .Style(HebrewStyle());
 
