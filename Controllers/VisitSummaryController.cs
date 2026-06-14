@@ -115,28 +115,47 @@ namespace Clienta.Api.Controllers
 
             byte[]? logoBytes = null;
 
-            if (tenantClaim != null)
+            string businessName = "";
+            string? whatsapp = "";
+
+            var tenant = await _context.Tenants
+                .FirstOrDefaultAsync(t => t.Id == tenantId);
+
+            if (tenant != null)
             {
-                var tenant = await _context.Tenants.FirstOrDefaultAsync(t => t.Id == tenantId);
-                var logoUrl = tenant?.LogoUrl;
+                businessName = tenant.Name ?? "";
+                whatsapp = tenant.Phone ?? "";
 
                 try
                 {
-                    using var http = new HttpClient();
-                    logoBytes = await http.GetByteArrayAsync(logoUrl);
+                    if (!string.IsNullOrWhiteSpace(tenant.LogoUrl))
+                    {
+                        using var http = new HttpClient();
+                        logoBytes = await http.GetByteArrayAsync(tenant.LogoUrl);
+                    }
                 }
                 catch { }
             }
 
-            var pdfBytes = GenerateVisitSummaryPdf(summary,client.FullName,client.IdNumber,client.Phone, businessUser?.User?.FullName ?? "", logoBytes,stampBytes); 
+            var pdfBytes = GenerateVisitSummaryPdf(
+                summary,
+                client.FullName,
+                client.IdNumber,
+                client.Phone,
+                businessUser?.User?.FullName ?? "",
+                businessName,
+                whatsapp,
+                logoBytes,
+                stampBytes
+            );
             return File(pdfBytes, "application/pdf", $"VisitSummary_{summary.Id}.pdf");
         }
 
-        private byte[] GenerateVisitSummaryPdf(VisitSummary summary, string clientName,string? idNumber,
-         string? phone,
-         string doctorName,
-         byte[]? logoBytes,
-         byte[]? stampBytes)
+        private byte[] GenerateVisitSummaryPdf(VisitSummary summary,string clientName,string? idNumber,string? phone, string doctorName,
+            string businessName,
+            string? whatsapp,
+            byte[]? logoBytes,
+            byte[]? stampBytes)
         {
             var document = Document.Create(container =>
             {
@@ -152,13 +171,35 @@ namespace Clienta.Api.Controllers
 
                         // שם עסק
                         col.Item().AlignCenter()
-                            .Text("Majd Salon")
+                            .Text(businessName)
                             .FontFamily("Noto Sans Hebrew")
                             .FontSize(18)
                             .Bold()
                             .DirectionFromRightToLeft();
 
-                        col.Item().LineHorizontal(1);
+                        col.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+
+                        // פרטי קשר
+                        var contactText = "";
+
+                        if (!string.IsNullOrWhiteSpace(phone))
+                            contactText += phone;
+
+                        if (!string.IsNullOrWhiteSpace(whatsapp))
+                        {
+                            if (!string.IsNullOrEmpty(contactText))
+                                contactText += " | ";
+
+                            contactText += $"WhatsApp {whatsapp}";
+                        }
+
+                        col.Item().AlignCenter()
+                            .Text(contactText)
+                            .FontFamily("Noto Sans Hebrew")
+                            .FontColor(Colors.Grey.Medium)
+                            .FontSize(10);
+
+                        col.Item().PaddingBottom(5);
 
                         // כותרת
                         col.Item().AlignCenter()
