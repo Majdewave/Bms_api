@@ -1,1 +1,0 @@
-import{p as o,d as s,a}from"./index-Bu2LEQAO.js";const r=async t=>o("/api/notes",t),p=async(t,e)=>a(`/api/notes/${t}`,e),c=async t=>s(`/api/notes/${t}`);export{r as createNote,c as deleteNote,p as updateNote};
