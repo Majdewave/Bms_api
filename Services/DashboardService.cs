@@ -183,7 +183,8 @@ namespace Clienta.Api.Services
                     staffName = a.Staff != null && a.Staff.User != null ? a.Staff.User.FullName : null,
                     startTime = a.StartTime,
                     endTime = a.EndTime,
-                    status = a.Status
+                    status = a.Status,
+                    isDocumented = a.IsDocumented
                 })
                 .ToListAsync();
 
