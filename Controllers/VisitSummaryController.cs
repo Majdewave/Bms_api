@@ -162,6 +162,32 @@ namespace Clienta.Api.Controllers
                 container.Page(page =>
                 {
                     page.Margin(20);
+                    // page number
+                    page.Footer().Row(row =>
+                    {
+                        row.RelativeItem()
+                            .AlignLeft()
+                            .Text($"הופק: {DateTime.Now:dd/MM/yyyy HH:mm}")
+                            .FontFamily("Noto Sans Hebrew")
+                            .FontSize(8)
+                            .FontColor(Colors.Grey.Medium);
+
+                        row.RelativeItem()
+                            .AlignCenter()
+                            .Text(text =>
+                            {
+                                text.Span("עמוד ").FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                                text.CurrentPageNumber().FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                                text.Span(" מתוך ").FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                                text.TotalPages().FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                            });
+
+                        row.RelativeItem()
+                            .AlignRight()
+                            .Text("CLIENTA")
+                            .FontSize(8)
+                            .FontColor(Colors.Grey.Medium);
+                    });
 
                     page.Content().Column(col =>
                     {
@@ -221,7 +247,7 @@ namespace Clienta.Api.Controllers
                                     .DirectionFromRightToLeft();
                             }
 
-                            Row("תאריך", summary.CreatedAt.ToString("dd/MM/yyyy") ?? "");
+                            Row("תאריך", summary.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm"));
                             Row("שם מטופל", clientName);
                             Row("ת.ז", idNumber ?? "");
                             Row("טלפון", phone ?? "");
@@ -250,7 +276,7 @@ namespace Clienta.Api.Controllers
                             });
                         }
 
-                        Section("תלונה", summary.Examination);
+                        Section("תלונה או ממצא בדיקה", summary.Examination);
                         Section("אבחנה", summary.Diagnosis);
                         Section("המלצות", summary.Recommendations);
 

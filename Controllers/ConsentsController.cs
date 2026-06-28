@@ -364,6 +364,32 @@ public class ConsentsController : ControllerBase
             {
                 page.Margin(20);
 
+                // page number 
+                page.Footer().Row(row =>
+                {
+                    row.RelativeItem()
+                        .AlignLeft()
+                        .Text($"הופק: {DateTime.Now:dd/MM/yyyy HH:mm}")
+                        .FontFamily("Noto Sans Hebrew")
+                        .FontSize(8)
+                        .FontColor(Colors.Grey.Medium);
+
+                    row.RelativeItem()
+                        .AlignCenter()
+                        .Text(text =>
+                        {
+                            text.Span("עמוד ").FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                            text.CurrentPageNumber().FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                            text.Span(" מתוך ").FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                            text.TotalPages().FontSize(9).FontFamily("Noto Sans Hebrew").FontColor(Colors.Grey.Medium);
+                        });
+                    row.RelativeItem()
+                        .AlignRight()
+                        .Text("CLIENTA")
+                        .FontSize(8)
+                        .FontColor(Colors.Grey.Medium);
+                });
+
                 page.Content().Column(col =>
                 {
                     if (logoBytes != null)

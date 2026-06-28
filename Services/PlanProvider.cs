@@ -17,7 +17,7 @@ public class PlanProvider : IPlanProvider
             {
                 Plan = plan,
                 UserLimit = 10,
-                MessageLimit = 100,
+                MessageLimit = 1000,
                 AllowCustomBranding = false,
                 EmailAutomation = true,
                 Priority = "Standard",

@@ -190,6 +190,14 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ProcessedAt).IsRequired();
         });
 
+        modelBuilder.Entity<Appointment>()
+         .HasIndex(a => new { a.TenantId, a.Status, a.StartTime })
+         .HasDatabaseName("IX_Appointments_Tenant_Status_StartTime");
+
+        modelBuilder.Entity<ClientConsent>()
+            .HasIndex(c => c.AppointmentId)
+            .HasDatabaseName("IX_ClientConsents_AppointmentId");
+
         modelBuilder.Entity<Invoice>()
             .HasMany(i => i.LineItems)
             .WithOne()

@@ -20,7 +20,6 @@ public record UpdateAppointmentRequest(
     bool? IsDocumented = true
 );
 
-
 public record AppointmentDto(
     Guid Id,
     Guid ClientId,
@@ -34,7 +33,8 @@ public record AppointmentDto(
     string Status,
     string? Notes,
     DateTime CreatedAt,
-    bool IsDocumented
+    bool IsDocumented,
+    bool HasSignedConsent
 );
 
 public record AppointmentResponse(

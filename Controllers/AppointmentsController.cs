@@ -56,7 +56,8 @@ public class AppointmentsController : ControllerBase
                 inProgress.Status,
                 inProgress.Notes,
                 inProgress.CreatedAt,
-                inProgress.IsDocumented
+                inProgress.IsDocumented,
+                _context.ClientConsents.Any(c => c.AppointmentId == inProgress.Id)
             ),
             next = nextWaiting == null ? null : new AppointmentDto(
                 nextWaiting.Id,
@@ -71,7 +72,8 @@ public class AppointmentsController : ControllerBase
                 nextWaiting.Status,
                 nextWaiting.Notes,
                 nextWaiting.CreatedAt,
-                nextWaiting.IsDocumented
+                nextWaiting.IsDocumented,
+                _context.ClientConsents.Any(c => c.AppointmentId == inProgress.Id)
             ),
             waitingCount
         });
@@ -98,10 +100,18 @@ public class AppointmentsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        var twoWeeksAgo = DateTime.UtcNow.AddDays(-14);
+
         var appointments = await _context.Appointments
             .Include(a => a.Client)
             .Include(a => a.Service)
             .Include(a => a.Staff)
+
+            // תביא נתונים שבועיים אחורה כרגע עד שנפתור את הבעיה של הפילטר 
+            .Where(a =>
+             a.TenantId == _tenant.TenantId &&
+             a.StartTime >= twoWeeksAgo
+            )
 
             // בטיפול ראשון, אחר כך ממתינים, אחר כך כל השאר
             .OrderBy(a =>
@@ -126,7 +136,8 @@ public class AppointmentsController : ControllerBase
                 a.Status,
                 a.Notes,
                 a.CreatedAt,
-                a.IsDocumented
+                a.IsDocumented,
+                 _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
             ))
             .ToListAsync();
 
@@ -156,7 +167,8 @@ public class AppointmentsController : ControllerBase
                 a.Status,
                 a.Notes,
                 a.CreatedAt,
-                a.IsDocumented
+                a.IsDocumented,
+                 _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
             ))
             .FirstOrDefaultAsync();
 
@@ -262,7 +274,8 @@ public class AppointmentsController : ControllerBase
                 appointment.Status,
                 appointment.Notes,
                 appointment.CreatedAt,
-                appointment.IsDocumented
+                appointment.IsDocumented,
+                _context.ClientConsents.Any(c => c.AppointmentId == appointment.Id)
             ));
     }
 
@@ -392,7 +405,8 @@ public class AppointmentsController : ControllerBase
             appointment.Status,
             appointment.Notes,
             appointment.CreatedAt,
-            appointment.IsDocumented
+            appointment.IsDocumented,
+            _context.ClientConsents.Any(c => c.AppointmentId == appointment.Id)
         ));
     }
 
