@@ -10,6 +10,7 @@ public class Tenant
     public string? WhatsApp { get; set; }
     public string Subdomain { get; set; } = default!;
     public string? LogoUrl { get; set; }
+    public string? BusinessStampUrl { get; set; }
 
     public PlanType Plan { get; set; } = PlanType.Trial;
     public SubscriptionStatus SubscriptionStatus { get; set; } = SubscriptionStatus.Trialing;
@@ -26,6 +27,10 @@ public class Tenant
     public int MessageLimit { get; set; } = 100;
     public int AutoDeleteNotDocumentedAfterDays { get; set; } = 1;
     public bool EnableAutoDeleteNotDocumented { get; set; } = true;
+    public decimal DefaultVatRate { get; set; } = 18m;
+    public string Currency { get; set; } = "ILS";
+    public string InvoicePrefix { get; set; } = "INV-";
+    public int NextInvoiceNumber { get; set; } = 1;
 
 
     public string? StripeCustomerId { get; set; }

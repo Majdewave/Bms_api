@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260628224858_AddDefaultVatRateToTenant")]
+    partial class AddDefaultVatRateToTenant
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -489,9 +492,6 @@ namespace Clienta.Api.Migrations
                     b.Property<decimal>("Subtotal")
                         .HasColumnType("numeric");
 
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
                     b.Property<decimal>("TotalAmount")
                         .HasColumnType("numeric");
 
@@ -502,9 +502,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("numeric");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("TenantId", "InvoiceNumber")
-                        .IsUnique();
 
                     b.ToTable("Invoices");
                 });
@@ -742,25 +739,14 @@ namespace Clienta.Api.Migrations
                     b.Property<int>("BillingCycle")
                         .HasColumnType("integer");
 
-                    b.Property<string>("BusinessStampUrl")
-                        .HasColumnType("text");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<decimal>("DefaultVatRate")
                         .HasColumnType("numeric");
 
                     b.Property<bool>("EnableAutoDeleteNotDocumented")
                         .HasColumnType("boolean");
-
-                    b.Property<string>("InvoicePrefix")
-                        .IsRequired()
-                        .HasColumnType("text");
 
                     b.Property<bool>("IsSuspended")
                         .HasColumnType("boolean");
@@ -780,9 +766,6 @@ namespace Clienta.Api.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<int>("NextInvoiceNumber")
-                        .HasColumnType("integer");
 
                     b.Property<Guid?>("OwnerUserId")
                         .HasColumnType("uuid");

@@ -5,10 +5,15 @@ namespace Clienta.Api.Entities;
 public class Invoice
 {
     public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid TenantId { get; set; }
     public string InvoiceNumber { get; set; } = "";
     public Guid ClientId { get; set; }
     public string ClientName { get; set; } = "";
     public decimal Amount { get; set; }
+    public decimal VatRate { get; set; } = 18m;
+    public decimal Subtotal { get; set; }
+    public decimal VatAmount { get; set; }
+    public decimal TotalAmount { get; set; }
     public DateTime InvoiceDate { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Notes { get; set; }
@@ -17,6 +22,7 @@ public class Invoice
     public string? BusinessPhone { get; set; }
     public string? BusinessEmail { get; set; }
     public string? LogoUrl { get; set; }
+    public string? BusinessStampUrl { get; set; }
     public string? LogoBase64 { get; set; }
     public string Language { get; set; } = "en";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

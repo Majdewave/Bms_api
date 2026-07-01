@@ -199,6 +199,13 @@ public class AppDbContext : DbContext
             .HasDatabaseName("IX_ClientConsents_AppointmentId");
 
         modelBuilder.Entity<Invoice>()
+            .HasQueryFilter(invoice => _tenantContext.TenantId == Guid.Empty || invoice.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Invoice>()
+            .HasIndex(invoice => new { invoice.TenantId, invoice.InvoiceNumber })
+            .IsUnique();
+
+        modelBuilder.Entity<Invoice>()
             .HasMany(i => i.LineItems)
             .WithOne()
             .HasForeignKey(li => li.InvoiceId)

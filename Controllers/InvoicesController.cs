@@ -1,4 +1,6 @@
+using System.Globalization;
 using Clienta.Api.Data;
+using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -6,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
-using System.Globalization;
+using Microsoft.AspNetCore.Hosting;
 
 namespace Clienta.Api.Controllers;
 
@@ -14,15 +16,18 @@ namespace Clienta.Api.Controllers;
 [Route("api/invoices")]
 public class InvoicesController : ControllerBase
 {
+    private const decimal DefaultVatRate = 18m;
+
     private readonly AppDbContext _db;
     private readonly IFeatureService _featureService;
     private readonly ITenantContext _tenantContext;
-
-    public InvoicesController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService)
+    private readonly IWebHostEnvironment _env;
+    public InvoicesController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService, IWebHostEnvironment env)
     {
         _db = db;
         _tenantContext = tenantContext;
         _featureService = featureService;
+        _env = env;
     }
 
     [HttpGet]
@@ -32,372 +37,168 @@ public class InvoicesController : ControllerBase
             return Forbid();
 
         var invoices = await _db.Invoices
-            .Include(i => i.LineItems)
-            .OrderByDescending(i => i.CreatedAt)
+            .Include(invoice => invoice.LineItems)
+            .OrderByDescending(invoice => invoice.CreatedAt)
             .ToListAsync();
 
         return Ok(invoices);
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] Invoice request)
-    {
-        if (!await _featureService.IsEnabledAsync("invoices"))
-            return Forbid();
-
-        var client = await _db.Clients.FindAsync(request.ClientId);
-
-        if (client == null)
-            return BadRequest("Client not found");
-
-        var invoice = new Invoice
-        {
-            InvoiceNumber = request.InvoiceNumber,
-            ClientId = client.Id,
-            ClientName = client.FullName,
-            Amount = request.Amount,
-            InvoiceDate = request.InvoiceDate,
-            DueDate = request.DueDate,
-            Notes = request.Notes,
-            BusinessName = request.BusinessName,
-            BusinessAddress = request.BusinessAddress,
-            BusinessPhone = request.BusinessPhone,
-            BusinessEmail = request.BusinessEmail,
-            LogoUrl = request.LogoUrl,
-            LogoBase64 = request.LogoBase64,
-            Language = string.IsNullOrWhiteSpace(request.Language) ? "en" : request.Language,
-            LineItems = BuildRequestedLineItems(request)
-        };
-
-        _db.Invoices.Add(invoice);
-        await _db.SaveChangesAsync();
-
-        return Ok(invoice);
-    }
-
-    [HttpGet("{id}/pdf")]
-    public async Task<IActionResult> GetPdf(Guid id)
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(Guid id)
     {
         if (!await _featureService.IsEnabledAsync("invoices"))
             return Forbid();
 
         var invoice = await _db.Invoices
-            .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == id);
+            .Include(item => item.LineItems)
+            .FirstOrDefaultAsync(item => item.Id == id);
+
+        Console.WriteLine($"Invoice has {invoice.LineItems.Count} line items");
+
+        foreach (var item in invoice.LineItems)
+        {
+            Console.WriteLine($"DB LineItem: {item.Id}");
+        }
 
         if (invoice == null)
             return NotFound();
 
-        var tenant = await GetTenantAsync();
-        var lang = string.IsNullOrWhiteSpace(invoice.Language) ? "he" : invoice.Language.ToLowerInvariant();
-        var isRtl = lang == "he" || lang == "ar";
-        var title = lang switch
+        return Ok(invoice);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateInvoiceRequest request)
+    {
+        if (!await _featureService.IsEnabledAsync("invoices"))
+            return Forbid();
+
+        var client = await _db.Clients.FindAsync(request.ClientId);
+        if (client == null)
+            return BadRequest("Client not found");
+
+        if (!TryBuildLineItems(request.LineItems, out var lineItems, out var validationError))
+            return BadRequest(validationError);
+
+        var tenant = await GetTenantForWriteAsync();
+        if (tenant == null)
+            return NotFound("Tenant not found");
+
+        var invoiceNumber = NormalizeInvoiceNumber(tenant);
+        if (await InvoiceNumberExistsAsync(tenant.Id, invoiceNumber))
+            return Conflict("Invoice number already exists.");
+
+        var invoice = new Invoice();
+        invoice.LineItems.AddRange(lineItems);
+
+        invoice.TenantId = tenant.Id;
+        invoice.InvoiceNumber = invoiceNumber;
+
+        ApplyInvoiceValues(invoice, request, client, tenant, invoice.LineItems.ToList());
+
+
+        try
         {
-            "he" => "חשבונית",
-            "ar" => "فاتورة",
-            _ => "INVOICE"
-        };
-        var client = lang switch
+            _db.Invoices.Add(invoice);
+
+            tenant.NextInvoiceNumber = tenant.NextInvoiceNumber > 0
+                ? tenant.NextInvoiceNumber + 1
+                : 2;
+
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
         {
-            "he" => "לקוח",
-            "ar" => "العميل",
-            _ => "Client"
-        };
-        var dateLabel = lang switch
+            return Conflict("Invoice number already exists.");
+        }
+        catch (Exception ex)
         {
-            "he" => "תאריך",
-            "ar" => "التاريخ",
-            _ => "Date"
-        };
-        var dueLabel = lang switch
-        {
-            "he" => "תאריך יעד",
-            "ar" => "تاريخ الاستحقاق",
-            _ => "Due Date"
-        };
-        var totalLabel = lang switch
-        {
-            "he" => "סה\"כ",
-            "ar" => "الإجمالي",
-            _ => "Total"
-        };
-        var notesLabel = lang switch
-        {
-            "he" => "הערות",
-            "ar" => "ملاحظات",
-            _ => "Notes"
-        };
-        var descriptionLabel = lang switch
-        {
-            "he" => "תיאור",
-            "ar" => "الوصف",
-            _ => "Description"
-        };
-        var qtyLabel = lang switch
-        {
-            "he" => "כמות",
-            "ar" => "الكمية",
-            _ => "Qty"
-        };
-        var priceLabel = lang switch
-        {
-            "he" => "מחיר",
-            "ar" => "السعر",
-            _ => "Price"
-        };
-        var businessName = invoice.BusinessName ?? tenant?.Name ?? "DigitalPenPro";
-        var businessAddress = invoice.BusinessAddress;
-        var businessPhone = invoice.BusinessPhone ?? "+971 50 123 4567";
-        var businessEmail = invoice.BusinessEmail ?? "info@digitalpenpro.com";
-        var logoBytes = await TryLoadLogoBytesAsync(invoice.LogoBase64, invoice.LogoUrl ?? tenant?.LogoUrl);
-        var lineItems = invoice.LineItems.Any()
-            ? invoice.LineItems.Select(item => new
+            return StatusCode(500, new
             {
-                Description = string.IsNullOrWhiteSpace(item.Description) ? "Service" : item.Description,
-                Quantity = item.Quantity <= 0 ? 1 : item.Quantity,
-                Price = item.Price,
-                Total = item.Total <= 0 ? item.Price * (item.Quantity <= 0 ? 1 : item.Quantity) : item.Total,
-            }).ToList()
-            : new[]
-            {
-                new
-                {
-                    Description = "Service",
-                    Quantity = 1m,
-                    Price = invoice.Amount,
-                    Total = invoice.Amount,
-                }
-            }.ToList();
-        var total = lineItems.Sum(x => x.Total);
-
-        var pdf = Document.Create(container =>
-        {
-            container.Page(page =>
-            {
-                page.Margin(30);
-
-                page.Content().Column(col =>
-                {
-                    col.Item().Row(row =>
-                    {
-                        if (!isRtl)
-                        {
-                            if (logoBytes is { Length: > 0 })
-                            {
-                                row.ConstantItem(70)
-                                    .Height(50)
-                                    .AlignMiddle()
-                                    .Image(logoBytes);
-
-                                row.ConstantItem(15);
-                            }
-
-                            row.RelativeItem().Column(c =>
-                            {
-                                c.Item().AlignLeft().Text(businessName).Bold().FontSize(18);
-
-                                if (!string.IsNullOrWhiteSpace(businessAddress))
-                                    c.Item().AlignLeft().Text(businessAddress);
-
-                                c.Item().AlignLeft().Text(businessEmail);
-                                c.Item().AlignLeft().Text(businessPhone);
-                            });
-
-                            row.ConstantItem(200).Column(c =>
-                            {
-                                c.Item().AlignRight().Text(title).FontSize(24).Bold();
-                                c.Item().AlignRight().Text($"# {invoice.InvoiceNumber}");
-                                c.Item().AlignRight().Text($"{dateLabel}: {invoice.InvoiceDate:yyyy-MM-dd}");
-                                c.Item().AlignRight().Text($"{dueLabel}: {invoice.DueDate?.ToString("yyyy-MM-dd") ?? "-"}");
-                            });
-                        }
-                        else
-                        {
-                            row.ConstantItem(200).Column(c =>
-                            {
-                                c.Item().AlignRight().Text(title).FontSize(24).Bold();
-                                c.Item().AlignRight().Text($"# {invoice.InvoiceNumber}");
-                                c.Item().AlignRight().Text($"{dateLabel}: {invoice.InvoiceDate:yyyy-MM-dd}");
-                                c.Item().AlignRight().Text($"{dueLabel}: {invoice.DueDate?.ToString("yyyy-MM-dd") ?? "-"}");
-                            });
-
-                            row.RelativeItem().Column(c =>
-                            {
-                                c.Item().AlignRight().Text(businessName).Bold().FontSize(18);
-
-                                if (!string.IsNullOrWhiteSpace(businessAddress))
-                                    c.Item().AlignRight().Text(businessAddress);
-
-                                c.Item().AlignRight().Text(businessEmail);
-                                c.Item().AlignRight().Text(businessPhone);
-                            });
-
-                            if (logoBytes is { Length: > 0 })
-                            {
-                                row.ConstantItem(15);
-                                row.ConstantItem(70)
-                                    .Height(50)
-                                    .AlignMiddle()
-                                    .Image(logoBytes);
-                            }
-                        }
-                    });
-
-                    col.Item().PaddingVertical(10).LineHorizontal(1);
-
-                    if (isRtl)
-                    {
-                        col.Item().AlignRight().Text($"{client}: {invoice.ClientName}").Bold();
-                        col.Item().AlignRight().Text($"{dateLabel}: {invoice.InvoiceDate:yyyy-MM-dd}");
-                        col.Item().AlignRight().Text($"{dueLabel}: {invoice.DueDate?.ToString("yyyy-MM-dd") ?? "-"}");
-                    }
-                    else
-                    {
-                        col.Item().AlignLeft().Text($"{client}: {invoice.ClientName}").Bold();
-                        col.Item().AlignLeft().Text($"{dateLabel}: {invoice.InvoiceDate:yyyy-MM-dd}");
-                        col.Item().AlignLeft().Text($"{dueLabel}: {invoice.DueDate?.ToString("yyyy-MM-dd") ?? "-"}");
-                    }
-
-                    col.Item().PaddingVertical(10);
-
-                    col.Item().Table(table =>
-                    {
-                        if (isRtl)
-                        {
-                            table.ColumnsDefinition(columns =>
-                            {
-                                columns.RelativeColumn(2);
-                                columns.RelativeColumn(2);
-                                columns.RelativeColumn(1);
-                                columns.RelativeColumn(4);
-                            });
-                        }
-                        else
-                        {
-                            table.ColumnsDefinition(columns =>
-                            {
-                                columns.RelativeColumn(4);
-                                columns.RelativeColumn(1);
-                                columns.RelativeColumn(2);
-                                columns.RelativeColumn(2);
-                            });
-                        }
-
-                        table.Header(header =>
-                        {
-                            if (isRtl)
-                            {
-                                header.Cell().PaddingBottom(5).AlignRight().Text(totalLabel).Bold();
-                                header.Cell().PaddingBottom(5).AlignRight().Text(priceLabel).Bold();
-                                header.Cell().PaddingBottom(5).AlignRight().Text(qtyLabel).Bold();
-                                header.Cell().PaddingBottom(5).AlignRight().Text(descriptionLabel).Bold();
-                            }
-                            else
-                            {
-                                header.Cell().PaddingBottom(5).Text(descriptionLabel).Bold();
-                                header.Cell().PaddingBottom(5).AlignRight().Text(qtyLabel).Bold();
-                                header.Cell().PaddingBottom(5).AlignRight().Text(priceLabel).Bold();
-                                header.Cell().PaddingBottom(5).AlignRight().Text(totalLabel).Bold();
-                            }
-                        });
-
-                        foreach (var item in lineItems)
-                        {
-                            if (isRtl)
-                            {
-                                table.Cell().PaddingVertical(4).AlignRight().Text($"{item.Total:0.00}");
-                                table.Cell().PaddingVertical(4).AlignRight().Text($"{item.Price:0.00}");
-                                table.Cell().PaddingVertical(4).AlignRight().Text($"{item.Quantity:0.##}");
-                                table.Cell().PaddingVertical(4).AlignRight().Text(item.Description);
-                            }
-                            else
-                            {
-                                table.Cell().PaddingVertical(4).Text(item.Description);
-                                table.Cell().PaddingVertical(4).AlignRight().Text($"{item.Quantity:0.##}");
-                                table.Cell().PaddingVertical(4).AlignRight().Text($"{item.Price:0.00}");
-                                table.Cell().PaddingVertical(4).AlignRight().Text($"{item.Total:0.00}");
-                            }
-                        }
-                    });
-
-                    col.Item().PaddingVertical(10).LineHorizontal(1);
-
-                    if (isRtl)
-                    {
-                        col.Item().AlignRight().Text($"{totalLabel}: {total:0.00}")
-                            .FontSize(16)
-                            .Bold();
-                    }
-                    else
-                    {
-                        col.Item().AlignLeft().Text($"{totalLabel}: {total:0.00}")
-                            .FontSize(16)
-                            .Bold();
-                    }
-
-                    if (!string.IsNullOrEmpty(invoice.Notes))
-                    {
-                        if (isRtl)
-                        {
-                            col.Item().PaddingTop(10).AlignRight().Text(notesLabel).Bold();
-                            col.Item().AlignRight().Text(invoice.Notes);
-                        }
-                        else
-                        {
-                            col.Item().PaddingTop(10).AlignLeft().Text(notesLabel).Bold();
-                            col.Item().AlignLeft().Text(invoice.Notes);
-                        }
-                    }
-                });
+                ex.Message,
+                ex.StackTrace
             });
-        }).GeneratePdf();
+        }
 
-        return File(pdf, "application/pdf", $"invoice-{invoice.Id}.pdf");
+        return Ok(invoice);
     }
 
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(Guid id, [FromBody] Invoice request)
+    public async Task<IActionResult> Update(Guid id, [FromBody] CreateInvoiceRequest request)
     {
         if (!await _featureService.IsEnabledAsync("invoices"))
             return Forbid();
 
         var invoice = await _db.Invoices
-            .Include(i => i.LineItems)
-            .FirstOrDefaultAsync(i => i.Id == id);
+            .Include(item => item.LineItems)
+            .FirstOrDefaultAsync(item => item.Id == id);
 
         if (invoice == null)
             return NotFound();
 
         var client = await _db.Clients.FindAsync(request.ClientId);
-
         if (client == null)
             return BadRequest("Client not found");
 
-        invoice.InvoiceNumber = request.InvoiceNumber;
-        invoice.ClientId = client.Id;
-        invoice.ClientName = client.FullName;
-        invoice.Amount = request.Amount;
-        invoice.InvoiceDate = request.InvoiceDate;
-        invoice.DueDate = request.DueDate;
-        invoice.Notes = request.Notes;
-        invoice.BusinessName = request.BusinessName;
-        invoice.BusinessAddress = request.BusinessAddress;
-        invoice.BusinessPhone = request.BusinessPhone;
-        invoice.BusinessEmail = request.BusinessEmail;
-        invoice.LogoUrl = request.LogoUrl;
-        invoice.LogoBase64 = request.LogoBase64;
-        invoice.Language = string.IsNullOrWhiteSpace(request.Language) ? invoice.Language : request.Language;
+        if (!TryBuildLineItems(request.LineItems, out var lineItems, out var validationError))
+            return BadRequest(validationError);
 
-        invoice.LineItems.Clear();
+        var tenant = await GetTenantForWriteAsync();
+        if (tenant == null)
+            return NotFound("Tenant not found");
 
-        foreach (var lineItem in BuildRequestedLineItems(request))
-        {
-            invoice.LineItems.Add(lineItem);
-        }
-
+        _db.InvoiceLineItems.RemoveRange(invoice.LineItems);
         await _db.SaveChangesAsync();
 
-        return Ok(invoice);
+        _db.ChangeTracker.Clear();
+
+        // טען מחדש את החשבונית לאחר המחיקה
+        invoice = await _db.Invoices
+            .Include(i => i.LineItems)
+            .FirstAsync(i => i.Id == id);
+
+        ApplyInvoiceValues(invoice, request, client, tenant, lineItems);
+
+        // הוסף ישירות לטבלה ולא דרך ה-Navigation
+        foreach (var lineItem in lineItems)
+        {
+            lineItem.Id = Guid.NewGuid();
+            lineItem.InvoiceId = invoice.Id;
+
+            _db.InvoiceLineItems.Add(lineItem);
+        }
+        try
+        {
+            await _db.SaveChangesAsync();
+            return Ok(invoice);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            var entries = ex.Entries.Select(e => new
+            {
+                Entity = e.Entity.GetType().Name,
+                State = e.State.ToString(),
+                Keys = e.Properties
+                    .Where(p => p.Metadata.IsPrimaryKey())
+                    .ToDictionary(
+                        p => p.Metadata.Name,
+                        p => p.CurrentValue)
+            });
+
+            return StatusCode(500, new
+            {
+                ex.Message,
+                Entries = entries
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                ex.Message,
+                ex.StackTrace
+            });
+        }
     }
 
     [HttpDelete("{id}")]
@@ -407,7 +208,6 @@ public class InvoicesController : ControllerBase
             return Forbid();
 
         var invoice = await _db.Invoices.FindAsync(id);
-
         if (invoice == null)
             return NotFound();
 
@@ -417,34 +217,194 @@ public class InvoicesController : ControllerBase
         return Ok();
     }
 
-    private List<InvoiceLineItem> BuildRequestedLineItems(Invoice request)
+    [HttpGet("{id}/pdf")]
+    public async Task<IActionResult> GetPdf(Guid id)
     {
-        if (request.LineItems == null || request.LineItems.Count == 0)
-            return new List<InvoiceLineItem>();
+        try { 
+            QuestPDF.Drawing.FontManager.RegisterFont(
+            System.IO.File.OpenRead(
+                  Path.Combine(_env.WebRootPath, "fonts", "NotoSansHebrew-Regular.ttf")));
 
-        return request.LineItems
-            .Where(x => !string.IsNullOrWhiteSpace(x.Description))
-            .Select(x => new InvoiceLineItem
+            if (!await _featureService.IsEnabledAsync("invoices"))
+                return Forbid();
+
+            var invoice = await _db.Invoices
+                .Include(item => item.LineItems)
+                .FirstOrDefaultAsync(item => item.Id == id);
+
+            if (invoice == null)
+                return NotFound();
+
+            var tenant = await GetTenantAsync();
+            var client = await _db.Clients.AsNoTracking().FirstOrDefaultAsync(item => item.Id == invoice.ClientId);
+            var currencyCode = NormalizeCurrencyCode(tenant?.Currency);
+            var labels = GetLabels(invoice.Language);
+            var lineItems = BuildPdfLineItems(invoice, labels);
+            var businessName = invoice.BusinessName ?? tenant?.Name ?? labels.BusinessFallback;
+            var businessAddress = invoice.BusinessAddress;
+            var businessPhone = invoice.BusinessPhone ?? tenant?.Phone;
+            var businessWhatsApp = tenant?.WhatsApp;
+            var businessEmail = invoice.BusinessEmail ?? tenant?.OwnerUser?.Email;
+            var baseUrl = $"{Request.Scheme}://{Request.Host}";
+            var logoBytes = await TryLoadLogoBytesAsync(invoice.LogoBase64, invoice.LogoUrl ?? tenant?.LogoUrl, baseUrl);
+            var businessStampBytes =
+                await TryLoadBusinessStampBytesAsync(
+                    invoice.BusinessStampUrl,
+                    tenant?.BusinessStampUrl,
+                    baseUrl); var generatedOn = DateTime.UtcNow;
+
+            var pdf = Document.Create(container =>
             {
-                Description = x.Description,
-                Quantity = x.Quantity <= 0 ? 1 : x.Quantity,
-                Price = x.Price
-            })
-            .ToList();
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(20);
+                    page.DefaultTextStyle(text => text.FontSize(9));
+
+                    page.Header().Element(header =>
+                        ComposeHeader(header, labels, labels.IsRtl, logoBytes, businessName, businessAddress, businessPhone, businessWhatsApp, businessEmail));
+
+                    page.Content().PaddingVertical(8).Column(column =>
+                    {
+                        column.Spacing(10);
+                        column.Item().Element(item => ComposeDetailsSection(item, labels, labels.IsRtl, invoice, client?.Phone));
+                        column.Item().Element(item => ComposeLineItemsTable(item, labels, labels.IsRtl, lineItems, currencyCode));
+                        column.Item().Element(item => ComposeTotalsSection(item, labels, labels.IsRtl, invoice, currencyCode));
+
+                        if (!string.IsNullOrWhiteSpace(invoice.Notes))
+                            column.Item().Element(item => ComposeNotesSection(item, labels, labels.IsRtl, invoice.Notes));
+
+                        column.Item().Element(item => ComposeBusinessSignatureSection(item, labels, labels.IsRtl, businessStampBytes));
+
+                    });
+
+                    page.Footer().PaddingTop(6).Element(footer =>
+                        ComposeFooter(footer, labels, labels.IsRtl, generatedOn));
+                });
+            }).GeneratePdf();
+
+            return File(pdf, "application/pdf", $"invoice-{invoice.InvoiceNumber}.pdf");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ex.ToString());
+        }
+    }
+
+
+    private void ApplyInvoiceValues(
+        Invoice invoice,
+        CreateInvoiceRequest request,
+        Client client,
+        Tenant? tenant,
+        List<InvoiceLineItem> lineItems)
+    {
+        var vatRate = NormalizeVatRate(request.VatRate, tenant);
+        var subtotal = RoundMoney(lineItems.Sum(item => item.Quantity * item.Price));
+        var vatAmount = RoundMoney(subtotal * vatRate / 100m);
+        var totalAmount = RoundMoney(subtotal + vatAmount);
+
+        invoice.ClientId = client.Id;
+        invoice.ClientName = client.FullName;
+        invoice.InvoiceDate = request.InvoiceDate == default ? DateTime.UtcNow : request.InvoiceDate;
+        invoice.DueDate = request.DueDate;
+        invoice.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
+        invoice.VatRate = vatRate;
+        invoice.Subtotal = subtotal;
+        invoice.VatAmount = vatAmount;
+        invoice.TotalAmount = totalAmount;
+        invoice.Amount = totalAmount;
+        invoice.BusinessName = tenant?.Name ?? invoice.BusinessName;
+        invoice.BusinessPhone = tenant?.Phone ?? invoice.BusinessPhone;
+        invoice.BusinessEmail = tenant?.OwnerUser?.Email ?? invoice.BusinessEmail;
+        invoice.BusinessStampUrl = tenant?.BusinessStampUrl;
+        invoice.LogoUrl = tenant?.LogoUrl ?? invoice.LogoUrl;
+        invoice.Language = ResolveLanguage();
+    }
+
+    private static bool TryBuildLineItems(
+        List<CreateInvoiceLineItemRequest>? requestedLineItems,
+        out List<InvoiceLineItem> lineItems,
+        out string? validationError)
+    {
+        lineItems = new List<InvoiceLineItem>();
+        validationError = null;
+
+        if (requestedLineItems == null || requestedLineItems.Count == 0)
+        {
+            validationError = "At least one line item is required.";
+            return false;
+        }
+
+        foreach (var requestedLineItem in requestedLineItems)
+        {
+            if (string.IsNullOrWhiteSpace(requestedLineItem.Description))
+            {
+                validationError = "Each line item must include a description.";
+                return false;
+            }
+
+            if (requestedLineItem.Quantity <= 0)
+            {
+                validationError = "Each line item quantity must be greater than 0.";
+                return false;
+            }
+
+            if (requestedLineItem.Price < 0)
+            {
+                validationError = "Each line item price must be 0 or higher.";
+                return false;
+            }
+
+            lineItems.Add(new InvoiceLineItem
+            {
+                Description = requestedLineItem.Description.Trim(),
+                Quantity = requestedLineItem.Quantity,
+                Price = RoundMoney(requestedLineItem.Price),
+            });
+        }
+
+        return true;
+    }
+
+    private static decimal NormalizeVatRate(decimal? requestedVatRate, Tenant? tenant)
+    {
+        if (tenant is not null && tenant.DefaultVatRate > 0 && tenant.DefaultVatRate <= 100)
+            return RoundMoney(tenant.DefaultVatRate);
+
+        if (!requestedVatRate.HasValue || requestedVatRate.Value <= 0 || requestedVatRate.Value > 100)
+            return DefaultVatRate;
+
+        return RoundMoney(requestedVatRate.Value);
+    }
+
+    private string ResolveLanguage()
+    {
+        var requestedLanguage = Request.Headers.AcceptLanguage.ToString();
+        if (string.IsNullOrWhiteSpace(requestedLanguage))
+            return "en";
+
+        var firstLanguage = requestedLanguage.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(firstLanguage))
+            return "en";
+
+        return firstLanguage.ToLowerInvariant();
     }
 
     private List<InvoiceLineItem> BuildPdfLineItems(Invoice invoice, InvoicePdfLabels labels)
     {
-        if (invoice.LineItems != null && invoice.LineItems.Count > 0)
+        if (invoice.LineItems.Count > 0)
             return invoice.LineItems;
 
         return new List<InvoiceLineItem>
         {
-            new InvoiceLineItem
+            new()
             {
                 Description = labels.DefaultLineItem,
                 Quantity = 1,
-                Price = invoice.Amount
+                Price = invoice.Subtotal > 0 ? invoice.Subtotal : invoice.Amount,
             }
         };
     }
@@ -453,24 +413,87 @@ public class InvoicesController : ControllerBase
     {
         if (_tenantContext.TenantId != Guid.Empty)
         {
-            var tenant = await _db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId);
+            var tenant = await _db.Tenants
+                .AsNoTracking()
+                .Include(item => item.OwnerUser)
+                .FirstOrDefaultAsync(item => item.Id == _tenantContext.TenantId);
+
             if (tenant != null)
                 return tenant;
         }
 
-        return await _db.Tenants.AsNoTracking().OrderBy(t => t.CreatedAt).FirstOrDefaultAsync();
+        return await _db.Tenants
+            .AsNoTracking()
+            .Include(item => item.OwnerUser)
+            .OrderBy(item => item.CreatedAt)
+            .FirstOrDefaultAsync();
     }
 
-    private static async Task<byte[]?> TryLoadLogoBytesAsync(string? logoBase64, string? logoUrl)
+    private async Task<Tenant?> GetTenantForWriteAsync()
+    {
+        if (_tenantContext.TenantId != Guid.Empty)
+        {
+            var tenant = await _db.Tenants
+                .Include(item => item.OwnerUser)
+                .FirstOrDefaultAsync(item => item.Id == _tenantContext.TenantId);
+
+            if (tenant != null)
+                return tenant;
+        }
+
+        return await _db.Tenants
+            .Include(item => item.OwnerUser)
+            .OrderBy(item => item.CreatedAt)
+            .FirstOrDefaultAsync();
+    }
+
+    private async Task<bool> InvoiceNumberExistsAsync(Guid tenantId, string invoiceNumber, Guid? excludeInvoiceId = null)
+    {
+        var query = _db.Invoices
+            .IgnoreQueryFilters()
+            .Where(invoice => invoice.TenantId == tenantId && invoice.InvoiceNumber == invoiceNumber);
+
+        if (excludeInvoiceId.HasValue)
+            query = query.Where(invoice => invoice.Id != excludeInvoiceId.Value);
+
+        return await query.AnyAsync();
+    }
+
+    private static string NormalizeInvoiceNumber(Tenant tenant)
+    {
+        var prefix = string.IsNullOrWhiteSpace(tenant.InvoicePrefix)
+            ? "INV-"
+            : tenant.InvoicePrefix.Trim();
+
+        var nextNumber = tenant.NextInvoiceNumber > 0
+            ? tenant.NextInvoiceNumber
+            : 1;
+
+        return $"{prefix}{nextNumber}";
+    }
+
+    private static async Task<byte[]?> TryLoadBusinessStampBytesAsync(
+        string? invoiceStampUrl,
+        string? tenantStampUrl,
+        string baseUrl)
+    {
+        return await TryLoadAssetBytesAsync(
+            invoiceStampUrl ?? tenantStampUrl,
+            baseUrl);
+    }
+
+    private static async Task<byte[]?> TryLoadLogoBytesAsync(string? logoBase64, string? logoUrl, string baseUrl)
     {
         var base64Bytes = TryDecodeBase64(logoBase64);
         if (base64Bytes != null)
             return base64Bytes;
 
-        if (string.IsNullOrWhiteSpace(logoUrl) || !Uri.TryCreate(logoUrl, UriKind.Absolute, out var uri))
-            return null;
+        return await TryLoadAssetBytesAsync(logoUrl, baseUrl);
+    }
 
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+    private static async Task<byte[]?> TryLoadAssetBytesAsync(string? assetUrl, string baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(assetUrl) || !TryBuildAssetUri(assetUrl, baseUrl, out var uri))
             return null;
 
         try
@@ -483,6 +506,25 @@ public class InvoicesController : ControllerBase
             return null;
         }
     }
+
+    private static bool TryBuildAssetUri(string assetUrl, string baseUrl, out Uri uri)
+    {
+        if (Uri.TryCreate(assetUrl, UriKind.Absolute, out uri))
+            return uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps;
+
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var absoluteBase) &&
+            Uri.TryCreate(absoluteBase, assetUrl, out uri))
+            return uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps;
+
+        uri = default!;
+        return false;
+    }
+
+    private static TextStyle HebrewStyle()
+    {
+        return TextStyle.Default.FontFamily("Noto Sans Hebrew").DirectionFromRightToLeft();
+    }
+
 
     private static byte[]? TryDecodeBase64(string? value)
     {
@@ -513,97 +555,173 @@ public class InvoicesController : ControllerBase
         string businessName,
         string? businessAddress,
         string? businessPhone,
+        string? businessWhatsApp,
         string? businessEmail)
+    {
+        var contactParts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(businessPhone))
+            contactParts.Add(businessPhone);
+
+        if (!string.IsNullOrWhiteSpace(businessWhatsApp))
+            contactParts.Add($"WhatsApp {businessWhatsApp}");
+
+        var contactLine = string.Join("   |   ", contactParts);
+
+        container.Column(column =>
+        {
+            column.Spacing(2);
+
+            if (logoBytes != null)
+            {
+                column.Item()
+                    .AlignCenter()
+                    .Height(80)
+                    .Image(logoBytes)
+                    .FitArea();
+            }
+
+            var businessNameText = column.Item()
+                .AlignCenter()
+                .Text(businessName)
+                .FontSize(13)
+                .SemiBold();
+
+            if (isRtl)
+                businessNameText.Style(HebrewStyle());
+
+            if (!string.IsNullOrWhiteSpace(contactLine))
+            {
+                var contactText = column.Item()
+                    .PaddingTop(2)
+                    .AlignCenter()
+                    .Text(contactLine)
+                    .FontSize(8)
+                    .FontColor(Colors.Grey.Medium);
+
+                if (isRtl)
+                    contactText.Style(HebrewStyle());
+            }
+
+            var title = column.Item()
+                .PaddingTop(6)
+                .AlignCenter()
+                .Text(labels.InvoiceTitle)
+                .FontSize(20)
+                .Bold()
+                .FontColor(Colors.Blue.Darken2);
+
+            if (isRtl)
+                title.Style(HebrewStyle());
+        });
+    }
+
+    private static void ComposeDetailsSection(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice, string? clientPhone)
     {
         container.Row(row =>
         {
+            row.Spacing(14);
+
             if (isRtl)
             {
-                row.RelativeItem().Element(x => ComposeBusinessBlock(x, labels, true, businessName, businessAddress, businessPhone, businessEmail));
-
-                if (logoBytes != null)
-                    row.ConstantItem(90).Height(70).AlignLeft().Image(logoBytes).FitArea();
+                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeInvoiceMeta(content, labels, true, invoice)));
+                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeClientMeta(content, labels, true, invoice, clientPhone)));
             }
             else
             {
-                if (logoBytes != null)
-                    row.ConstantItem(90).Height(70).Image(logoBytes).FitArea();
-
-                row.RelativeItem().Element(x => ComposeBusinessBlock(x, labels, false, businessName, businessAddress, businessPhone, businessEmail));
+                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeClientMeta(content, labels, false, invoice, clientPhone)));
+                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeInvoiceMeta(content, labels, false, invoice)));
             }
         });
     }
 
-    private static void ComposeBusinessBlock(
+    private static void ComposeMetaCard(IContainer container, Action<IContainer> content)
+    {
+        container
+            .Border(1)
+            .BorderColor(Colors.Grey.Lighten1)
+            .Background(Colors.White)
+            .MinHeight(82)
+            .Padding(10)
+            .Element(item => content(item));
+    }
+
+    private static void ComposeClientMeta(
         IContainer container,
         InvoicePdfLabels labels,
         bool isRtl,
-        string businessName,
-        string? businessAddress,
-        string? businessPhone,
-        string? businessEmail)
+        Invoice invoice,
+        string? clientPhone)
     {
-        AlignForDirection(container, isRtl).Column(col =>
+        AlignForDirection(container, isRtl).Column(column =>
         {
-            col.Spacing(3);
-            col.Item().Text(labels.InvoiceTitle).FontSize(28).Bold().FontColor(Colors.Blue.Darken2);
-            col.Item().Text(businessName).FontSize(14).SemiBold();
+            column.Spacing(4);
 
-            if (!string.IsNullOrWhiteSpace(businessAddress))
-                col.Item().Text(businessAddress);
+            var title = column.Item()
+                .Text(labels.ClientSectionTitle)
+                .SemiBold()
+                .FontColor(Colors.Blue.Darken2)
+                .FontSize(12);
 
-            if (!string.IsNullOrWhiteSpace(businessPhone))
-                col.Item().Text($"{labels.PhoneLabel}: {businessPhone}");
+            if (isRtl)
+                title.Style(HebrewStyle());
 
-            if (!string.IsNullOrWhiteSpace(businessEmail))
-                col.Item().Text($"{labels.EmailLabel}: {businessEmail}");
-        });
-    }
-
-    private static void ComposeDetailsSection(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice)
-    {
-        container.Border(1)
-            .BorderColor(Colors.Grey.Lighten2)
-            .Background(Colors.Grey.Lighten5)
-            .Padding(14)
-            .Row(row =>
+            void AddField(string label, string? value)
             {
+                if (string.IsNullOrWhiteSpace(value))
+                    return;
+
+                var labelText = column.Item().AlignRight().Text(label).Bold().FontFamily("Noto Sans Hebrew");
+                var valueText = column.Item().AlignRight().Text(value).FontFamily("Noto Sans Hebrew");
+
                 if (isRtl)
-                {
-                    row.RelativeItem().Element(x => ComposeInvoiceMeta(x, labels, true, invoice));
-                    row.RelativeItem().Element(x => ComposeClientMeta(x, labels, true, invoice));
-                }
-                else
-                {
-                    row.RelativeItem().Element(x => ComposeClientMeta(x, labels, false, invoice));
-                    row.RelativeItem().Element(x => ComposeInvoiceMeta(x, labels, false, invoice));
-                }
-            });
-    }
+                    valueText.Style(HebrewStyle());
 
-    private static void ComposeClientMeta(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice)
-    {
-        AlignForDirection(container, isRtl).Column(col =>
-        {
-            col.Spacing(4);
-            col.Item().Text(labels.ClientSectionTitle).SemiBold().FontColor(Colors.Blue.Darken2);
-            col.Item().Text($"{labels.ClientNameLabel}: {invoice.ClientName}");
+                column.Item().PaddingBottom(2);
+            }
+
+            AddField(labels.ClientNameLabel, invoice.ClientName);
+            AddField(labels.PhoneLabel, clientPhone);
         });
     }
 
-    private static void ComposeInvoiceMeta(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice)
+    private static void ComposeInvoiceMeta(
+        IContainer container,
+        InvoicePdfLabels labels,
+        bool isRtl,
+        Invoice invoice)
     {
-        AlignForDirection(container, isRtl).Column(col =>
+        AlignForDirection(container, isRtl).Column(column =>
         {
-            col.Spacing(4);
-            col.Item().Text(labels.InvoiceSectionTitle).SemiBold().FontColor(Colors.Blue.Darken2);
-            col.Item().Text($"{labels.InvoiceNumberLabel}: {invoice.InvoiceNumber}");
-            col.Item().Text($"{labels.InvoiceDateLabel}: {FormatDate(invoice.InvoiceDate)}");
-            col.Item().Text($"{labels.DueDateLabel}: {FormatDate(invoice.DueDate)}");
+            column.Spacing(4);
+
+            var title = column.Item()
+                .Text(labels.InvoiceSectionTitle)
+                .SemiBold()
+                .FontColor(Colors.Blue.Darken2)
+                .FontSize(12);
+
+            if (isRtl)
+                title.Style(HebrewStyle());
+
+            void AddField(string label, string value)
+            {
+                var labelText = column.Item().AlignRight().Text(label).Bold().FontFamily("Noto Sans Hebrew");
+                var valueText = column.Item().AlignRight().Text(value).FontFamily("Noto Sans Hebrew");
+
+                if (isRtl)
+                    valueText.Style(HebrewStyle());
+
+                column.Item().PaddingBottom(2);
+            }
+
+            AddField(labels.InvoiceNumberLabel, invoice.InvoiceNumber);
+            AddField(labels.InvoiceDateLabel, FormatDate(invoice.InvoiceDate));
+            AddField(labels.DueDateLabel, FormatDate(invoice.DueDate));
         });
     }
 
-    private static void ComposeLineItemsTable(IContainer container, InvoicePdfLabels labels, bool isRtl, List<InvoiceLineItem> lineItems)
+    private static void ComposeLineItemsTable(IContainer container, InvoicePdfLabels labels, bool isRtl, List<InvoiceLineItem> lineItems, string currencyCode)
     {
         container.Table(table =>
         {
@@ -611,7 +729,7 @@ public class InvoicesController : ControllerBase
             {
                 columns.RelativeColumn();
                 columns.ConstantColumn(70);
-                columns.ConstantColumn(80);
+                columns.ConstantColumn(90);
                 columns.ConstantColumn(90);
             });
 
@@ -619,109 +737,223 @@ public class InvoicesController : ControllerBase
             {
                 if (isRtl)
                 {
-                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.TotalLabel);
-                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.PriceLabel);
-                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.QuantityLabel);
-                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.DescriptionLabel);
+                    AddHeaderCell(header, labels.QuantityLabel);
+                    AddHeaderCell(header, labels.PriceLabel);
+                    AddHeaderCell(header, labels.TotalLabel);
+                    AddHeaderCell(header, labels.DescriptionLabel);
+                    
+                   
+                    
                 }
                 else
                 {
+                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.QuantityLabel);
+                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.PriceLabel);
+                    header.Cell().Element(TableHeaderStyle).AlignRight().Text(labels.TotalLabel);
                     header.Cell().Element(TableHeaderStyle).Text(labels.DescriptionLabel);
-                    header.Cell().Element(TableHeaderStyle).Text(labels.QuantityLabel);
-                    header.Cell().Element(TableHeaderStyle).Text(labels.PriceLabel);
-                    header.Cell().Element(TableHeaderStyle).Text(labels.TotalLabel);
                 }
             });
 
-            foreach (var item in lineItems)
+            foreach (var lineItem in lineItems)
             {
                 if (isRtl)
                 {
-                    table.Cell().Element(TableCellStyle).AlignRight().Text(FormatMoney(item.Total));
-                    table.Cell().Element(TableCellStyle).AlignRight().Text(FormatMoney(item.Price));
-                    table.Cell().Element(TableCellStyle).AlignRight().Text(item.Quantity.ToString("0.##", CultureInfo.InvariantCulture));
-                    table.Cell().Element(TableCellStyle).AlignRight().Text(item.Description);
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(FormatMoney(lineItem.Total, currencyCode, true));
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(FormatMoney(lineItem.Price, currencyCode, true));
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(lineItem.Quantity.ToString("0.##", CultureInfo.InvariantCulture));
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(text =>{text.Span(lineItem.Description).Style(HebrewStyle()); });
                 }
                 else
                 {
-                    table.Cell().Element(TableCellStyle).Text(item.Description);
-                    table.Cell().Element(TableCellStyle).Text(item.Quantity.ToString("0.##", CultureInfo.InvariantCulture));
-                    table.Cell().Element(TableCellStyle).Text(FormatMoney(item.Price));
-                    table.Cell().Element(TableCellStyle).Text(FormatMoney(item.Total));
+                    table.Cell().Element(TableCellStyle).Text(lineItem.Description);
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(lineItem.Quantity.ToString("0.##", CultureInfo.InvariantCulture));
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(FormatMoney(lineItem.Price, currencyCode, false));
+                    table.Cell().Element(TableCellStyle).AlignRight().Text(FormatMoney(lineItem.Total, currencyCode, false));
                 }
             }
         });
     }
 
-    private static void ComposeTotalsSection(IContainer container, InvoicePdfLabels labels, bool isRtl, decimal subtotal, decimal total)
+    private static void ComposeTotalsSection(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice, string currencyCode)
     {
-        container.AlignRight().Width(220).Border(1).BorderColor(Colors.Grey.Lighten2).Padding(12).Column(col =>
+        container.AlignRight().Width(260).Border(1).BorderColor(Colors.Grey.Lighten1).Padding(10).Column(column =>
         {
-            col.Spacing(6);
-            col.Item().Element(x => ComposeTotalRow(x, labels.SubtotalLabel, FormatMoney(subtotal), isRtl, false));
-            col.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-            col.Item().Element(x => ComposeTotalRow(x, labels.TotalLabel, FormatMoney(total), isRtl, true));
+            column.Spacing(6);
+            column.Item().Element(item => ComposeTotalRow(item, labels.SubtotalLabel, FormatMoney(invoice.Subtotal, currencyCode, isRtl), isRtl, false));
+            column.Item().Element(item => ComposeTotalRow(item, $"{labels.VatLabel} ({invoice.VatRate:0.##}%)", FormatMoney(invoice.VatAmount, currencyCode, isRtl), isRtl, false));
+            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().Element(item => ComposeTotalRow(item, labels.TotalSectionLabel, FormatMoney(invoice.TotalAmount, currencyCode, isRtl), isRtl, true));
         });
     }
 
-    private static void ComposeTotalRow(IContainer container, string label, string value, bool isRtl, bool emphasize)
+    private static void ComposeBusinessSignatureSection(IContainer container, InvoicePdfLabels labels, bool isRtl, byte[]? stampBytes)
+    {
+        container.PaddingTop(4).AlignCenter().Column(column =>
+        {
+            var title = column.Item().AlignCenter().Text(labels.BusinessSignatureLabel).SemiBold().FontColor(Colors.Blue.Darken2).FontSize(11);
+            if (isRtl)
+                title.Style(HebrewStyle());
+
+            column.Item().PaddingTop(4);
+
+            if (stampBytes != null && stampBytes.Length > 0)
+            {
+                column.Item().AlignCenter().Width(120).Height(40).Image(stampBytes).FitArea();
+            }
+            else
+            {
+                column.Item().AlignCenter().Width(240).LineHorizontal(1).LineColor(Colors.Grey.Medium);
+            }
+        });
+    }
+
+    private static void ComposeTotalRow(
+        IContainer container,
+        string label,
+        string value,
+        bool isRtl,
+        bool emphasize)
     {
         container.Row(row =>
         {
             if (isRtl)
             {
-                ApplySemiBold(row.RelativeItem().AlignRight().Text(value), emphasize);
-                ApplySemiBold(row.RelativeItem().AlignRight().Text(label), emphasize);
+                var valueText = row.RelativeItem()
+                    .AlignRight()
+                    .Text(value);
+
+                if (emphasize)
+                    valueText.SemiBold().FontSize(12);
+
+                valueText.Style(HebrewStyle());
+
+                var labelText = row.RelativeItem()
+                    .AlignRight()
+                    .Text(label);
+
+                if (emphasize)
+                    labelText.SemiBold().FontSize(12);
+
+                labelText.Style(HebrewStyle());
             }
             else
             {
-                ApplySemiBold(row.RelativeItem().Text(label), emphasize);
-                ApplySemiBold(row.RelativeItem().AlignRight().Text(value), emphasize);
+                var labelText = row.RelativeItem().Text(label);
+
+                if (emphasize)
+                    labelText.SemiBold().FontSize(12);
+
+                var valueText = row.RelativeItem()
+                    .AlignRight()
+                    .Text(value);
+
+                if (emphasize)
+                    valueText.SemiBold().FontSize(12);
             }
         });
     }
 
-    private static void ComposeNotesSection(IContainer container, InvoicePdfLabels labels, bool isRtl, string notes)
+    private static void ComposeNotesSection(
+        IContainer container,
+        InvoicePdfLabels labels,
+        bool isRtl,
+        string notes)
     {
-        container.Border(1)
-            .BorderColor(Colors.Grey.Lighten2)
-            .Padding(14)
-            .Element(x => AlignForDirection(x, isRtl))
-            .Column(col =>
+        container
+            .Border(1)
+            .BorderColor(Colors.Grey.Lighten1)
+            .Background(Colors.White)
+            .Padding(10)
+            .MinHeight(55)
+            .Element(item => AlignForDirection(item, isRtl))
+            .Column(column =>
             {
-                col.Spacing(6);
-                col.Item().Text(labels.NotesLabel).SemiBold().FontColor(Colors.Blue.Darken2);
-                col.Item().Text(notes);
+                column.Spacing(3);
+
+                var title = column.Item()
+                    .AlignRight()
+                    .Text(labels.NotesLabel)
+                    .SemiBold()
+                    .FontColor(Colors.Blue.Darken2);
+
+                if (isRtl)
+                    title.Style(HebrewStyle());
+
+                var body = column.Item()
+                    .AlignRight()
+                    .Text(notes);
+
+                if (isRtl)
+                    body.Style(HebrewStyle());
             });
     }
+
+
+
+    private static void ComposeFooter(IContainer container, InvoicePdfLabels labels, bool isRtl, DateTime generatedOn)
+    {
+        container.Row(row =>
+        {
+            if (isRtl)
+            {
+                var generated = row.RelativeItem().AlignRight().Text($"{labels.GeneratedOnLabel}: {generatedOn:dd/MM/yyyy HH:mm}").FontSize(9).FontColor(Colors.Grey.Darken1);
+                generated.Style(HebrewStyle());
+
+                row.RelativeItem().AlignCenter().Text(labels.PoweredByLabel).FontSize(9).FontColor(Colors.Grey.Darken1);
+                row.RelativeItem().AlignLeft().Text(text =>
+                {
+                    text.Span(labels.PageLabel + " ").Style(HebrewStyle()).FontSize(9).FontColor(Colors.Grey.Darken1);
+                    text.CurrentPageNumber().Style(HebrewStyle()).FontSize(9).FontColor(Colors.Grey.Darken1);
+                    text.Span($" {labels.OfLabel} ").Style(HebrewStyle()).FontSize(9).FontColor(Colors.Grey.Darken1);
+                    text.TotalPages().Style(HebrewStyle()).FontSize(9).FontColor(Colors.Grey.Darken1);
+                });
+            }
+            else
+            {
+                row.RelativeItem().Text($"{labels.GeneratedOnLabel}: {generatedOn:dd/MM/yyyy HH:mm}").FontSize(9).FontColor(Colors.Grey.Darken1);
+                row.RelativeItem().AlignCenter().Text(labels.PoweredByLabel).FontSize(9).FontColor(Colors.Grey.Darken1);
+                row.RelativeItem().AlignRight().Text(text =>
+                {
+                    text.Span(labels.PageLabel + " ").FontSize(9).FontColor(Colors.Grey.Darken1);
+                    text.CurrentPageNumber().FontSize(9).FontColor(Colors.Grey.Darken1);
+                    text.Span($" {labels.OfLabel} ").FontSize(9).FontColor(Colors.Grey.Darken1);
+                    text.TotalPages().FontSize(9).FontColor(Colors.Grey.Darken1);
+                });
+            }
+        });
+    }
+
+
+    private static void AddHeaderCell(TableCellDescriptor header, string text)
+    {
+        header.Cell()
+            .Element(TableHeaderStyle)
+            .AlignRight()
+            .Text(t =>
+            {
+                t.Span(text)
+                    .Style(HebrewStyle());
+            });
+    }
+
 
     private static IContainer TableHeaderStyle(IContainer container)
     {
         return container
             .Background(Colors.Blue.Lighten4)
-            .PaddingVertical(8)
-            .PaddingHorizontal(6)
+            .PaddingVertical(5)
+            .PaddingHorizontal(5)
             .BorderBottom(1)
-            .BorderColor(Colors.Blue.Lighten2);
+            .BorderColor(Colors.Blue.Lighten1);
     }
 
     private static IContainer TableCellStyle(IContainer container)
     {
         return container
             .BorderBottom(1)
-            .BorderColor(Colors.Grey.Lighten2)
-            .PaddingVertical(8)
-            .PaddingHorizontal(6);
-    }
-
-    private static string FormatDate(DateTime? value)
-    {
-        return value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "-";
-    }
-
-    private static string FormatMoney(decimal value)
-    {
-        return value.ToString("0.00", CultureInfo.InvariantCulture);
+            .BorderColor(Colors.Grey.Lighten1)
+            .PaddingVertical(5)
+            .PaddingHorizontal(5);
     }
 
     private static IContainer AlignForDirection(IContainer container, bool isRtl)
@@ -729,10 +961,52 @@ public class InvoicesController : ControllerBase
         return isRtl ? container.AlignRight() : container;
     }
 
-    private static void ApplySemiBold(TextBlockDescriptor descriptor, bool emphasize)
+    private static void ApplyEmphasis(TextBlockDescriptor descriptor, bool emphasize)
     {
         if (emphasize)
-            descriptor.SemiBold();
+            descriptor.SemiBold().FontSize(12);
+    }
+
+    private static decimal RoundMoney(decimal value)
+    {
+        return decimal.Round(value, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value?.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture) ?? "-";
+    }
+
+    private static string NormalizeCurrencyCode(string? currencyCode)
+    {
+        if (string.IsNullOrWhiteSpace(currencyCode))
+            return "ILS";
+
+        var normalized = currencyCode.Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "ILS" or "USD" or "EUR" => normalized,
+            _ => "ILS"
+        };
+    }
+
+    private static string GetCurrencySymbol(string currencyCode)
+    {
+        return currencyCode switch
+        {
+            "ILS" => "₪",
+            "USD" => "$",
+            "EUR" => "€",
+            _ => "₪"
+        };
+    }
+
+    private static string FormatMoney(decimal value, string currencyCode, bool isRtl)
+    {
+        var symbol = GetCurrencySymbol(currencyCode);
+        var formatted = value.ToString("0.00", CultureInfo.InvariantCulture);
+
+        return isRtl ? $"{formatted} {symbol}" : $"{symbol}{formatted}";
     }
 
     private static InvoicePdfLabels GetLabels(string? language)
@@ -743,7 +1017,7 @@ public class InvoicesController : ControllerBase
         {
             "he" or "he-il" => new InvoicePdfLabels(
                 true,
-                "חשבונית",
+                "חשבונית מס",
                 "עסק",
                 "פרטי לקוח",
                 "פרטי חשבונית",
@@ -753,18 +1027,23 @@ public class InvoicesController : ControllerBase
                 "תאריך יעד",
                 "תיאור",
                 "כמות",
-                "מחיר",
+                "מחיר יחידה",
                 "סה\"כ",
                 "סכום ביניים",
+                "מע\"מ",
                 "סה\"כ לתשלום",
                 "הערות",
                 "טלפון",
                 "אימייל",
+                "הופק בתאריך",
+                "עמוד",
+                "מתוך",
+                "CLIENTA / Powered by CLIENTA",
                 "פריט שירות",
-                "תודה על העסק שלך"),
+                "חתימת העסק"),
             "ar" or "ar-sa" or "ar-eg" => new InvoicePdfLabels(
                 true,
-                "فاتورة",
+                "فاتورة ضريبية",
                 "النشاط التجاري",
                 "بيانات العميل",
                 "بيانات الفاتورة",
@@ -774,18 +1053,23 @@ public class InvoicesController : ControllerBase
                 "تاريخ الاستحقاق",
                 "الوصف",
                 "الكمية",
-                "السعر",
+                "سعر الوحدة",
                 "الإجمالي",
                 "المجموع الفرعي",
-                "الإجمالي الكلي",
+                "ضريبة القيمة المضافة",
+                "الإجمالي النهائي",
                 "ملاحظات",
                 "الهاتف",
                 "البريد الإلكتروني",
+                "تاريخ الإصدار",
+                "الصفحة",
+                "من",
+                "CLIENTA / Powered by CLIENTA",
                 "عنصر خدمة",
-                "شكراً لتعاملكم معنا"),
+                "ختم النشاط"),
             _ => new InvoicePdfLabels(
                 false,
-                "INVOICE",
+                "VAT INVOICE",
                 "Business",
                 "Client Details",
                 "Invoice Details",
@@ -794,16 +1078,21 @@ public class InvoicesController : ControllerBase
                 "Invoice Date",
                 "Due Date",
                 "Description",
-                "Quantity",
-                "Price",
+                "Qty",
+                "Unit Price",
                 "Total",
                 "Subtotal",
+                "VAT",
                 "Total",
                 "Notes",
                 "Phone",
                 "Email",
+                "Generated on",
+                "Page",
+                "of",
+                "CLIENTA / Powered by CLIENTA",
                 "Service Item",
-                "Thank you for your business")
+                "Business Signature")
         };
     }
 
@@ -822,10 +1111,15 @@ public class InvoicesController : ControllerBase
         string PriceLabel,
         string TotalLabel,
         string SubtotalLabel,
+        string VatLabel,
         string TotalSectionLabel,
         string NotesLabel,
         string PhoneLabel,
         string EmailLabel,
+        string GeneratedOnLabel,
+        string PageLabel,
+        string OfLabel,
+        string PoweredByLabel,
         string DefaultLineItem,
-        string Footer);
+        string BusinessSignatureLabel);
 }
