@@ -2,6 +2,7 @@ using System.Globalization;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Models;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -41,7 +42,7 @@ public class InvoicesController : ControllerBase
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ToListAsync();
 
-        return Ok(invoices);
+        return Ok(invoices.Select(MapInvoiceResponse));
     }
 
     [HttpGet("{id}")]
@@ -64,7 +65,7 @@ public class InvoicesController : ControllerBase
         if (invoice == null)
             return NotFound();
 
-        return Ok(invoice);
+        return Ok(MapInvoiceResponse(invoice));
     }
 
     [HttpPost]
@@ -76,6 +77,9 @@ public class InvoicesController : ControllerBase
         var client = await _db.Clients.FindAsync(request.ClientId);
         if (client == null)
             return BadRequest("Client not found");
+
+        if (!ValidateInvoiceRequestSettings(request, out var invoiceSettingsValidationError))
+            return BadRequest(invoiceSettingsValidationError);
 
         if (!TryBuildLineItems(request.LineItems, out var lineItems, out var validationError))
             return BadRequest(validationError);
@@ -94,7 +98,7 @@ public class InvoicesController : ControllerBase
         invoice.TenantId = tenant.Id;
         invoice.InvoiceNumber = invoiceNumber;
 
-        ApplyInvoiceValues(invoice, request, client, tenant, invoice.LineItems.ToList());
+        ApplyInvoiceValues(invoice, request, client, tenant, invoice.LineItems.ToList(), applyTenantSnapshot: true);
 
 
         try
@@ -120,7 +124,7 @@ public class InvoicesController : ControllerBase
             });
         }
 
-        return Ok(invoice);
+        return Ok(MapInvoiceResponse(invoice));
     }
 
     [HttpPut("{id}")]
@@ -140,6 +144,9 @@ public class InvoicesController : ControllerBase
         if (client == null)
             return BadRequest("Client not found");
 
+        if (!ValidateInvoiceRequestSettings(request, out var invoiceSettingsValidationError))
+            return BadRequest(invoiceSettingsValidationError);
+
         if (!TryBuildLineItems(request.LineItems, out var lineItems, out var validationError))
             return BadRequest(validationError);
 
@@ -157,7 +164,7 @@ public class InvoicesController : ControllerBase
             .Include(i => i.LineItems)
             .FirstAsync(i => i.Id == id);
 
-        ApplyInvoiceValues(invoice, request, client, tenant, lineItems);
+        ApplyInvoiceValues(invoice, request, client, tenant, lineItems, applyTenantSnapshot: false);
 
         // הוסף ישירות לטבלה ולא דרך ה-Navigation
         foreach (var lineItem in lineItems)
@@ -170,7 +177,7 @@ public class InvoicesController : ControllerBase
         try
         {
             await _db.SaveChangesAsync();
-            return Ok(invoice);
+            return Ok(MapInvoiceResponse(invoice));
         }
         catch (DbUpdateConcurrencyException ex)
         {
@@ -262,7 +269,18 @@ public class InvoicesController : ControllerBase
                     page.DefaultTextStyle(text => text.FontSize(9));
 
                     page.Header().Element(header =>
-                        ComposeHeader(header, labels, labels.IsRtl, logoBytes, businessName, businessAddress, businessPhone, businessWhatsApp, businessEmail));
+                        ComposeHeader(
+                            header,
+                            labels,
+                            labels.IsRtl,
+                            logoBytes,
+                            businessName,
+                            invoice.LegalBusinessName,
+                            invoice.BusinessRegistrationNumber,
+                            businessAddress,
+                            businessPhone,
+                            businessWhatsApp,
+                            businessEmail));
 
                     page.Content().PaddingVertical(8).Column(column =>
                     {
@@ -297,12 +315,19 @@ public class InvoicesController : ControllerBase
         CreateInvoiceRequest request,
         Client client,
         Tenant? tenant,
-        List<InvoiceLineItem> lineItems)
+        List<InvoiceLineItem> lineItems,
+        bool applyTenantSnapshot)
     {
         var vatRate = NormalizeVatRate(request.VatRate, tenant);
+        var paymentMethod = ParsePaymentMethod(request.PaymentMethod, tenant?.DefaultPaymentMethod ?? PaymentMethod.Cash);
+        var installments = NormalizeInstallments(request.Installments, paymentMethod, tenant?.DefaultInstallments);
+        var status = ParseInvoiceStatus(request.Status, tenant?.DefaultInvoiceStatus ?? InvoiceStatus.Pending);
+        var withholdingTaxRate = NormalizeWithholdingTaxRate(request.WithholdingTaxRate, tenant);
         var subtotal = RoundMoney(lineItems.Sum(item => item.Quantity * item.Price));
         var vatAmount = RoundMoney(subtotal * vatRate / 100m);
         var totalAmount = RoundMoney(subtotal + vatAmount);
+        var withholdingTaxAmount = RoundMoney(totalAmount * withholdingTaxRate / 100m);
+        var finalAmountToPay = RoundMoney(totalAmount - withholdingTaxAmount);
 
         invoice.ClientId = client.Id;
         invoice.ClientName = client.FullName;
@@ -313,12 +338,25 @@ public class InvoicesController : ControllerBase
         invoice.Subtotal = subtotal;
         invoice.VatAmount = vatAmount;
         invoice.TotalAmount = totalAmount;
+        invoice.WithholdingTaxRate = withholdingTaxRate;
+        invoice.WithholdingTaxAmount = withholdingTaxAmount;
+        invoice.FinalAmountToPay = finalAmountToPay;
+        invoice.PaymentMethod = paymentMethod;
+        invoice.Installments = installments;
+        invoice.Status = status;
         invoice.Amount = totalAmount;
-        invoice.BusinessName = tenant?.Name ?? invoice.BusinessName;
-        invoice.BusinessPhone = tenant?.Phone ?? invoice.BusinessPhone;
-        invoice.BusinessEmail = tenant?.OwnerUser?.Email ?? invoice.BusinessEmail;
-        invoice.BusinessStampUrl = tenant?.BusinessStampUrl;
-        invoice.LogoUrl = tenant?.LogoUrl ?? invoice.LogoUrl;
+
+        if (applyTenantSnapshot)
+        {
+            invoice.BusinessName = tenant?.Name ?? invoice.BusinessName;
+            invoice.LegalBusinessName = tenant?.LegalBusinessName;
+            invoice.BusinessRegistrationNumber = tenant?.BusinessRegistrationNumber;
+            invoice.BusinessPhone = tenant?.Phone ?? invoice.BusinessPhone;
+            invoice.BusinessEmail = tenant?.OwnerUser?.Email ?? invoice.BusinessEmail;
+            invoice.BusinessStampUrl = tenant?.BusinessStampUrl;
+            invoice.LogoUrl = tenant?.LogoUrl ?? invoice.LogoUrl;
+        }
+
         invoice.Language = ResolveLanguage();
     }
 
@@ -369,13 +407,183 @@ public class InvoicesController : ControllerBase
 
     private static decimal NormalizeVatRate(decimal? requestedVatRate, Tenant? tenant)
     {
-        if (tenant is not null && tenant.DefaultVatRate > 0 && tenant.DefaultVatRate <= 100)
+        if (requestedVatRate.HasValue)
+        {
+            if (requestedVatRate.Value >= 0 && requestedVatRate.Value <= 100)
+                return RoundMoney(requestedVatRate.Value);
+
+            return DefaultVatRate;
+        }
+
+        if (tenant is not null && tenant.DefaultVatRate >= 0 && tenant.DefaultVatRate <= 100)
             return RoundMoney(tenant.DefaultVatRate);
 
-        if (!requestedVatRate.HasValue || requestedVatRate.Value <= 0 || requestedVatRate.Value > 100)
-            return DefaultVatRate;
+        return DefaultVatRate;
+    }
 
-        return RoundMoney(requestedVatRate.Value);
+    private static bool ValidateInvoiceRequestSettings(CreateInvoiceRequest request, out string? validationError)
+    {
+        validationError = null;
+
+        if (request.VatRate.HasValue && (request.VatRate.Value < 0 || request.VatRate.Value > 100))
+        {
+            validationError = "VAT rate must be between 0 and 100.";
+            return false;
+        }
+
+        if (
+            request.WithholdingTaxRate.HasValue &&
+            (request.WithholdingTaxRate.Value < 0 || request.WithholdingTaxRate.Value > 100)
+        )
+        {
+            validationError = "Withholding tax rate must be between 0 and 100.";
+            return false;
+        }
+
+        var requestedPaymentMethod = request.PaymentMethod?.Trim().ToLowerInvariant();
+        if (requestedPaymentMethod == "credit" && request.Installments.HasValue)
+        {
+            if (request.Installments.Value < 1 || request.Installments.Value > 36)
+            {
+                validationError = "Installments must be between 1 and 36.";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static decimal NormalizeWithholdingTaxRate(decimal? requestedWithholdingTaxRate, Tenant? tenant)
+    {
+        if (requestedWithholdingTaxRate.HasValue)
+        {
+            var requested = requestedWithholdingTaxRate.Value;
+            if (requested >= 0 && requested <= 100)
+                return RoundMoney(requested);
+        }
+
+        if (tenant is not null && tenant.DefaultWithholdingTaxRate >= 0 && tenant.DefaultWithholdingTaxRate <= 100)
+            return RoundMoney(tenant.DefaultWithholdingTaxRate);
+
+        return 0m;
+    }
+
+    private static PaymentMethod ParsePaymentMethod(string? value, PaymentMethod fallback)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "cash" => PaymentMethod.Cash,
+            "credit" => PaymentMethod.Credit,
+            "bank_transfer" => PaymentMethod.BankTransfer,
+            "check" => PaymentMethod.Check,
+            "bit" => PaymentMethod.Bit,
+            "paybox" => PaymentMethod.PayBox,
+            "other" => PaymentMethod.Other,
+            _ => fallback
+        };
+    }
+
+    private static InvoiceStatus ParseInvoiceStatus(string? value, InvoiceStatus fallback)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "pending" => InvoiceStatus.Pending,
+            "paid" => InvoiceStatus.Paid,
+            "partially_paid" or "partial" => InvoiceStatus.PartiallyPaid,
+            "cancelled" or "canceled" => InvoiceStatus.Cancelled,
+            _ => fallback
+        };
+    }
+
+    private static int? NormalizeInstallments(int? requestedInstallments, PaymentMethod paymentMethod, int? fallbackInstallments)
+    {
+        if (paymentMethod != PaymentMethod.Credit)
+            return null;
+
+        var candidate = requestedInstallments ?? fallbackInstallments;
+        if (!candidate.HasValue)
+            return null;
+
+        return candidate.Value >= 1 && candidate.Value <= 36 ? candidate.Value : null;
+    }
+
+    private static string ToApiPaymentMethod(PaymentMethod value)
+    {
+        return value switch
+        {
+            PaymentMethod.Cash => "cash",
+            PaymentMethod.Credit => "credit",
+            PaymentMethod.BankTransfer => "bank_transfer",
+            PaymentMethod.Check => "check",
+            PaymentMethod.Bit => "bit",
+            PaymentMethod.PayBox => "paybox",
+            PaymentMethod.Other => "other",
+            _ => "cash"
+        };
+    }
+
+    private static string ToApiInvoiceStatus(InvoiceStatus value)
+    {
+        return value switch
+        {
+            InvoiceStatus.Pending => "pending",
+            InvoiceStatus.Paid => "paid",
+            InvoiceStatus.PartiallyPaid => "partially_paid",
+            InvoiceStatus.Cancelled => "cancelled",
+            _ => "pending"
+        };
+    }
+
+    private static InvoiceResponse MapInvoiceResponse(Invoice invoice)
+    {
+        return new InvoiceResponse
+        {
+            Id = invoice.Id,
+            TenantId = invoice.TenantId,
+            InvoiceNumber = invoice.InvoiceNumber,
+            ClientId = invoice.ClientId,
+            ClientName = invoice.ClientName,
+            Amount = invoice.Amount,
+            VatRate = invoice.VatRate,
+            Subtotal = invoice.Subtotal,
+            VatAmount = invoice.VatAmount,
+            TotalAmount = invoice.TotalAmount,
+            WithholdingTaxRate = invoice.WithholdingTaxRate,
+            WithholdingTaxAmount = invoice.WithholdingTaxAmount,
+            FinalAmountToPay = invoice.FinalAmountToPay,
+            PaymentMethod = ToApiPaymentMethod(invoice.PaymentMethod),
+            Installments = invoice.Installments,
+            Status = ToApiInvoiceStatus(invoice.Status),
+            InvoiceDate = invoice.InvoiceDate,
+            DueDate = invoice.DueDate,
+            Notes = invoice.Notes,
+            BusinessName = invoice.BusinessName,
+            LegalBusinessName = invoice.LegalBusinessName,
+            BusinessRegistrationNumber = invoice.BusinessRegistrationNumber,
+            BusinessAddress = invoice.BusinessAddress,
+            BusinessPhone = invoice.BusinessPhone,
+            BusinessEmail = invoice.BusinessEmail,
+            LogoUrl = invoice.LogoUrl,
+            BusinessStampUrl = invoice.BusinessStampUrl,
+            LogoBase64 = invoice.LogoBase64,
+            Language = invoice.Language,
+            CreatedAt = invoice.CreatedAt,
+            LineItems = invoice.LineItems
+                .Select(lineItem => new InvoiceLineItemResponse
+                {
+                    Id = lineItem.Id,
+                    InvoiceId = lineItem.InvoiceId,
+                    Description = lineItem.Description,
+                    Quantity = lineItem.Quantity,
+                    Price = lineItem.Price,
+                    Total = RoundMoney(lineItem.Total),
+                })
+                .ToList(),
+        };
     }
 
     private string ResolveLanguage()
@@ -553,67 +761,148 @@ public class InvoicesController : ControllerBase
         bool isRtl,
         byte[]? logoBytes,
         string businessName,
+        string? legalBusinessName,
+        string? businessRegistrationNumber,
         string? businessAddress,
         string? businessPhone,
         string? businessWhatsApp,
         string? businessEmail)
     {
-        var contactParts = new List<string>();
+        var leftTitle = labels.InvoiceTitle == "חשבונית מס" ? "חשבונית מס / קבלה" : labels.InvoiceTitle;
+        var phoneLabel = isRtl ? "טלפון:" : labels.PhoneLabel + ":";
 
-        if (!string.IsNullOrWhiteSpace(businessPhone))
-            contactParts.Add(businessPhone);
-
-        if (!string.IsNullOrWhiteSpace(businessWhatsApp))
-            contactParts.Add($"WhatsApp {businessWhatsApp}");
-
-        var contactLine = string.Join("   |   ", contactParts);
-
-        container.Column(column =>
-        {
-            column.Spacing(2);
-
-            if (logoBytes != null)
+        container
+            .PaddingBottom(2)
+            .Column(column =>
             {
-                column.Item()
-                    .AlignCenter()
-                    .Height(80)
-                    .Image(logoBytes)
-                    .FitArea();
-            }
+                column.Spacing(2);
 
-            var businessNameText = column.Item()
-                .AlignCenter()
-                .Text(businessName)
-                .FontSize(13)
-                .SemiBold();
+                column.Item().MinHeight(90).Row(row =>
+                {
+                    row.Spacing(16);
 
-            if (isRtl)
-                businessNameText.Style(HebrewStyle());
+                    row.ConstantItem(190)
+                        .AlignMiddle()
+                        .Column(leftColumn =>
+                        {
+                            leftColumn.Spacing(1);
 
-            if (!string.IsNullOrWhiteSpace(contactLine))
-            {
-                var contactText = column.Item()
+                            var phoneLabelText = leftColumn.Item()
+                                .AlignLeft()
+                                .Text(phoneLabel)
+                                .FontSize(9)
+                                .SemiBold()
+                                .FontColor(Colors.Grey.Darken1);
+
+                            if (isRtl)
+                                phoneLabelText.Style(HebrewStyle());
+
+                            if (!string.IsNullOrWhiteSpace(businessPhone))
+                            {
+                                var phone = leftColumn.Item()
+                                    .AlignLeft()
+                                    .Text(businessPhone.Trim())
+                                    .FontSize(9)
+                                    .FontColor(Colors.Grey.Darken1);
+
+                                if (isRtl)
+                                    phone.Style(HebrewStyle());
+                            }
+
+                            var whatsappLabelText = leftColumn.Item()
+                                .PaddingTop(2)
+                                .AlignLeft()
+                                .Text("WhatsApp:")
+                                .FontSize(9)
+                                .SemiBold()
+                                .FontColor(Colors.Grey.Darken1);
+
+                            if (isRtl)
+                                whatsappLabelText.Style(HebrewStyle());
+
+                            if (!string.IsNullOrWhiteSpace(businessWhatsApp))
+                            {
+                                var whatsapp = leftColumn.Item()
+                                    .AlignLeft()
+                                    .Text(businessWhatsApp.Trim())
+                                    .FontSize(9)
+                                    .FontColor(Colors.Grey.Darken1);
+
+                                if (isRtl)
+                                    whatsapp.Style(HebrewStyle());
+                            }
+                        });
+
+                    row.ConstantItem(110)
+                        .AlignMiddle()
+                        .AlignCenter()
+                        .Element(center =>
+                        {
+                            if (logoBytes != null)
+                            {
+                                center.Height(96)
+                                    .Image(logoBytes)
+                                    .FitArea();
+                            }
+                            else
+                            {
+                                center.Height(96);
+                            }
+                        });
+
+                    row.RelativeItem()
+                        .AlignMiddle()
+                        .Column(rightColumn =>
+                        {
+                            rightColumn.Spacing(1);
+
+                            var businessNameText = rightColumn.Item()
+                                .AlignRight()
+                                .Text(businessName)
+                                .FontSize(13)
+                                .SemiBold();
+
+                            if (isRtl)
+                                businessNameText.Style(HebrewStyle());
+
+                            if (!string.IsNullOrWhiteSpace(legalBusinessName))
+                            {
+                                var legalNameText = rightColumn.Item()
+                                    .AlignRight()
+                                    .Text(legalBusinessName.Trim())
+                                    .FontSize(14)
+                                    .SemiBold()
+                                    .FontColor(Colors.Grey.Darken3);
+
+                                if (isRtl)
+                                    legalNameText.Style(HebrewStyle());
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(businessRegistrationNumber))
+                            {
+                                var registrationText = rightColumn.Item()
+                                    .AlignRight()
+                                    .Text($"ח.פ. {businessRegistrationNumber.Trim()}")
+                                    .FontSize(12)
+                                    .FontColor(Colors.Grey.Medium);
+
+                                if (isRtl)
+                                    registrationText.Style(HebrewStyle());
+                            }
+                        });
+                });
+
+                var title = column.Item()
                     .PaddingTop(2)
                     .AlignCenter()
-                    .Text(contactLine)
-                    .FontSize(8)
-                    .FontColor(Colors.Grey.Medium);
+                    .Text(leftTitle)
+                    .FontSize(20)
+                    .Bold()
+                    .FontColor(Colors.Blue.Darken2);
 
                 if (isRtl)
-                    contactText.Style(HebrewStyle());
-            }
-
-            var title = column.Item()
-                .PaddingTop(6)
-                .AlignCenter()
-                .Text(labels.InvoiceTitle)
-                .FontSize(20)
-                .Bold()
-                .FontColor(Colors.Blue.Darken2);
-
-            if (isRtl)
-                title.Style(HebrewStyle());
-        });
+                    title.Style(HebrewStyle());
+            });
     }
 
     private static void ComposeDetailsSection(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice, string? clientPhone)
@@ -781,11 +1070,92 @@ public class InvoicesController : ControllerBase
             column.Spacing(6);
             column.Item().Element(item => ComposeTotalRow(item, labels.SubtotalLabel, FormatMoney(invoice.Subtotal, currencyCode, isRtl), isRtl, false));
             column.Item().Element(item => ComposeTotalRow(item, $"{labels.VatLabel} ({invoice.VatRate:0.##}%)", FormatMoney(invoice.VatAmount, currencyCode, isRtl), isRtl, false));
+            column.Item().Element(item => ComposeTotalRow(item, $"{labels.WithholdingTaxLabel} ({invoice.WithholdingTaxRate:0.##}%)", FormatMoney(invoice.WithholdingTaxAmount, currencyCode, isRtl), isRtl, false));
             column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
-            column.Item().Element(item => ComposeTotalRow(item, labels.TotalSectionLabel, FormatMoney(invoice.TotalAmount, currencyCode, isRtl), isRtl, true));
+            column.Item().Element(item => ComposeTotalRow(item, labels.TotalSectionLabel, FormatMoney(invoice.TotalAmount, currencyCode, isRtl), isRtl, false));
+            column.Item().Element(item => ComposeTotalRow(item, labels.FinalAmountLabel, FormatMoney(invoice.FinalAmountToPay, currencyCode, isRtl), isRtl, true));
+            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten2);
+            column.Item().Element(item => ComposeTotalRow(item, labels.PaymentMethodLabel, GetPaymentMethodDisplay(invoice.PaymentMethod, invoice.Language), isRtl, false));
+            if (invoice.Installments.HasValue)
+                column.Item().Element(item => ComposeTotalRow(item, labels.InstallmentsLabel, invoice.Installments.Value.ToString(CultureInfo.InvariantCulture), isRtl, false));
+            column.Item().Element(item => ComposeTotalRow(item, labels.StatusLabel, GetInvoiceStatusDisplay(invoice.Status, invoice.Language), isRtl, false));
         });
     }
 
+    private static string GetPaymentMethodDisplay(PaymentMethod paymentMethod, string? language)
+    {
+        var code = (language ?? "en").Trim().ToLowerInvariant();
+
+        return code switch
+        {
+            "he" or "he-il" => paymentMethod switch
+            {
+                PaymentMethod.Cash => "מזומן",
+                PaymentMethod.Credit => "אשראי",
+                PaymentMethod.BankTransfer => "העברה בנקאית",
+                PaymentMethod.Check => "צ'ק",
+                PaymentMethod.Bit => "BIT",
+                PaymentMethod.PayBox => "PayBox",
+                PaymentMethod.Other => "אחר",
+                _ => "מזומן"
+            },
+            "ar" or "ar-sa" or "ar-eg" => paymentMethod switch
+            {
+                PaymentMethod.Cash => "نقداً",
+                PaymentMethod.Credit => "بطاقة ائتمان",
+                PaymentMethod.BankTransfer => "تحويل بنكي",
+                PaymentMethod.Check => "شيك",
+                PaymentMethod.Bit => "BIT",
+                PaymentMethod.PayBox => "PayBox",
+                PaymentMethod.Other => "أخرى",
+                _ => "نقداً"
+            },
+            _ => paymentMethod switch
+            {
+                PaymentMethod.Cash => "Cash",
+                PaymentMethod.Credit => "Credit",
+                PaymentMethod.BankTransfer => "Bank Transfer",
+                PaymentMethod.Check => "Check",
+                PaymentMethod.Bit => "BIT",
+                PaymentMethod.PayBox => "PayBox",
+                PaymentMethod.Other => "Other",
+                _ => "Cash"
+            }
+        };
+    }
+
+    private static string GetInvoiceStatusDisplay(InvoiceStatus status, string? language)
+    {
+        var code = (language ?? "en").Trim().ToLowerInvariant();
+
+        return code switch
+        {
+            "he" or "he-il" => status switch
+            {
+                InvoiceStatus.Pending => "ממתין לתשלום",
+                InvoiceStatus.Paid => "שולם",
+                InvoiceStatus.PartiallyPaid => "שולם חלקית",
+                InvoiceStatus.Cancelled => "בוטל",
+                _ => "ממתין לתשלום"
+            },
+            "ar" or "ar-sa" or "ar-eg" => status switch
+            {
+                InvoiceStatus.Pending => "بانتظار الدفع",
+                InvoiceStatus.Paid => "مدفوع",
+                InvoiceStatus.PartiallyPaid => "مدفوع جزئياً",
+                InvoiceStatus.Cancelled => "ملغاة",
+                _ => "بانتظار الدفع"
+            },
+            _ => status switch
+            {
+                InvoiceStatus.Pending => "Pending",
+                InvoiceStatus.Paid => "Paid",
+                InvoiceStatus.PartiallyPaid => "Partially Paid",
+                InvoiceStatus.Cancelled => "Cancelled",
+                _ => "Pending"
+            }
+        };
+    }
     private static void ComposeBusinessSignatureSection(IContainer container, InvoicePdfLabels labels, bool isRtl, byte[]? stampBytes)
     {
         container.PaddingTop(4).AlignCenter().Column(column =>
@@ -1017,7 +1387,7 @@ public class InvoicesController : ControllerBase
         {
             "he" or "he-il" => new InvoicePdfLabels(
                 true,
-                "חשבונית מס",
+                "חשבונית מס/קבלה",
                 "עסק",
                 "פרטי לקוח",
                 "פרטי חשבונית",
@@ -1031,7 +1401,12 @@ public class InvoicesController : ControllerBase
                 "סה\"כ",
                 "סכום ביניים",
                 "מע\"מ",
+                "ניכוי מס במקור",
                 "סה\"כ לתשלום",
+                "לתשלום בפועל",
+                "אופן תשלום",
+                "מספר תשלומים",
+                "סטטוס",
                 "הערות",
                 "טלפון",
                 "אימייל",
@@ -1043,7 +1418,7 @@ public class InvoicesController : ControllerBase
                 "חתימת העסק"),
             "ar" or "ar-sa" or "ar-eg" => new InvoicePdfLabels(
                 true,
-                "فاتورة ضريبية",
+                "فاتورة ضريبة/وصل استلام",
                 "النشاط التجاري",
                 "بيانات العميل",
                 "بيانات الفاتورة",
@@ -1057,7 +1432,12 @@ public class InvoicesController : ControllerBase
                 "الإجمالي",
                 "المجموع الفرعي",
                 "ضريبة القيمة المضافة",
+                "استقطاع ضريبي",
                 "الإجمالي النهائي",
+                "المبلغ المستحق",
+                "طريقة الدفع",
+                "عدد الدفعات",
+                "الحالة",
                 "ملاحظات",
                 "الهاتف",
                 "البريد الإلكتروني",
@@ -1083,7 +1463,12 @@ public class InvoicesController : ControllerBase
                 "Total",
                 "Subtotal",
                 "VAT",
+                "Withholding Tax",
                 "Total",
+                "Final Amount",
+                "Payment Method",
+                "Installments",
+                "Status",
                 "Notes",
                 "Phone",
                 "Email",
@@ -1112,7 +1497,12 @@ public class InvoicesController : ControllerBase
         string TotalLabel,
         string SubtotalLabel,
         string VatLabel,
+        string WithholdingTaxLabel,
         string TotalSectionLabel,
+        string FinalAmountLabel,
+        string PaymentMethodLabel,
+        string InstallmentsLabel,
+        string StatusLabel,
         string NotesLabel,
         string PhoneLabel,
         string EmailLabel,

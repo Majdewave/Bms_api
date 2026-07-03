@@ -5,6 +5,7 @@ using Clienta.Api.Data;
 using Clienta.Api.Entities;
 using Clienta.Api.Services;
 using Clienta.Api.DTOs;
+using Clienta.Api.Models;
 
 namespace Clienta.Api.Controllers;
 
@@ -48,6 +49,8 @@ public class TenantController : ControllerBase
         return Ok(new
         {
             tenant.Name,
+            tenant.LegalBusinessName,
+            tenant.BusinessRegistrationNumber,
             tenant.Phone,
             tenant.WhatsApp,
             tenant.LogoUrl,
@@ -55,6 +58,10 @@ public class TenantController : ControllerBase
             tenant.AutoDeleteNotDocumentedAfterDays,
             tenant.EnableAutoDeleteNotDocumented,
             tenant.DefaultVatRate,
+            tenant.DefaultWithholdingTaxRate,
+            defaultPaymentMethod = ToApiPaymentMethod(tenant.DefaultPaymentMethod),
+            tenant.DefaultInstallments,
+            defaultInvoiceStatus = ToApiInvoiceStatus(tenant.DefaultInvoiceStatus),
             tenant.Currency,
             tenant.InvoicePrefix,
             tenant.NextInvoiceNumber,
@@ -82,11 +89,30 @@ public class TenantController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.Name))
             tenant.Name = request.Name;
 
+        if (request.LegalBusinessName != null)
+            tenant.LegalBusinessName = NormalizeNullableText(request.LegalBusinessName);
+
+        if (request.BusinessRegistrationNumber != null)
+            tenant.BusinessRegistrationNumber = NormalizeNullableText(request.BusinessRegistrationNumber);
+
         tenant.Phone = request.Phone;
         tenant.WhatsApp = request.WhatsApp;
 
         if (request.DefaultVatRate.HasValue)
             tenant.DefaultVatRate = NormalizeVatRate(request.DefaultVatRate.Value);
+
+        if (request.DefaultWithholdingTaxRate.HasValue)
+            tenant.DefaultWithholdingTaxRate = NormalizePercentage(request.DefaultWithholdingTaxRate.Value, 0m);
+
+        if (request.DefaultPaymentMethod != null)
+            tenant.DefaultPaymentMethod = ParsePaymentMethod(request.DefaultPaymentMethod, tenant.DefaultPaymentMethod);
+
+        tenant.DefaultInstallments = NormalizeInstallments(
+            request.DefaultInstallments ?? tenant.DefaultInstallments,
+            tenant.DefaultPaymentMethod);
+
+        if (request.DefaultInvoiceStatus != null)
+            tenant.DefaultInvoiceStatus = ParseInvoiceStatus(request.DefaultInvoiceStatus, tenant.DefaultInvoiceStatus);
 
         if (request.Currency != null)
             tenant.Currency = NormalizeCurrency(request.Currency);
@@ -118,22 +144,7 @@ public class TenantController : ControllerBase
         if (tenant == null)
             return NotFound();
 
-        return Ok(new TenantResponse(
-            tenant.Id,
-            tenant.Name,
-            tenant.Subdomain,
-            tenant.LogoUrl,
-            tenant.BusinessStampUrl,
-            tenant.Plan.ToString(),
-            tenant.SubscriptionStatus.ToString(),
-            tenant.CreatedAt,
-            tenant.AutoDeleteNotDocumentedAfterDays,
-            tenant.EnableAutoDeleteNotDocumented,
-            tenant.DefaultVatRate,
-            tenant.Currency,
-            tenant.InvoicePrefix,
-            tenant.NextInvoiceNumber
-        ));
+        return Ok(ToTenantResponse(tenant));
     }
 
     // PUT /api/tenant 
@@ -149,6 +160,12 @@ public class TenantController : ControllerBase
         if (!string.IsNullOrWhiteSpace(request.Name))
             tenant.Name = request.Name;
 
+        if (request.LegalBusinessName != null)
+            tenant.LegalBusinessName = NormalizeNullableText(request.LegalBusinessName);
+
+        if (request.BusinessRegistrationNumber != null)
+            tenant.BusinessRegistrationNumber = NormalizeNullableText(request.BusinessRegistrationNumber);
+
         if (request.LogoUrl != null)
             tenant.LogoUrl = request.LogoUrl;
 
@@ -161,6 +178,19 @@ public class TenantController : ControllerBase
         if (request.DefaultVatRate.HasValue)
             tenant.DefaultVatRate = NormalizeVatRate(request.DefaultVatRate.Value);
 
+        if (request.DefaultWithholdingTaxRate.HasValue)
+            tenant.DefaultWithholdingTaxRate = NormalizePercentage(request.DefaultWithholdingTaxRate.Value, 0m);
+
+        if (request.DefaultPaymentMethod != null)
+            tenant.DefaultPaymentMethod = ParsePaymentMethod(request.DefaultPaymentMethod, tenant.DefaultPaymentMethod);
+
+        tenant.DefaultInstallments = NormalizeInstallments(
+            request.DefaultInstallments ?? tenant.DefaultInstallments,
+            tenant.DefaultPaymentMethod);
+
+        if (request.DefaultInvoiceStatus != null)
+            tenant.DefaultInvoiceStatus = ParseInvoiceStatus(request.DefaultInvoiceStatus, tenant.DefaultInvoiceStatus);
+
         if (request.Currency != null)
             tenant.Currency = NormalizeCurrency(request.Currency);
 
@@ -172,22 +202,7 @@ public class TenantController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        return Ok(new TenantResponse(
-            tenant.Id,
-            tenant.Name,
-            tenant.Subdomain,
-            tenant.LogoUrl,
-            tenant.BusinessStampUrl,
-            tenant.Plan.ToString(),
-            tenant.SubscriptionStatus.ToString(),
-            tenant.CreatedAt,
-            tenant.AutoDeleteNotDocumentedAfterDays,
-            tenant.EnableAutoDeleteNotDocumented,
-            tenant.DefaultVatRate,
-            tenant.Currency,
-            tenant.InvoicePrefix,
-            tenant.NextInvoiceNumber
-        ));
+        return Ok(ToTenantResponse(tenant));
     }
 
     [HttpDelete("stamp")]
@@ -325,22 +340,7 @@ public class TenantController : ControllerBase
 
             await _context.SaveChangesAsync();
 
-            return Ok(new TenantResponse(
-                tenant.Id,
-                tenant.Name,
-                tenant.Subdomain,
-                tenant.LogoUrl,
-                tenant.BusinessStampUrl,
-                tenant.Plan.ToString(),
-                tenant.SubscriptionStatus.ToString(),
-                tenant.CreatedAt,
-                tenant.AutoDeleteNotDocumentedAfterDays,
-                tenant.EnableAutoDeleteNotDocumented,
-                tenant.DefaultVatRate,
-                tenant.Currency,
-                tenant.InvoicePrefix,
-                tenant.NextInvoiceNumber
-            ));
+            return Ok(ToTenantResponse(tenant));
         }
         catch (Exception ex)
         {
@@ -377,30 +377,23 @@ public class TenantController : ControllerBase
 
         await _context.SaveChangesAsync();
 
-        return Ok(new TenantResponse(
-            tenant.Id,
-            tenant.Name,
-            tenant.Subdomain,
-            tenant.LogoUrl,
-            tenant.BusinessStampUrl,
-            tenant.Plan.ToString(),
-            tenant.SubscriptionStatus.ToString(),
-            tenant.CreatedAt,
-            tenant.AutoDeleteNotDocumentedAfterDays,
-            tenant.EnableAutoDeleteNotDocumented,
-            tenant.DefaultVatRate,
-            tenant.Currency,
-            tenant.InvoicePrefix,
-            tenant.NextInvoiceNumber
-        ));
+        return Ok(ToTenantResponse(tenant));
     }
 
     private static decimal NormalizeVatRate(decimal requestedVatRate)
     {
-        if (requestedVatRate <= 0 || requestedVatRate > 100)
+        if (requestedVatRate < 0 || requestedVatRate > 100)
             return 18m;
 
         return decimal.Round(requestedVatRate, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal NormalizePercentage(decimal value, decimal fallback)
+    {
+        if (value < 0 || value > 100)
+            return fallback;
+
+        return decimal.Round(value, 2, MidpointRounding.AwayFromZero);
     }
 
     private static string NormalizeCurrency(string requestedCurrency)
@@ -426,5 +419,109 @@ public class TenantController : ControllerBase
     private static int NormalizeNextInvoiceNumber(int nextInvoiceNumber)
     {
         return nextInvoiceNumber > 0 ? nextInvoiceNumber : 1;
+    }
+
+    private static string? NormalizeNullableText(string? value)
+    {
+        if (value == null)
+            return null;
+
+        var normalized = value.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static int? NormalizeInstallments(int? installments, PaymentMethod paymentMethod)
+    {
+        if (paymentMethod != PaymentMethod.Credit)
+            return null;
+
+        if (!installments.HasValue)
+            return null;
+
+        return installments.Value >= 1 && installments.Value <= 36 ? installments.Value : null;
+    }
+
+    private static PaymentMethod ParsePaymentMethod(string? value, PaymentMethod fallback)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "cash" => PaymentMethod.Cash,
+            "credit" => PaymentMethod.Credit,
+            "bank_transfer" => PaymentMethod.BankTransfer,
+            "check" => PaymentMethod.Check,
+            "bit" => PaymentMethod.Bit,
+            "paybox" => PaymentMethod.PayBox,
+            "other" => PaymentMethod.Other,
+            _ => fallback
+        };
+    }
+
+    private static InvoiceStatus ParseInvoiceStatus(string? value, InvoiceStatus fallback)
+    {
+        var normalized = value?.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "pending" => InvoiceStatus.Pending,
+            "paid" => InvoiceStatus.Paid,
+            "partially_paid" or "partial" => InvoiceStatus.PartiallyPaid,
+            "cancelled" or "canceled" => InvoiceStatus.Cancelled,
+            _ => fallback
+        };
+    }
+
+    private static string ToApiPaymentMethod(PaymentMethod value)
+    {
+        return value switch
+        {
+            PaymentMethod.Cash => "cash",
+            PaymentMethod.Credit => "credit",
+            PaymentMethod.BankTransfer => "bank_transfer",
+            PaymentMethod.Check => "check",
+            PaymentMethod.Bit => "bit",
+            PaymentMethod.PayBox => "paybox",
+            PaymentMethod.Other => "other",
+            _ => "cash"
+        };
+    }
+
+    private static string ToApiInvoiceStatus(InvoiceStatus value)
+    {
+        return value switch
+        {
+            InvoiceStatus.Pending => "pending",
+            InvoiceStatus.Paid => "paid",
+            InvoiceStatus.PartiallyPaid => "partially_paid",
+            InvoiceStatus.Cancelled => "cancelled",
+            _ => "pending"
+        };
+    }
+
+    private static TenantResponse ToTenantResponse(Tenant tenant)
+    {
+        return new TenantResponse(
+            tenant.Id,
+            tenant.Name,
+            tenant.LegalBusinessName,
+            tenant.BusinessRegistrationNumber,
+            tenant.Subdomain,
+            tenant.LogoUrl,
+            tenant.BusinessStampUrl,
+            tenant.Plan.ToString(),
+            tenant.SubscriptionStatus.ToString(),
+            tenant.CreatedAt,
+            tenant.AutoDeleteNotDocumentedAfterDays,
+            tenant.EnableAutoDeleteNotDocumented,
+            tenant.DefaultVatRate,
+            tenant.DefaultWithholdingTaxRate,
+            ToApiPaymentMethod(tenant.DefaultPaymentMethod),
+            tenant.DefaultInstallments,
+            ToApiInvoiceStatus(tenant.DefaultInvoiceStatus),
+            tenant.Currency,
+            tenant.InvoicePrefix,
+            tenant.NextInvoiceNumber
+        );
     }
 }

@@ -28,6 +28,12 @@ public class Tenant
     public int AutoDeleteNotDocumentedAfterDays { get; set; } = 1;
     public bool EnableAutoDeleteNotDocumented { get; set; } = true;
     public decimal DefaultVatRate { get; set; } = 18m;
+    public string? LegalBusinessName { get; set; }
+    public string? BusinessRegistrationNumber { get; set; }
+    public decimal DefaultWithholdingTaxRate { get; set; } = 0m;
+    public PaymentMethod DefaultPaymentMethod { get; set; } = PaymentMethod.Cash;
+    public int? DefaultInstallments { get; set; }
+    public InvoiceStatus DefaultInvoiceStatus { get; set; } = InvoiceStatus.Pending;
     public string Currency { get; set; } = "ILS";
     public string InvoicePrefix { get; set; } = "INV-";
     public int NextInvoiceNumber { get; set; } = 1;

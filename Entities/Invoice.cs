@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using Clienta.Api.Models;
 
 namespace Clienta.Api.Entities;
 
@@ -14,10 +15,18 @@ public class Invoice
     public decimal Subtotal { get; set; }
     public decimal VatAmount { get; set; }
     public decimal TotalAmount { get; set; }
+    public decimal WithholdingTaxRate { get; set; }
+    public decimal WithholdingTaxAmount { get; set; }
+    public decimal FinalAmountToPay { get; set; }
+    public PaymentMethod PaymentMethod { get; set; } = PaymentMethod.Cash;
+    public int? Installments { get; set; }
+    public InvoiceStatus Status { get; set; } = InvoiceStatus.Pending;
     public DateTime InvoiceDate { get; set; }
     public DateTime? DueDate { get; set; }
     public string? Notes { get; set; }
     public string? BusinessName { get; set; }
+    public string? LegalBusinessName { get; set; }
+    public string? BusinessRegistrationNumber { get; set; }
     public string? BusinessAddress { get; set; }
     public string? BusinessPhone { get; set; }
     public string? BusinessEmail { get; set; }
