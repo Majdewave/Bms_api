@@ -167,6 +167,9 @@ namespace Clienta.Api.Services
             var tomorrow = today.AddDays(1);
 
             var totalClients = await _db.Clients.CountAsync(c => c.TenantId == tenantId);
+            var notDocumentedClientsCount = await _db.Clients
+                .Where(c => c.TenantId == tenantId)
+                .CountAsync(c => _db.Appointments.Any(a => a.ClientId == c.Id && !a.IsDocumented));
             var appointmentsToday = await _db.Appointments.CountAsync(a => a.TenantId == tenantId && a.StartTime >= today && a.StartTime < tomorrow);
             var completedAppointmentsToday = await _db.Appointments.CountAsync(a => a.TenantId == tenantId && a.StartTime >= today && a.StartTime < tomorrow && a.Status == "Completed");
             var noShowToday = await _db.Appointments.CountAsync(a => a.TenantId == tenantId && a.StartTime >= today && a.StartTime < tomorrow && a.Status == "NoShow");
@@ -191,6 +194,7 @@ namespace Clienta.Api.Services
             return new DashboardStats
             {
                 TotalClients = totalClients,
+                NotDocumentedClientsCount = notDocumentedClientsCount,
                 AppointmentsToday = appointmentsToday,
                 CompletedAppointmentsToday = completedAppointmentsToday,
                 NoShowToday = noShowToday,
@@ -202,6 +206,7 @@ namespace Clienta.Api.Services
     public class DashboardStats
     {
         public int TotalClients { get; set; }
+        public int NotDocumentedClientsCount { get; set; }
         public int AppointmentsToday { get; set; }
         public int CompletedAppointmentsToday { get; set; }
         public int NoShowToday { get; set; }

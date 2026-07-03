@@ -38,6 +38,7 @@ public class DashboardController : ControllerBase
         return Ok(new
         {
             totalClients = stats.TotalClients,
+            notDocumentedClientsCount = stats.NotDocumentedClientsCount,
             appointmentsToday = stats.AppointmentsToday,
             completedToday = stats.CompletedAppointmentsToday,
             noShowToday = stats.NoShowToday,
