@@ -9,7 +9,8 @@ public class TenantFeatures : ITenantEntity
     public bool PrescriptionsEnabled { get; set; } = false;
     public bool DrugsEnabled { get; set; } = false;
     public bool BeforeAfterPhotosEnabled { get; set; } = false;
-    public bool VisitSummariesEnabled { get; set; } = false; 
+    public bool VisitSummariesEnabled { get; set; } = false;
+    public bool TeamChatEnabled { get; set; } = false;
 
     public virtual Tenant Tenant { get; set; } = default!;
 }

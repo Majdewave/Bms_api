@@ -6,5 +6,6 @@ public record UpdateTenantFeaturesRequest(
     bool PrescriptionsEnabled,
     bool DrugsEnabled,
     bool BeforeAfterPhotosEnabled,
-    bool VisitSummariesEnabled
+    bool VisitSummariesEnabled,
+    bool TeamChatEnabled
 );

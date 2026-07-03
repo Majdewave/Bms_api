@@ -1,6 +1,8 @@
 using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.Hubs;
+using Clienta.Api.Infrastructure.TeamChat.Interfaces;
+using Clienta.Api.Infrastructure.TeamChat.Stores;
 using Clienta.Api.Middleware;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -105,7 +107,7 @@ builder.Services.AddAuthentication(options =>
             var path = context.HttpContext.Request.Path;
 
             if (!string.IsNullOrEmpty(accessToken) &&
-                path.StartsWithSegments("/hubs/appointments"))
+                (path.StartsWithSegments("/hubs/appointments") || path.StartsWithSegments("/hubs/team-chat")))
             {
                 context.Token = accessToken;
             }
@@ -195,6 +197,7 @@ builder.Services.AddCors(options =>
 // S3 and IFileStorage services
 builder.Services.AddAWSService<Amazon.S3.IAmazonS3>();
 builder.Services.AddScoped<IFileStorage, S3FileStorage>();
+builder.Services.AddSingleton<ITeamChatOnlineUsersStore, InMemoryTeamChatOnlineUsersStore>();
 
 var app = builder.Build();
 
@@ -271,6 +274,7 @@ app.MapControllers();
 
 // SignalR Hubs
 app.MapHub<AppointmentsHub>("/hubs/appointments");
+app.MapHub<TeamChatHub>("/hubs/team-chat");
 app.MapFallbackToFile("index.html");
 
 app.Run();

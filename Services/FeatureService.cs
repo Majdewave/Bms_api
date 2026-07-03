@@ -34,7 +34,8 @@ public class FeatureService : IFeatureService
                 InvoicesEnabled = true,
                 PrescriptionsEnabled = false,
                 DrugsEnabled = false,
-                BeforeAfterPhotosEnabled = true
+                BeforeAfterPhotosEnabled = true,
+                TeamChatEnabled = false
             };
         }
 
@@ -52,7 +53,8 @@ public class FeatureService : IFeatureService
             InvoicesEnabled = true,
             PrescriptionsEnabled = false,
             DrugsEnabled = false,
-            BeforeAfterPhotosEnabled = true
+            BeforeAfterPhotosEnabled = true,
+            TeamChatEnabled = false
         };
 
         _db.TenantFeatures.Add(features);
@@ -76,6 +78,8 @@ public class FeatureService : IFeatureService
             "drugs" => features.DrugsEnabled,
             "beforeafterphotos" => features.BeforeAfterPhotosEnabled,
             "before_after_photos" => features.BeforeAfterPhotosEnabled,
+            "teamchat" => features.TeamChatEnabled,
+            "team_chat" => features.TeamChatEnabled,
             _ => true
         };
     }

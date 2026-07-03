@@ -165,6 +165,10 @@ public class AppDbContext : DbContext
             .Property(tf => tf.BeforeAfterPhotosEnabled)
             .HasDefaultValue(true);
 
+        modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.TeamChatEnabled)
+            .HasDefaultValue(false);
+
         modelBuilder.Entity<ClientTreatmentPhoto>()
             .HasOne(p => p.Client)
             .WithMany()
