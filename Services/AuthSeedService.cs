@@ -37,7 +37,8 @@ public class AuthSeedService
             "manage_appointments",
             "manage_notes",
             "manage_files",
-            "manage_staff"
+            "manage_staff",
+            "manage_invoices"
         };
 
         // Remove legacy manage_admins permission if it exists

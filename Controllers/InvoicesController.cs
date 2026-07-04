@@ -10,11 +10,13 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Clienta.Api.Controllers;
 
 [ApiController]
 [Route("api/invoices")]
+[Authorize(Policy = "manage_invoices")]
 public class InvoicesController : ControllerBase
 {
     private const decimal DefaultVatRate = 18m;

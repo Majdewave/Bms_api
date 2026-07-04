@@ -140,6 +140,9 @@ builder.Services.AddAuthorization(options =>
     
     options.AddPolicy("manage_staff",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_staff")));
+
+    options.AddPolicy("manage_invoices",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_invoices")));
 });
 
 builder.Services.AddControllers();
