@@ -6,6 +6,7 @@ public record CreateStaffRequest(
     string FullName,
     string RoleLabel,
     List<string> Permissions,
+    List<Guid>? DepartmentIds,
     string Role = "Staff",
     bool UseStamp = false
 );
@@ -15,6 +16,7 @@ public record UpdateStaffRequest(
     string RoleLabel,
     bool IsActive,
     List<string> Permissions,
+    List<Guid>? DepartmentIds,
     bool UseStamp,
     string Role,
     string? Password,
@@ -30,6 +32,7 @@ public record StaffResponse(
     string Role,
     bool IsActive,
     List<string> Permissions,
+    List<Guid> DepartmentIds,
     string? StampUrl,
     bool UseStamp
 );

@@ -141,6 +141,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("manage_staff",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_staff")));
 
+    options.AddPolicy("manage_business_settings",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_business_settings")));
+
     options.AddPolicy("manage_invoices",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_invoices")));
 });
@@ -211,15 +214,12 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 });
 
 
-// ------------ migrate sqlight DB before everything 
-if (app.Environment.IsDevelopment())
+// Ensure DB schema is up-to-date in every environment.
+using (var scope = app.Services.CreateScope())
 {
-    using (var scope = app.Services.CreateScope())
-    {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.Migrate();
-    }
-} 
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
 
 
 

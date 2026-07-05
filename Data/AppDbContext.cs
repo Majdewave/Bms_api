@@ -31,6 +31,8 @@ public class AppDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<BusinessUser> BusinessUsers => Set<BusinessUser>();
     public DbSet<Client> Clients => Set<Client>();
+    public DbSet<Department> Departments => Set<Department>();
+    public DbSet<StaffDepartment> StaffDepartments => Set<StaffDepartment>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<Note> Notes => Set<Note>();
     public DbSet<ClientFile> ClientFiles => Set<ClientFile>();
@@ -58,6 +60,12 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(a => a.StaffId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Appointment>()
+            .HasOne(a => a.Department)
+            .WithMany()
+            .HasForeignKey(a => a.DepartmentId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<Tenant>()
             .HasOne(t => t.OwnerUser)
@@ -99,6 +107,15 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Client>()
             .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<Department>()
+            .HasQueryFilter(d => _tenantContext.TenantId == Guid.Empty || d.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Service>()
+            .HasQueryFilter(s => _tenantContext.TenantId == Guid.Empty || s.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<StaffDepartment>()
+            .HasQueryFilter(sd => _tenantContext.TenantId == Guid.Empty || sd.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<Appointment>()
             .HasQueryFilter(a => _tenantContext.TenantId == Guid.Empty || a.TenantId == _tenantContext.TenantId);
 
@@ -127,6 +144,50 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Tenant>()
             .HasIndex(t => t.Subdomain)
             .IsUnique();
+
+        modelBuilder.Entity<Department>()
+            .HasIndex(d => new { d.TenantId, d.Name })
+            .IsUnique();
+
+        modelBuilder.Entity<Department>()
+            .HasOne(d => d.Tenant)
+            .WithMany(t => t.Departments)
+            .HasForeignKey(d => d.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Appointment>()
+            .HasOne(a => a.Department)
+            .WithMany()
+            .HasForeignKey(a => a.DepartmentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Service>()
+            .HasOne(s => s.Department)
+            .WithMany()
+            .HasForeignKey(s => s.DepartmentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<StaffDepartment>()
+            .HasIndex(sd => new { sd.TenantId, sd.StaffId, sd.DepartmentId })
+            .IsUnique();
+
+        modelBuilder.Entity<StaffDepartment>()
+            .HasOne(sd => sd.Tenant)
+            .WithMany()
+            .HasForeignKey(sd => sd.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<StaffDepartment>()
+            .HasOne(sd => sd.Staff)
+            .WithMany(bu => bu.StaffDepartments)
+            .HasForeignKey(sd => sd.StaffId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<StaffDepartment>()
+            .HasOne(sd => sd.Department)
+            .WithMany(d => d.StaffDepartments)
+            .HasForeignKey(sd => sd.DepartmentId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         // UserToken relationships and unique index for tenant isolation
         modelBuilder.Entity<UserToken>()

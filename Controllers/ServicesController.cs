@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Clienta.Api.Data;
 using Clienta.Api.Entities;
+using Clienta.Api.DTOs;
 using Clienta.Api.Services;
 using System;
 using System.Linq;
@@ -32,14 +33,17 @@ namespace Clienta.Api.Controllers
                 return BadRequest("Tenant not resolved.");
 
             var services = await _context.Services
+                .Include(s => s.Department)
                 .Where(s => s.TenantId == _tenant.TenantId && s.IsActive)
                 .OrderBy(s => s.Name)
-                .Select(s => new
-                {
+                .Select(s => new ServiceResponse(
                     s.Id,
                     s.Name,
-                    s.DefaultDurationMinutes
-                })
+                    s.DefaultDurationMinutes,
+                    s.DepartmentId,
+                    s.Department != null ? s.Department.Name : null,
+                    s.Department != null ? s.Department.Color : null
+                ))
                 .ToListAsync();
 
             return Ok(services);
@@ -48,16 +52,29 @@ namespace Clienta.Api.Controllers
         // POST: /api/services
         [HttpPost]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Create([FromBody] Service request)
+        public async Task<IActionResult> Create([FromBody] CreateServiceRequest request)
         {
             if (_tenant.TenantId == Guid.Empty)
                 return BadRequest("Tenant not resolved.");
 
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return BadRequest("Service name is required.");
+
+            if (request.DepartmentId == null || request.DepartmentId == Guid.Empty)
+                return BadRequest("Department is required.");
+
+            var department = await _context.Departments
+                .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);
+
+            if (department == null)
+                return BadRequest("Selected department is invalid.");
+
             var service = new Service
             {
                 Id = Guid.NewGuid(),
-                Name = request.Name,
+                Name = request.Name.Trim(),
                 DefaultDurationMinutes = request.DefaultDurationMinutes,
+                DepartmentId = request.DepartmentId,
                 IsActive = true,
                 TenantId = _tenant.TenantId,
                 CreatedAt = DateTime.UtcNow
@@ -66,36 +83,53 @@ namespace Clienta.Api.Controllers
             _context.Services.Add(service);
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
+            return Ok(new ServiceResponse(
                 service.Id,
                 service.Name,
-                service.DefaultDurationMinutes
-            });
+                service.DefaultDurationMinutes,
+                service.DepartmentId,
+                department.Name,
+                department.Color
+            ));
         }
 
         // PUT: /api/services/{id}
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "Admin")]
-        public async Task<IActionResult> Update(Guid id, [FromBody] Service request)
+        public async Task<IActionResult> Update(Guid id, [FromBody] UpdateServiceRequest request)
         {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return BadRequest("Service name is required.");
+
+            if (request.DepartmentId == null || request.DepartmentId == Guid.Empty)
+                return BadRequest("Department is required.");
+
+            var department = await _context.Departments
+                .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);
+
+            if (department == null)
+                return BadRequest("Selected department is invalid.");
+
             var service = await _context.Services
                 .FirstOrDefaultAsync(s => s.Id == id && s.TenantId == _tenant.TenantId);
 
             if (service == null)
                 return NotFound();
 
-            service.Name = request.Name;
+            service.Name = request.Name.Trim();
             service.DefaultDurationMinutes = request.DefaultDurationMinutes;
+            service.DepartmentId = request.DepartmentId;
 
             await _context.SaveChangesAsync();
 
-            return Ok(new
-            {
+            return Ok(new ServiceResponse(
                 service.Id,
                 service.Name,
-                service.DefaultDurationMinutes
-            });
+                service.DefaultDurationMinutes,
+                service.DepartmentId,
+                department.Name,
+                department.Color
+            ));
         }
 
         // DELETE: /api/services/{id}

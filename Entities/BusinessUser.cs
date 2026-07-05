@@ -9,4 +9,6 @@ public class BusinessUser : ITenantEntity
 
     public Guid UserId { get; set; }
     public virtual User User { get; set; } = null!;
+
+    public ICollection<StaffDepartment> StaffDepartments { get; set; } = new List<StaffDepartment>();
 }

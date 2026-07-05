@@ -15,69 +15,6 @@ namespace Clienta.Api.Controllers;
 [Authorize(Policy = "manage_appointments")]
 public class AppointmentsController : ControllerBase
 {
-
-    // GET /appointments/queue
-    [Authorize(Policy = "manage_appointments")]
-    [HttpGet("queue")]
-    public async Task<IActionResult> GetQueue()
-    {
-        var tenantId = _tenant.TenantId;
-        var inProgress = await _context.Appointments
-            .Include(a => a.Client)
-            .Include(a => a.Service)
-            .Include(a => a.Staff)
-            .Where(a => a.TenantId == tenantId && a.Status == AppointmentStatuses.InProgress)
-            .OrderBy(a => a.StartTime)
-            .FirstOrDefaultAsync();
-
-        var nextWaiting = await _context.Appointments
-            .Include(a => a.Client)
-            .Include(a => a.Service)
-            .Include(a => a.Staff)
-            .Where(a => a.TenantId == tenantId && a.Status == AppointmentStatuses.Waiting)
-            .OrderBy(a => a.StartTime)
-            .FirstOrDefaultAsync();
-
-        var waitingCount = await _context.Appointments
-            .CountAsync(a => a.TenantId == tenantId && a.Status == AppointmentStatuses.Waiting);
-
-        return Ok(new
-        {
-            current = inProgress == null ? null : new AppointmentDto(
-                inProgress.Id,
-                inProgress.ClientId,
-                inProgress.Client.FullName,
-                inProgress.ServiceId,
-                inProgress.Service != null ? inProgress.Service.Name : null,
-                inProgress.StaffId,
-                inProgress.Staff != null ? inProgress.Staff.User.FullName : null,
-                inProgress.StartTime.ToLocalTime(),
-                inProgress.EndTime.ToLocalTime(),
-                inProgress.Status,
-                inProgress.Notes,
-                inProgress.CreatedAt,
-                inProgress.IsDocumented,
-                _context.ClientConsents.Any(c => c.AppointmentId == inProgress.Id)
-            ),
-            next = nextWaiting == null ? null : new AppointmentDto(
-                nextWaiting.Id,
-                nextWaiting.ClientId,
-                nextWaiting.Client.FullName,
-                nextWaiting.ServiceId,
-                nextWaiting.Service != null ? nextWaiting.Service.Name : null,
-                nextWaiting.StaffId,
-                nextWaiting.Staff != null ? nextWaiting.Staff.User.FullName : null,
-                nextWaiting.StartTime.ToLocalTime(),
-                nextWaiting.EndTime.ToLocalTime(),
-                nextWaiting.Status,
-                nextWaiting.Notes,
-                nextWaiting.CreatedAt,
-                nextWaiting.IsDocumented,
-                _context.ClientConsents.Any(c => c.AppointmentId == inProgress.Id)
-            ),
-            waitingCount
-        });
-    }
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IPlanEnforcementService _planEnforcement;
@@ -95,6 +32,82 @@ public class AppointmentsController : ControllerBase
         _hubContext = hubContext;
     }
 
+    // GET /appointments/queue
+    [Authorize(Policy = "manage_appointments")]
+    [HttpGet("queue")]
+    public async Task<IActionResult> GetQueue()
+    {
+        var tenantId = _tenant.TenantId;
+        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
+            _context.Appointments.Where(a => a.TenantId == tenantId));
+
+        var inProgress = await scopedAppointments
+            .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Department)
+            .Include(a => a.Staff)
+                .ThenInclude(s => s.User)
+            .Where(a => a.Status == AppointmentStatuses.InProgress)
+            .OrderBy(a => a.StartTime)
+            .FirstOrDefaultAsync();
+
+        var nextWaiting = await scopedAppointments
+            .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Department)
+            .Include(a => a.Staff)
+                .ThenInclude(s => s.User)
+            .Where(a => a.Status == AppointmentStatuses.Waiting)
+            .OrderBy(a => a.StartTime)
+            .FirstOrDefaultAsync();
+
+        var waitingCount = await scopedAppointments
+            .CountAsync(a => a.Status == AppointmentStatuses.Waiting);
+
+        return Ok(new
+        {
+            current = inProgress == null ? null : new AppointmentDto(
+                inProgress.Id,
+                inProgress.ClientId,
+                inProgress.Client.FullName,
+                inProgress.ServiceId,
+                inProgress.Service != null ? inProgress.Service.Name : null,
+                inProgress.DepartmentId,
+                inProgress.Department != null ? inProgress.Department.Name : null,
+                inProgress.Department != null ? inProgress.Department.Color : null,
+                inProgress.StaffId,
+                inProgress.Staff != null ? inProgress.Staff.User.FullName : null,
+                inProgress.StartTime.ToLocalTime(),
+                inProgress.EndTime.ToLocalTime(),
+                inProgress.Status,
+                inProgress.Notes,
+                inProgress.CreatedAt,
+                inProgress.IsDocumented,
+                await _context.ClientConsents.AnyAsync(c => c.AppointmentId == inProgress.Id)
+            ),
+            next = nextWaiting == null ? null : new AppointmentDto(
+                nextWaiting.Id,
+                nextWaiting.ClientId,
+                nextWaiting.Client.FullName,
+                nextWaiting.ServiceId,
+                nextWaiting.Service != null ? nextWaiting.Service.Name : null,
+                nextWaiting.DepartmentId,
+                nextWaiting.Department != null ? nextWaiting.Department.Name : null,
+                nextWaiting.Department != null ? nextWaiting.Department.Color : null,
+                nextWaiting.StaffId,
+                nextWaiting.Staff != null ? nextWaiting.Staff.User.FullName : null,
+                nextWaiting.StartTime.ToLocalTime(),
+                nextWaiting.EndTime.ToLocalTime(),
+                nextWaiting.Status,
+                nextWaiting.Notes,
+                nextWaiting.CreatedAt,
+                nextWaiting.IsDocumented,
+                await _context.ClientConsents.AnyAsync(c => c.AppointmentId == nextWaiting.Id)
+            ),
+            waitingCount
+        });
+    }
+
     // GET /appointments
     [Authorize(Policy = "manage_appointments")]
     [HttpGet]
@@ -102,33 +115,33 @@ public class AppointmentsController : ControllerBase
     {
         var twoWeeksAgo = DateTime.UtcNow.AddDays(-14);
 
-        var appointments = await _context.Appointments
+        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
+            _context.Appointments
+                .Where(a =>
+                    a.TenantId == _tenant.TenantId &&
+                    a.StartTime >= twoWeeksAgo));
+
+        var appointments = await scopedAppointments
             .Include(a => a.Client)
             .Include(a => a.Service)
+            .Include(a => a.Department)
             .Include(a => a.Staff)
-
-            // תביא נתונים שבועיים אחורה כרגע עד שנפתור את הבעיה של הפילטר 
-            .Where(a =>
-             a.TenantId == _tenant.TenantId &&
-             a.StartTime >= twoWeeksAgo
-            )
-
-            // בטיפול ראשון, אחר כך ממתינים, אחר כך כל השאר
+                .ThenInclude(s => s.User)
             .OrderBy(a =>
                 a.Status == AppointmentStatuses.InProgress ? 0 :
                 a.Status == AppointmentStatuses.Waiting ? 1 :
                 2
             )
-
-            // מיון לפי שעה ותאריך מהקרוב לרחוק
             .ThenBy(a => a.StartTime)
-
             .Select(a => new AppointmentDto(
                 a.Id,
                 a.ClientId,
                 a.Client.FullName,
                 a.ServiceId,
                 a.Service != null ? a.Service.Name : null,
+                a.DepartmentId,
+                a.Department != null ? a.Department.Name : null,
+                a.Department != null ? a.Department.Color : null,
                 a.StaffId,
                 a.Staff != null ? a.Staff.User.FullName : null,
                 a.StartTime.ToLocalTime(),
@@ -137,7 +150,7 @@ public class AppointmentsController : ControllerBase
                 a.Notes,
                 a.CreatedAt,
                 a.IsDocumented,
-                 _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
+                _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
             ))
             .ToListAsync();
 
@@ -149,17 +162,24 @@ public class AppointmentsController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
-        var appointment = await _context.Appointments
+        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
+            _context.Appointments.Where(a => a.Id == id));
+
+        var appointment = await scopedAppointments
             .Include(a => a.Client)
             .Include(a => a.Service)
+            .Include(a => a.Department)
             .Include(a => a.Staff)
-            .Where(a => a.Id == id)
+                .ThenInclude(s => s.User)
             .Select(a => new AppointmentDto(
                 a.Id,
                 a.ClientId,
                 a.Client.FullName,
                 a.ServiceId,
                 a.Service != null ? a.Service.Name : null,
+                a.DepartmentId,
+                a.Department != null ? a.Department.Name : null,
+                a.Department != null ? a.Department.Color : null,
                 a.StaffId,
                 a.Staff != null ? a.Staff.User.FullName : null,
                 a.StartTime.ToLocalTime(),
@@ -168,7 +188,7 @@ public class AppointmentsController : ControllerBase
                 a.Notes,
                 a.CreatedAt,
                 a.IsDocumented,
-                 _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
+                _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
             ))
             .FirstOrDefaultAsync();
 
@@ -179,7 +199,6 @@ public class AppointmentsController : ControllerBase
     }
 
     // POST /appointments
-    //[Authorize(Policy = "manage_appointments")]
     [HttpPost]
     public async Task<IActionResult> Create(CreateAppointmentRequest request)
     {
@@ -195,17 +214,16 @@ public class AppointmentsController : ControllerBase
             return BadRequest("End time must be after start time.");
         }
 
-        // Validate ServiceId if provided
+        Service? selectedService = null;
         if (request.ServiceId.HasValue)
         {
-            var serviceExists = await _context.Services
-                .AnyAsync(s => s.Id == request.ServiceId && s.TenantId == _tenant.TenantId);
+            selectedService = await _context.Services
+                .FirstOrDefaultAsync(s => s.Id == request.ServiceId && s.TenantId == _tenant.TenantId);
 
-            if (!serviceExists)
+            if (selectedService == null)
                 return BadRequest("Invalid service.");
         }
 
-        // Validate StaffId if provided
         if (request.StaffId.HasValue)
         {
             var staffExists = await _context.BusinessUsers
@@ -213,6 +231,13 @@ public class AppointmentsController : ControllerBase
 
             if (!staffExists)
                 return BadRequest("Invalid staff.");
+        }
+
+        if (request.StaffId.HasValue && request.ServiceId.HasValue)
+        {
+            var isAllowed = await IsServiceAllowedForStaffAsync(request.StaffId.Value, selectedService?.DepartmentId);
+            if (!isAllowed)
+                return BadRequest("Selected service is not available for this staff member.");
         }
 
         try
@@ -233,50 +258,35 @@ public class AppointmentsController : ControllerBase
             TenantId = _tenant.TenantId,
             ClientId = request.ClientId,
             ServiceId = request.ServiceId,
+            DepartmentId = selectedService?.DepartmentId,
             StaffId = request.StaffId,
             CreatedByUserId = _tenant.UserId ?? Guid.Empty,
             StartTime = request.StartTime.ToUniversalTime(),
             EndTime = request.EndTime.ToUniversalTime(),
-            Status = "Scheduled",
+            Status = AppointmentStatuses.Scheduled,
             Notes = request.Notes,
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Appointments.Add(appointment);
-
         await _context.SaveChangesAsync();
 
-        // SignalR: Notify all users in the tenant group
         await _hubContext.Clients.All.SendAsync("AppointmentUpdated");
 
-        // Fetch related entities for response
-        var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
-        var staff = appointment.StaffId.HasValue ? await _context.BusinessUsers.FirstOrDefaultAsync(bu => bu.Id == appointment.StaffId) : null;
-        string? staffName = null;
-        if (staff != null)
-        {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == staff.UserId);
-            staffName = user?.FullName;
-        }
+        var createdAppointment = await _context.Appointments
+            .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Department)
+            .Include(a => a.Staff)
+                .ThenInclude(s => s.User)
+            .FirstOrDefaultAsync(a => a.Id == appointment.Id);
+
+        if (createdAppointment == null)
+            return StatusCode(500, "Failed to load created appointment.");
 
         return CreatedAtAction(nameof(GetById),
             new { id = appointment.Id },
-            new AppointmentDto(
-                appointment.Id,
-                appointment.ClientId,
-                client.FullName,
-                appointment.ServiceId,
-                service?.Name,
-                appointment.StaffId,
-                staffName,
-                appointment.StartTime.ToLocalTime(),
-                appointment.EndTime.ToLocalTime(),
-                appointment.Status,
-                appointment.Notes,
-                appointment.CreatedAt,
-                appointment.IsDocumented,
-                _context.ClientConsents.Any(c => c.AppointmentId == appointment.Id)
-            ));
+            await BuildAppointmentDtoAsync(createdAppointment));
     }
 
     // PUT /appointments/{id}
@@ -284,42 +294,39 @@ public class AppointmentsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateAppointmentRequest request)
     {
-        var appointment = await _context.Appointments.FirstOrDefaultAsync(a => a.Id == id);
+        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
+            _context.Appointments.Where(a => a.Id == id));
+
+        var appointment = await scopedAppointments.FirstOrDefaultAsync();
         if (appointment == null)
             return NotFound();
 
-        // ✅ Time validation (only if provided)
         if (request.StartTime != default && request.EndTime != default &&
             request.EndTime <= request.StartTime)
         {
             return BadRequest("End time must be after start time.");
         }
 
-        // ✅ Normalize statuses (fix ALL your bugs)
         var currentStatus = appointment.Status?.Trim();
         var newStatus = request.Status?.Trim() ?? appointment.Status;
 
-        // ✅ Validate status (case insensitive)
         if (!AppointmentStatuses.All
             .Any(s => s.Equals(newStatus, StringComparison.OrdinalIgnoreCase)))
         {
             return BadRequest($"Invalid status. Allowed: {string.Join(", ", AppointmentStatuses.All)}");
         }
 
-        // ✅ Map to correct casing (important!)
         currentStatus = AppointmentStatuses.All
             .First(s => s.Equals(currentStatus, StringComparison.OrdinalIgnoreCase));
 
         newStatus = AppointmentStatuses.All
             .First(s => s.Equals(newStatus, StringComparison.OrdinalIgnoreCase));
 
-        // ✅ Allowed transitions (FIXED)
         var allowedTransitions = new Dictionary<string, string[]>
         {
             { AppointmentStatuses.Scheduled, new[] { AppointmentStatuses.Waiting, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
             { AppointmentStatuses.Waiting, new[] { AppointmentStatuses.InProgress, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
             { AppointmentStatuses.InProgress, new[] { AppointmentStatuses.Completed, AppointmentStatuses.Cancelled, AppointmentStatuses.NoShow } },
-
             { AppointmentStatuses.Completed, new[] { AppointmentStatuses.Scheduled, AppointmentStatuses.Waiting } },
             { AppointmentStatuses.Cancelled, new[] { AppointmentStatuses.Scheduled } },
             { AppointmentStatuses.NoShow, new[] { AppointmentStatuses.Scheduled } }
@@ -331,7 +338,6 @@ public class AppointmentsController : ControllerBase
             return BadRequest($"Invalid status transition from {currentStatus} to {newStatus}.");
         }
 
-        // ✅ Only one InProgress
         if (newStatus == AppointmentStatuses.InProgress)
         {
             var exists = await _context.Appointments.AnyAsync(a =>
@@ -343,7 +349,32 @@ public class AppointmentsController : ControllerBase
                 return BadRequest("Only one appointment can be InProgress at a time.");
         }
 
-        // ✅ Update fields safely
+        Service? selectedService = null;
+        if (request.ServiceId.HasValue)
+        {
+            selectedService = await _context.Services
+                .FirstOrDefaultAsync(s => s.Id == request.ServiceId && s.TenantId == _tenant.TenantId);
+
+            if (selectedService == null)
+                return BadRequest("Invalid service.");
+        }
+
+        if (request.StaffId.HasValue)
+        {
+            var staffExists = await _context.BusinessUsers
+                .AnyAsync(b => b.Id == request.StaffId && b.TenantId == _tenant.TenantId);
+
+            if (!staffExists)
+                return BadRequest("Invalid staff.");
+        }
+
+        if (request.StaffId.HasValue && request.ServiceId.HasValue)
+        {
+            var isAllowed = await IsServiceAllowedForStaffAsync(request.StaffId.Value, selectedService?.DepartmentId);
+            if (!isAllowed)
+                return BadRequest("Selected service is not available for this staff member.");
+        }
+
         if (request.StartTime != default)
             appointment.StartTime = DateTime.SpecifyKind(request.StartTime, DateTimeKind.Utc);
 
@@ -353,9 +384,10 @@ public class AppointmentsController : ControllerBase
         appointment.Status = newStatus;
         appointment.Notes = request.Notes;
         appointment.ServiceId = request.ServiceId;
+        appointment.DepartmentId = selectedService?.DepartmentId;
         appointment.StaffId = request.StaffId;
-       
-       if (request.IsDocumented.HasValue)
+
+        if (request.IsDocumented.HasValue)
         {
             appointment.IsDocumented = request.IsDocumented.Value;
 
@@ -380,34 +412,18 @@ public class AppointmentsController : ControllerBase
         await _context.SaveChangesAsync();
         await _hubContext.Clients.All.SendAsync("AppointmentUpdated");
 
-        var client = await _context.Clients
-            .FirstOrDefaultAsync(c => c.Id == appointment.ClientId && c.TenantId == _tenant.TenantId); var service = appointment.ServiceId.HasValue ? await _context.Services.FindAsync(appointment.ServiceId) : null;
-       
-        var staff = appointment.StaffId.HasValue ? await _context.BusinessUsers.FirstOrDefaultAsync(b => b.Id == appointment.StaffId) : null;
+        var updatedAppointment = await _context.Appointments
+            .Include(a => a.Client)
+            .Include(a => a.Service)
+            .Include(a => a.Department)
+            .Include(a => a.Staff)
+                .ThenInclude(s => s.User)
+            .FirstOrDefaultAsync(a => a.Id == appointment.Id);
 
-        string? staffName = null;
-        if (staff != null)
-        {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == staff.UserId);
-            staffName = user?.FullName;
-        }
+        if (updatedAppointment == null)
+            return StatusCode(500, "Failed to load updated appointment.");
 
-        return Ok(new AppointmentDto(
-            appointment.Id,
-            appointment.ClientId,
-            client?.FullName ?? "",
-            appointment.ServiceId,
-            service?.Name,
-            appointment.StaffId,
-            staffName,
-            appointment.StartTime.ToLocalTime(),
-            appointment.EndTime.ToLocalTime(),
-            appointment.Status,
-            appointment.Notes,
-            appointment.CreatedAt,
-            appointment.IsDocumented,
-            _context.ClientConsents.Any(c => c.AppointmentId == appointment.Id)
-        ));
+        return Ok(await BuildAppointmentDtoAsync(updatedAppointment));
     }
 
     // DELETE /appointments/{id}
@@ -415,8 +431,10 @@ public class AppointmentsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var appointment = await _context.Appointments
-            .FirstOrDefaultAsync(a => a.Id == id);
+        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
+            _context.Appointments.Where(a => a.Id == id));
+
+        var appointment = await scopedAppointments.FirstOrDefaultAsync();
 
         if (appointment == null)
             return NotFound();
@@ -425,5 +443,71 @@ public class AppointmentsController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    private async Task<AppointmentDto> BuildAppointmentDtoAsync(Appointment appointment)
+    {
+        return new AppointmentDto(
+            appointment.Id,
+            appointment.ClientId,
+            appointment.Client?.FullName ?? string.Empty,
+            appointment.ServiceId,
+            appointment.Service?.Name,
+            appointment.DepartmentId,
+            appointment.Department?.Name,
+            appointment.Department?.Color,
+            appointment.StaffId,
+            appointment.Staff?.User?.FullName,
+            appointment.StartTime.ToLocalTime(),
+            appointment.EndTime.ToLocalTime(),
+            appointment.Status,
+            appointment.Notes,
+            appointment.CreatedAt,
+            appointment.IsDocumented,
+            await _context.ClientConsents.AnyAsync(c => c.AppointmentId == appointment.Id)
+        );
+    }
+
+    private async Task<IQueryable<Appointment>> ApplyStaffDepartmentVisibilityAsync(IQueryable<Appointment> query)
+    {
+        if (_tenant.UserId == null || _tenant.UserId == Guid.Empty)
+            return query;
+
+        var currentStaff = await _context.BusinessUsers
+            .Include(b => b.StaffDepartments)
+            .FirstOrDefaultAsync(b =>
+                b.TenantId == _tenant.TenantId &&
+                b.UserId == _tenant.UserId);
+
+        if (currentStaff == null)
+            return query;
+
+        var departmentIds = currentStaff.StaffDepartments
+            .Select(sd => sd.DepartmentId)
+            .Distinct()
+            .ToList();
+
+        if (departmentIds.Count == 0)
+            return query;
+
+        return query.Where(a =>
+            !a.DepartmentId.HasValue || departmentIds.Contains(a.DepartmentId.Value));
+    }
+
+    private async Task<bool> IsServiceAllowedForStaffAsync(Guid staffId, Guid? serviceDepartmentId)
+    {
+        var departmentIds = await _context.StaffDepartments
+            .Where(sd => sd.TenantId == _tenant.TenantId && sd.StaffId == staffId)
+            .Select(sd => sd.DepartmentId)
+            .Distinct()
+            .ToListAsync();
+
+        if (departmentIds.Count == 0)
+            return true;
+
+        if (!serviceDepartmentId.HasValue)
+            return true;
+
+        return departmentIds.Contains(serviceDepartmentId.Value);
     }
 }

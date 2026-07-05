@@ -26,6 +26,84 @@ public class StaffController : ControllerBase
         _fileStorage = fileStorage;
     }
 
+    private async Task<List<Guid>> GetDepartmentIdsAsync(Guid staffId)
+    {
+        return await _context.StaffDepartments
+            .Where(sd => sd.StaffId == staffId)
+            .OrderBy(sd => sd.CreatedAt)
+            .Select(sd => sd.DepartmentId)
+            .ToListAsync();
+    }
+
+    private async Task SyncDepartmentsAsync(Guid staffId, IEnumerable<Guid>? departmentIds, bool isAdmin)
+    {
+        var normalizedDepartmentIds = departmentIds?
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList() ?? new List<Guid>();
+
+        if (!isAdmin && normalizedDepartmentIds.Count == 0)
+        {
+            throw new InvalidOperationException("At least one department must be selected for non-admin staff.");
+        }
+
+        var existingLinks = await _context.StaffDepartments
+            .Where(sd => sd.StaffId == staffId)
+            .ToListAsync();
+
+        _context.StaffDepartments.RemoveRange(existingLinks);
+
+        if (normalizedDepartmentIds.Count == 0)
+        {
+            return;
+        }
+
+        var validDepartmentIds = await _context.Departments
+            .Where(department => normalizedDepartmentIds.Contains(department.Id))
+            .Select(department => department.Id)
+            .ToListAsync();
+
+        if (validDepartmentIds.Count != normalizedDepartmentIds.Count)
+        {
+            throw new InvalidOperationException("One or more selected departments are invalid.");
+        }
+
+        foreach (var departmentId in validDepartmentIds)
+        {
+            _context.StaffDepartments.Add(new StaffDepartment
+            {
+                Id = Guid.NewGuid(),
+                TenantId = _tenant.TenantId,
+                StaffId = staffId,
+                DepartmentId = departmentId,
+            });
+        }
+    }
+
+    private async Task<StaffResponse> BuildResponseAsync(BusinessUser businessUser)
+    {
+        var user = businessUser.User;
+        var permissionKeys = await _context.UserPermissions
+            .Where(up => up.UserId == user.Id)
+            .Select(up => up.Permission.Key)
+            .ToListAsync();
+        var departmentIds = await GetDepartmentIdsAsync(businessUser.Id);
+
+        return new StaffResponse(
+            businessUser.Id,
+            user.Id,
+            user.Email,
+            user.FullName ?? string.Empty,
+            user.RoleLabel ?? string.Empty,
+            user.Role,
+            user.IsActive,
+            permissionKeys,
+            departmentIds,
+            user.StampUrl,
+            user.UseStamp
+        );
+    }
+
     // GET /api/staff
     [HttpGet]
     public async Task<IActionResult> GetAll()
@@ -33,21 +111,39 @@ public class StaffController : ControllerBase
         var staff = await _context.BusinessUsers
             .Include(bu => bu.User)
             .Where(bu => bu.TenantId == _tenant.TenantId)
-            .Select(bu => new StaffResponse(
-                bu.Id, // BusinessUserId
-                bu.User.Id, // UserId
-                bu.User.Email,
-                bu.User.FullName ?? string.Empty,
-                bu.User.RoleLabel ?? string.Empty,
-                bu.User.Role,
-                bu.User.IsActive,
-                bu.User.Permissions.Select(p => p.Permission.Key).ToList(),
-                bu.User.StampUrl,
-                bu.User.UseStamp
-            ))
             .ToListAsync();
 
-        return Ok(staff);
+        var staffIds = staff.Select(member => member.Id).ToList();
+        var userIds = staff.Select(member => member.UserId).ToList();
+        var permissionRows = await _context.UserPermissions
+            .Where(up => userIds.Contains(up.UserId))
+            .Select(up => new { up.UserId, PermissionKey = up.Permission.Key })
+            .ToListAsync();
+
+        var permissionMap = permissionRows
+            .GroupBy(row => row.UserId)
+            .ToDictionary(group => group.Key, group => group.Select(item => item.PermissionKey).ToList());
+
+        var departmentMap = await _context.StaffDepartments
+            .Where(sd => staffIds.Contains(sd.StaffId))
+            .GroupBy(sd => sd.StaffId)
+            .ToDictionaryAsync(group => group.Key, group => group.Select(item => item.DepartmentId).OrderBy(id => id).ToList());
+
+        var staffResponse = staff.Select(bu => new StaffResponse(
+            bu.Id,
+            bu.User.Id,
+            bu.User.Email,
+            bu.User.FullName ?? string.Empty,
+            bu.User.RoleLabel ?? string.Empty,
+            bu.User.Role,
+            bu.User.IsActive,
+            permissionMap.TryGetValue(bu.UserId, out var keys) ? keys : new List<string>(),
+            departmentMap.TryGetValue(bu.Id, out var ids) ? ids : new List<Guid>(),
+            bu.User.StampUrl,
+            bu.User.UseStamp
+        )).ToList();
+
+        return Ok(staffResponse);
     }
 
     // GET /api/staff/{id}
@@ -65,21 +161,7 @@ public class StaffController : ControllerBase
         if (businessUser == null)
             return NotFound();
 
-        var user = businessUser.User;
-        var response = new StaffResponse(
-            businessUser.Id, // BusinessUserId
-            user.Id, // UserId
-            user.Email,
-            user.FullName ?? string.Empty,
-            user.RoleLabel ?? string.Empty,
-            user.Role,
-            user.IsActive,
-            user.Permissions.Select(p => p.Permission.Key).ToList(),
-            user.StampUrl,
-            user.UseStamp
-        );
-
-        return Ok(response);
+        return Ok(await BuildResponseAsync(businessUser));
     }
 
     // POST /api/staff
@@ -110,6 +192,7 @@ public class StaffController : ControllerBase
 
         _context.BusinessUsers.Add(new BusinessUser
         {
+            Id = Guid.NewGuid(),
             TenantId = _tenant.TenantId,
             UserId = user.Id
         });
@@ -133,19 +216,22 @@ public class StaffController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+
         var businessUser = await _context.BusinessUsers.FirstOrDefaultAsync(bu => bu.UserId == user.Id && bu.TenantId == _tenant.TenantId);
-        return CreatedAtAction(nameof(GetAll), new StaffResponse(
-            businessUser?.Id ?? Guid.Empty, // BusinessUserId
-            user.Id, // UserId
-            user.Email,
-            user.FullName ?? string.Empty,
-            user.RoleLabel ?? string.Empty,
-            user.Role,
-            user.IsActive,
-            role == "Staff" ? request.Permissions ?? new List<string>() : new List<string>(),
-            user.StampUrl,
-            user.UseStamp
-        ));
+        if (businessUser == null)
+            return StatusCode(StatusCodes.Status500InternalServerError, "Failed to create staff.");
+
+        try
+        {
+            await SyncDepartmentsAsync(businessUser.Id, request.DepartmentIds, role == "Admin");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetAll), await BuildResponseAsync(businessUser));
     }
 
     // PUT /api/staff/{id}
@@ -201,9 +287,18 @@ public class StaffController : ControllerBase
             }
         }
 
+        try
+        {
+            await SyncDepartmentsAsync(businessUser.Id, request.DepartmentIds, user.Role == "Admin");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+
         await _context.SaveChangesAsync();
 
-        return NoContent();
+        return Ok(await BuildResponseAsync(businessUser));
     }
 
     // POST /api/staff/{id}/stamp

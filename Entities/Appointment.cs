@@ -32,7 +32,9 @@ public class Appointment : ITenantEntity
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public Guid? ServiceId { get; set; }
+    public Guid? DepartmentId { get; set; }
     public Service? Service { get; set; }
+    public Department? Department { get; set; }
 
     public Guid? StaffId { get; set; }
     public BusinessUser? Staff { get; set; }

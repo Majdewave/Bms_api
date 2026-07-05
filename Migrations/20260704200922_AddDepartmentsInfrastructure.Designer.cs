@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260704200922_AddDepartmentsInfrastructure")]
+    partial class AddDepartmentsInfrastructure
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -35,9 +38,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("DepartmentId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("EndTime")
@@ -70,8 +70,6 @@ namespace Clienta.Api.Migrations
                     b.HasIndex("ClientId");
 
                     b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("DepartmentId");
 
                     b.HasIndex("ServiceId");
 
@@ -783,9 +781,6 @@ namespace Clienta.Api.Migrations
                     b.Property<int>("DefaultDurationMinutes")
                         .HasColumnType("integer");
 
-                    b.Property<Guid?>("DepartmentId")
-                        .HasColumnType("uuid");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -798,39 +793,7 @@ namespace Clienta.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DepartmentId");
-
                     b.ToTable("Services");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.StaffDepartment", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("DepartmentId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("StaffId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DepartmentId");
-
-                    b.HasIndex("StaffId");
-
-                    b.HasIndex("TenantId", "StaffId", "DepartmentId")
-                        .IsUnique();
-
-                    b.ToTable("StaffDepartments");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Tenant", b =>
@@ -1173,11 +1136,6 @@ namespace Clienta.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Clienta.Api.Entities.Department", "Department")
-                        .WithMany()
-                        .HasForeignKey("DepartmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Clienta.Api.Entities.Service", "Service")
                         .WithMany()
                         .HasForeignKey("ServiceId");
@@ -1196,8 +1154,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Client");
 
                     b.Navigation("CreatedByUser");
-
-                    b.Navigation("Department");
 
                     b.Navigation("Service");
 
@@ -1396,43 +1352,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.Service", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.Department", "Department")
-                        .WithMany()
-                        .HasForeignKey("DepartmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Department");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.StaffDepartment", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.Department", "Department")
-                        .WithMany("StaffDepartments")
-                        .HasForeignKey("DepartmentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.BusinessUser", "Staff")
-                        .WithMany("StaffDepartments")
-                        .HasForeignKey("StaffId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Department");
-
-                    b.Navigation("Staff");
-
-                    b.Navigation("Tenant");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.Tenant", b =>
                 {
                     b.HasOne("Clienta.Api.Entities.User", "OwnerUser")
@@ -1501,19 +1420,9 @@ namespace Clienta.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.BusinessUser", b =>
-                {
-                    b.Navigation("StaffDepartments");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.Client", b =>
                 {
                     b.Navigation("Notes");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.Department", b =>
-                {
-                    b.Navigation("StaffDepartments");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Invoice", b =>

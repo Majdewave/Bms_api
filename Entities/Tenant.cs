@@ -56,6 +56,7 @@ public class Tenant
 
     // Navigation
     public ICollection<User> Users { get; set; } = new List<User>();
+    public ICollection<Department> Departments { get; set; } = new List<Department>();
     public bool IsTrialExpiredEmailSent { get; set; }
 
     public Guid? OwnerUserId { get; set; }
