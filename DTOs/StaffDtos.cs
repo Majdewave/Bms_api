@@ -33,6 +33,7 @@ public record StaffResponse(
     bool IsActive,
     List<string> Permissions,
     List<Guid> DepartmentIds,
+    DateTime? LastLoginAt,
     string? StampUrl,
     bool UseStamp
 );

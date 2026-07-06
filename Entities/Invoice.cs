@@ -23,6 +23,7 @@ public class Invoice
     public InvoiceStatus Status { get; set; } = InvoiceStatus.Pending;
     public DateTime InvoiceDate { get; set; }
     public DateTime? DueDate { get; set; }
+    public string? AllocationNumber { get; set; }
     public string? Notes { get; set; }
     public string? BusinessName { get; set; }
     public string? LegalBusinessName { get; set; }

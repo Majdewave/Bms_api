@@ -335,6 +335,9 @@ public class InvoicesController : ControllerBase
         invoice.ClientName = client.FullName;
         invoice.InvoiceDate = request.InvoiceDate == default ? DateTime.UtcNow : request.InvoiceDate;
         invoice.DueDate = request.DueDate;
+        invoice.AllocationNumber = string.IsNullOrWhiteSpace(request.AllocationNumber)
+            ? null
+            : request.AllocationNumber.Trim();
         invoice.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         invoice.VatRate = vatRate;
         invoice.Subtotal = subtotal;
@@ -562,6 +565,7 @@ public class InvoicesController : ControllerBase
             Status = ToApiInvoiceStatus(invoice.Status),
             InvoiceDate = invoice.InvoiceDate,
             DueDate = invoice.DueDate,
+            AllocationNumber = invoice.AllocationNumber,
             Notes = invoice.Notes,
             BusinessName = invoice.BusinessName,
             LegalBusinessName = invoice.LegalBusinessName,
@@ -1009,6 +1013,8 @@ public class InvoicesController : ControllerBase
             AddField(labels.InvoiceNumberLabel, invoice.InvoiceNumber);
             AddField(labels.InvoiceDateLabel, FormatDate(invoice.InvoiceDate));
             AddField(labels.DueDateLabel, FormatDate(invoice.DueDate));
+            if (!string.IsNullOrWhiteSpace(invoice.AllocationNumber))
+                AddField(labels.AllocationNumberLabel, invoice.AllocationNumber);
         });
     }
 
@@ -1397,6 +1403,7 @@ public class InvoicesController : ControllerBase
                 "מספר חשבונית",
                 "תאריך חשבונית",
                 "תאריך יעד",
+                "מספר הקצאה",
                 "תיאור",
                 "כמות",
                 "מחיר יחידה",
@@ -1428,6 +1435,7 @@ public class InvoicesController : ControllerBase
                 "رقم الفاتورة",
                 "تاريخ الفاتورة",
                 "تاريخ الاستحقاق",
+                "رقم التخصيص",
                 "الوصف",
                 "الكمية",
                 "سعر الوحدة",
@@ -1459,6 +1467,7 @@ public class InvoicesController : ControllerBase
                 "Invoice Number",
                 "Invoice Date",
                 "Due Date",
+                "Allocation Number",
                 "Description",
                 "Qty",
                 "Unit Price",
@@ -1493,6 +1502,7 @@ public class InvoicesController : ControllerBase
         string InvoiceNumberLabel,
         string InvoiceDateLabel,
         string DueDateLabel,
+        string AllocationNumberLabel,
         string DescriptionLabel,
         string QuantityLabel,
         string PriceLabel,

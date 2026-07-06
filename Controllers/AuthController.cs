@@ -215,6 +215,9 @@ public class AuthController : ControllerBase
                 message = "Email or password is incorrect"
             });
 
+        user.LastLoginAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
         var token = _jwtService.GenerateToken(user, user.TenantId);
 
         var permissions = await _context.UserPermissions

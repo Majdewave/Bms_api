@@ -99,6 +99,7 @@ public class StaffController : ControllerBase
             user.IsActive,
             permissionKeys,
             departmentIds,
+            user.LastLoginAt,
             user.StampUrl,
             user.UseStamp
         );
@@ -139,6 +140,7 @@ public class StaffController : ControllerBase
             bu.User.IsActive,
             permissionMap.TryGetValue(bu.UserId, out var keys) ? keys : new List<string>(),
             departmentMap.TryGetValue(bu.Id, out var ids) ? ids : new List<Guid>(),
+            bu.User.LastLoginAt,
             bu.User.StampUrl,
             bu.User.UseStamp
         )).ToList();
