@@ -32,6 +32,7 @@ public class AppDbContext : DbContext
     public DbSet<BusinessUser> BusinessUsers => Set<BusinessUser>();
     public DbSet<Client> Clients => Set<Client>();
     public DbSet<Department> Departments => Set<Department>();
+    public DbSet<DepartmentFeature> DepartmentFeatures => Set<DepartmentFeature>();
     public DbSet<StaffDepartment> StaffDepartments => Set<StaffDepartment>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
     public DbSet<Note> Notes => Set<Note>();
@@ -66,6 +67,15 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(a => a.DepartmentId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<VisitSummary>()
+            .HasOne(v => v.Appointment)
+            .WithMany()
+            .HasForeignKey(v => v.AppointmentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<VisitSummary>()
+            .HasIndex(v => v.AppointmentId);
 
         modelBuilder.Entity<Tenant>()
             .HasOne(t => t.OwnerUser)
@@ -110,6 +120,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Department>()
             .HasQueryFilter(d => _tenantContext.TenantId == Guid.Empty || d.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<DepartmentFeature>()
+            .HasQueryFilter(df => _tenantContext.TenantId == Guid.Empty || df.Department.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<Service>()
             .HasQueryFilter(s => _tenantContext.TenantId == Guid.Empty || s.TenantId == _tenantContext.TenantId);
 
@@ -153,6 +166,16 @@ public class AppDbContext : DbContext
             .HasOne(d => d.Tenant)
             .WithMany(t => t.Departments)
             .HasForeignKey(d => d.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<DepartmentFeature>()
+            .HasIndex(df => new { df.DepartmentId, df.FeatureKey })
+            .IsUnique();
+
+        modelBuilder.Entity<DepartmentFeature>()
+            .HasOne(df => df.Department)
+            .WithMany(d => d.Features)
+            .HasForeignKey(df => df.DepartmentId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<Appointment>()

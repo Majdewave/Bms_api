@@ -14,12 +14,18 @@ public class FeaturesController : ControllerBase
     private readonly AppDbContext _context;
     private readonly IFeatureService _featureService;
     private readonly ITenantContext _tenantContext;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
 
-    public FeaturesController(AppDbContext context, IFeatureService featureService, ITenantContext tenantContext)
+    public FeaturesController(
+        AppDbContext context,
+        IFeatureService featureService,
+        ITenantContext tenantContext,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService)
     {
         _context = context;
         _featureService = featureService;
         _tenantContext = tenantContext;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
     }
 
     [HttpGet]
@@ -39,6 +45,16 @@ public class FeaturesController : ControllerBase
             features.TeamChatEnabled
         );
         return Ok(dto);
+    }
+
+    [HttpGet("effective")]
+    public async Task<IActionResult> GetEffective()
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var effectiveFeatures = await _userDepartmentFeatureAccessService.GetCurrentUserEffectiveFeaturesAsync();
+        return Ok(effectiveFeatures);
     }
 
     [HttpPut]

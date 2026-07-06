@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260705201745_AddDepartmentFeatures")]
+    partial class AddDepartmentFeatures
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1154,9 +1157,6 @@ namespace Clienta.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<Guid?>("AppointmentId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uuid");
 
@@ -1182,8 +1182,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("AppointmentId");
 
                     b.ToTable("VisitSummaries");
                 });
@@ -1539,16 +1537,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Tenant");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.VisitSummary", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.Appointment", "Appointment")
-                        .WithMany()
-                        .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Appointment");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.BusinessUser", b =>

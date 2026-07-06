@@ -16,19 +16,24 @@ public class ClientPhotosController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
-    private readonly IFeatureService _featureService;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
     private readonly IFileStorage _fileStorage;
 
     private const long MaxImageSizeBytes = 5 * 1024 * 1024;
     private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
     private static readonly string[] AllowedContentTypes = ["image/jpeg", "image/png", "image/webp"];
 
-    public ClientPhotosController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFeatureService featureService, IFileStorage fileStorage)
+    public ClientPhotosController(
+        AppDbContext context,
+        ITenantContext tenant,
+        IWebHostEnvironment env,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
+        IFileStorage fileStorage)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
-        _featureService = featureService;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
         _fileStorage = fileStorage;
     }
 
@@ -38,8 +43,7 @@ public class ClientPhotosController : ControllerBase
         if (_tenant.TenantId == Guid.Empty)
             return Unauthorized("Tenant not resolved");
 
-        var features = await _featureService.GetAsync();
-        if (!features.BeforeAfterPhotosEnabled)
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("beforeAfterPhotosEnabled"))
             return BadRequest("Before/After photos feature is disabled.");
 
         if (request.ClientId == Guid.Empty)
@@ -97,8 +101,7 @@ public class ClientPhotosController : ControllerBase
         if (_tenant.TenantId == Guid.Empty)
             return Unauthorized("Tenant not resolved");
 
-        var features = await _featureService.GetAsync();
-        if (!features.BeforeAfterPhotosEnabled)
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("beforeAfterPhotosEnabled"))
             return Ok(new List<ClientTreatmentPhotoResponse>());
 
         var photos = await _context.ClientTreatmentPhotos

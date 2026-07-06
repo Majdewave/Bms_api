@@ -243,22 +243,47 @@ public class TenantController : ControllerBase
     [HttpPost("run-cleanup")]
     public async Task<IActionResult> RunCleanup()
     {
-        var clientIdsToDelete = _context.Appointments
-         // .IgnoreQueryFilters()
-            .Where(a => a.TenantId == _tenantContext.TenantId && !a.IsDocumented)
-            .Select(a => a.ClientId)
-            .Distinct()
-            .ToList();
+        var tenant = await _context.Tenants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == _tenantContext.TenantId);
 
-        var clientsToDelete = _context.Clients
-            .IgnoreQueryFilters()
-            .Where(c => c.TenantId == _tenantContext.TenantId && clientIdsToDelete.Contains(c.Id)).ToList();
+        if (tenant == null)
+            return NotFound();
 
-        _context.Clients.RemoveRange(clientsToDelete);
+        var cutoffDate = DateTime.UtcNow.Date.AddDays(-tenant.AutoDeleteNotDocumentedAfterDays);
+
+        var appointmentIdsToDelete = await _context.Appointments
+            .Where(a =>
+                a.TenantId == _tenantContext.TenantId &&
+                !a.IsDocumented &&
+                a.StartTime.Date < cutoffDate)
+            .Select(a => a.Id)
+            .ToListAsync();
+
+        if (appointmentIdsToDelete.Count == 0)
+        {
+            return Ok(new { deleted = 0 });
+        }
+
+        var consentsToDelete = await _context.ClientConsents
+            .Where(c => c.TenantId == _tenantContext.TenantId && appointmentIdsToDelete.Contains(c.AppointmentId))
+            .ToListAsync();
+
+        var visitSummariesToDelete = await _context.VisitSummaries
+            .Where(v => v.TenantId == _tenantContext.TenantId && v.AppointmentId.HasValue && appointmentIdsToDelete.Contains(v.AppointmentId.Value))
+            .ToListAsync();
+
+        var appointmentsToDelete = await _context.Appointments
+            .Where(a => a.TenantId == _tenantContext.TenantId && appointmentIdsToDelete.Contains(a.Id))
+            .ToListAsync();
+
+        _context.ClientConsents.RemoveRange(consentsToDelete);
+        _context.VisitSummaries.RemoveRange(visitSummariesToDelete);
+        _context.Appointments.RemoveRange(appointmentsToDelete);
 
         await _context.SaveChangesAsync();
 
-        return Ok(new { deleted = clientsToDelete.Count });
+        return Ok(new { deleted = appointmentsToDelete.Count });
     }
 
     [HttpDelete("logo")]

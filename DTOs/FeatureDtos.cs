@@ -9,3 +9,12 @@ public record UpdateTenantFeaturesRequest(
     bool VisitSummariesEnabled,
     bool TeamChatEnabled
 );
+
+public record EffectiveDepartmentFeaturesResponse(
+    bool PrescriptionsEnabled,
+    bool DrugsEnabled,
+    bool ConsentFormsEnabled,
+    bool VisitSummariesEnabled,
+    bool BeforeAfterPhotosEnabled,
+    bool TeamChatEnabled
+);

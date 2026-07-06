@@ -1,5 +1,6 @@
 using Clienta.Api.Data;
 using Clienta.Api.Entities;
+using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,15 +21,25 @@ namespace Clienta.Api.Controllers
     public class VisitSummaryController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
+        private readonly IDepartmentAccessService _departmentAccessService;
 
-        public VisitSummaryController(AppDbContext context)
+        public VisitSummaryController(
+            AppDbContext context,
+            IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
+            IDepartmentAccessService departmentAccessService)
         {
             _context = context;
+            _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
+            _departmentAccessService = departmentAccessService;
         }
 
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] VisitSummary model)
         {
+            if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("visitSummariesEnabled"))
+                return Forbid();
+
             if (model == null)
                 return BadRequest();
 
@@ -40,6 +51,25 @@ namespace Clienta.Api.Controllers
             if (tenantClaim != null && Guid.TryParse(tenantClaim.Value, out var tenantId))
             {
                 model.TenantId = tenantId;
+
+                if (!model.AppointmentId.HasValue || model.AppointmentId == Guid.Empty)
+                    return BadRequest("appointmentId is required");
+
+                var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+
+                var appointment = await _departmentAccessService.ApplyAppointmentVisibility(
+                        _context.Appointments.Where(a =>
+                            a.TenantId == tenantId &&
+                            a.Id == model.AppointmentId.Value),
+                        accessContext)
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync();
+
+                if (appointment == null)
+                    return BadRequest("Invalid appointment.");
+
+                if (appointment.ClientId != model.ClientId)
+                    return BadRequest("Appointment does not belong to client.");
             }
 
             // staff מתוך token
@@ -59,13 +89,21 @@ namespace Clienta.Api.Controllers
         [HttpGet("client/{clientId}")]
         public async Task<IActionResult> GetByClient(Guid clientId)
         {
+            if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("visitSummariesEnabled"))
+                return Forbid();
+
             var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
 
             if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
                 return Unauthorized();
 
-            var summaries = await _context.VisitSummaries
-                .Where(x => x.ClientId == clientId && x.TenantId == tenantId)
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+
+            var scopedSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
+                _context.VisitSummaries.Where(x => x.ClientId == clientId && x.TenantId == tenantId),
+                accessContext);
+
+            var summaries = await scopedSummaries
                 .OrderByDescending(x => x.CreatedAt)
                 .ToListAsync();
 
@@ -75,13 +113,21 @@ namespace Clienta.Api.Controllers
         [HttpGet("{id}/pdf")]
         public async Task<IActionResult> GetPdf(Guid id)
         {
+            if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("visitSummariesEnabled"))
+                return Forbid();
+
             var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
 
             if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
                 return Unauthorized();
 
-            var summary = await _context.VisitSummaries
-                .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId);
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+
+            var scopedSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
+                _context.VisitSummaries.Where(x => x.Id == id && x.TenantId == tenantId),
+                accessContext);
+
+            var summary = await scopedSummaries.FirstOrDefaultAsync();
 
             if (summary == null)
                 return NotFound();
@@ -311,10 +357,10 @@ namespace Clienta.Api.Controllers
                                 }
                             });
 
-                            // שם רופא
+                            //  שם רופא או מטפל
                             row.RelativeItem().AlignCenter().Column(c =>
                             {
-                                c.Item().Text("שם הרופא")
+                                c.Item().Text("איש צוות מטפל")
                                     .FontFamily("Noto Sans Hebrew")
                                     .Bold()
                                     .DirectionFromRightToLeft();
@@ -335,13 +381,21 @@ namespace Clienta.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] VisitSummary updated)
         {
+            if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("visitSummariesEnabled"))
+                return Forbid();
+
             var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
 
             if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
                 return Unauthorized();
 
-            var summary = await _context.VisitSummaries
-                .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId);
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+
+            var scopedSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
+                _context.VisitSummaries.Where(x => x.Id == id && x.TenantId == tenantId),
+                accessContext);
+
+            var summary = await scopedSummaries.FirstOrDefaultAsync();
 
             if (summary == null)
                 return NotFound();
@@ -359,13 +413,21 @@ namespace Clienta.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(Guid id)
         {
+            if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("visitSummariesEnabled"))
+                return Forbid();
+
             var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
 
             if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
                 return Unauthorized();
 
-            var summary = await _context.VisitSummaries
-                .FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId);
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+
+            var scopedSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
+                _context.VisitSummaries.Where(x => x.Id == id && x.TenantId == tenantId),
+                accessContext);
+
+            var summary = await scopedSummaries.FirstOrDefaultAsync();
 
             if (summary == null)
                 return NotFound();

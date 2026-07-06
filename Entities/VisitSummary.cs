@@ -10,6 +10,9 @@ namespace Clienta.Api.Entities
 
         public Guid ClientId { get; set; }
 
+        public Guid? AppointmentId { get; set; }
+        public Appointment? Appointment { get; set; }
+
         public Guid? StaffId { get; set; }
 
         public string Examination { get; set; } = string.Empty;   // תלונה

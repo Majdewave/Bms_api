@@ -17,17 +17,20 @@ public class AppointmentsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
+    private readonly IDepartmentAccessService _departmentAccessService;
     private readonly IPlanEnforcementService _planEnforcement;
     private readonly IHubContext<AppointmentsHub> _hubContext;
 
     public AppointmentsController(
         AppDbContext context,
         ITenantContext tenant,
+        IDepartmentAccessService departmentAccessService,
         IPlanEnforcementService planEnforcement,
         IHubContext<AppointmentsHub> hubContext)
     {
         _context = context;
         _tenant = tenant;
+        _departmentAccessService = departmentAccessService;
         _planEnforcement = planEnforcement;
         _hubContext = hubContext;
     }
@@ -111,15 +114,23 @@ public class AppointmentsController : ControllerBase
     // GET /appointments
     [Authorize(Policy = "manage_appointments")]
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] Guid? clientId)
     {
-        var twoWeeksAgo = DateTime.UtcNow.AddDays(-14);
+        var query = _context.Appointments
+            .Where(a => a.TenantId == _tenant.TenantId);
 
-        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
-            _context.Appointments
-                .Where(a =>
-                    a.TenantId == _tenant.TenantId &&
-                    a.StartTime >= twoWeeksAgo));
+        if (!clientId.HasValue || clientId.Value == Guid.Empty)
+        {
+            var twoWeeksAgo = DateTime.UtcNow.AddDays(-7);
+            query = query.Where(a => a.StartTime >= twoWeeksAgo);
+        }
+
+        if (clientId.HasValue && clientId.Value != Guid.Empty)
+        {
+            query = query.Where(a => a.ClientId == clientId.Value);
+        }
+
+        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(query);
 
         var appointments = await scopedAppointments
             .Include(a => a.Client)
@@ -470,28 +481,8 @@ public class AppointmentsController : ControllerBase
 
     private async Task<IQueryable<Appointment>> ApplyStaffDepartmentVisibilityAsync(IQueryable<Appointment> query)
     {
-        if (_tenant.UserId == null || _tenant.UserId == Guid.Empty)
-            return query;
-
-        var currentStaff = await _context.BusinessUsers
-            .Include(b => b.StaffDepartments)
-            .FirstOrDefaultAsync(b =>
-                b.TenantId == _tenant.TenantId &&
-                b.UserId == _tenant.UserId);
-
-        if (currentStaff == null)
-            return query;
-
-        var departmentIds = currentStaff.StaffDepartments
-            .Select(sd => sd.DepartmentId)
-            .Distinct()
-            .ToList();
-
-        if (departmentIds.Count == 0)
-            return query;
-
-        return query.Where(a =>
-            !a.DepartmentId.HasValue || departmentIds.Contains(a.DepartmentId.Value));
+        var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+        return _departmentAccessService.ApplyAppointmentVisibility(query, accessContext);
     }
 
     private async Task<bool> IsServiceAllowedForStaffAsync(Guid staffId, Guid? serviceDepartmentId)

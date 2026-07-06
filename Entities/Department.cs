@@ -14,4 +14,5 @@ public class Department : ITenantEntity
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public ICollection<StaffDepartment> StaffDepartments { get; set; } = new List<StaffDepartment>();
+    public ICollection<DepartmentFeature> Features { get; set; } = new List<DepartmentFeature>();
 }

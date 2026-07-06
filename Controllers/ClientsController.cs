@@ -42,10 +42,10 @@ public class ClientsController : ControllerBase
             c.IsActive,
             c.CreatedAt,
             c.Status,
-            _context.Prescriptions
-                .Where(p => p.ClientId == c.Id)
-                .OrderByDescending(p => p.Date)
-                .Select(p => (DateTime?)p.Date)
+            _context.Appointments
+                .Where(a => a.ClientId == c.Id && a.Status == AppointmentStatuses.Completed)
+                .OrderByDescending(a => a.StartTime)
+                .Select(a => (DateTime?)a.StartTime)
                 .FirstOrDefault(),
             _context.Appointments
                 .Any(a => a.ClientId == c.Id && !a.IsDocumented)
@@ -72,10 +72,10 @@ public class ClientsController : ControllerBase
                 c.IsActive,
                 c.CreatedAt,
                 c.Status,
-                _context.Prescriptions
-                    .Where(p => p.ClientId == c.Id)
-                    .OrderByDescending(p => p.Date)
-                    .Select(p => (DateTime?)p.Date)
+                _context.Appointments
+                    .Where(a => a.ClientId == c.Id && a.Status == AppointmentStatuses.Completed)
+                    .OrderByDescending(a => a.StartTime)
+                    .Select(a => (DateTime?)a.StartTime)
                     .FirstOrDefault(),
                 _context.Appointments
                     .Any(a => a.ClientId == c.Id && !a.IsDocumented)

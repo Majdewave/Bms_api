@@ -16,15 +16,19 @@ namespace Clienta.Api.Controllers;
 public class PrescriptionsController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private readonly IFeatureService _featureService;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
 
-    public PrescriptionsController(AppDbContext context, ITenantContext tenant, IFeatureService featureService, IWebHostEnvironment env)
+    public PrescriptionsController(
+        AppDbContext context,
+        ITenantContext tenant,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
+        IWebHostEnvironment env)
     {
         _context = context;
         _tenant = tenant;
-        _featureService = featureService;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
         _env = env;
     }
 
@@ -32,7 +36,7 @@ public class PrescriptionsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreatePrescriptionRequest request)
     {
-        if (!await _featureService.IsEnabledAsync("prescriptions"))
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("prescriptionsEnabled"))
             return Forbid();
 
         var prescription = new Prescription
@@ -84,7 +88,7 @@ public class PrescriptionsController : ControllerBase
     [HttpGet("client/{clientId}")]
     public async Task<IActionResult> GetByClient(Guid clientId)
     {
-        if (!await _featureService.IsEnabledAsync("prescriptions"))
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("prescriptionsEnabled"))
             return Forbid();
 
         var prescriptions = await _context.Prescriptions
@@ -132,7 +136,7 @@ public class PrescriptionsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        if (!await _featureService.IsEnabledAsync("prescriptions"))
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("prescriptionsEnabled"))
             return Forbid();
 
         var prescription = await _context.Prescriptions.FirstOrDefaultAsync(p => p.Id == id);
@@ -150,7 +154,7 @@ public class PrescriptionsController : ControllerBase
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetPdf(Guid id)
     {
-        if (!await _featureService.IsEnabledAsync("prescriptions"))
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("prescriptionsEnabled"))
             return Forbid();
 
         var prescription = await _context.Prescriptions.FirstOrDefaultAsync(p => p.Id == id);
@@ -418,10 +422,10 @@ public class PrescriptionsController : ControllerBase
                                 }
                             });
 
-                            // שם רופא
+                            // שם רופא או מטפל
                             row.RelativeItem().AlignCenter().Column(c =>
                             {
-                                c.Item().AlignCenter().Text("שם הרופא")
+                                c.Item().AlignCenter().Text("איש צוות מטפל")
                                     .FontFamily("Noto Sans Hebrew")
                                     .Bold()
                                     .DirectionFromRightToLeft();

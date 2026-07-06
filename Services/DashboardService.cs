@@ -1,6 +1,7 @@
 using Clienta.Api.Data;
 using Clienta.Api.Entities;
 using Microsoft.EntityFrameworkCore;
+using System.Runtime.InteropServices;
 
 namespace Clienta.Api.Services
 {
@@ -8,18 +9,28 @@ namespace Clienta.Api.Services
     {
         private readonly AppDbContext _db;
         private readonly ITenantContext _tenantContext;
-        public DashboardService(AppDbContext db, ITenantContext tenantContext)
+        private readonly IDepartmentAccessService _departmentAccessService;
+
+        public DashboardService(
+            AppDbContext db,
+            ITenantContext tenantContext,
+            IDepartmentAccessService departmentAccessService)
         {
             _db = db;
             _tenantContext = tenantContext;
+            _departmentAccessService = departmentAccessService;
         }
 
         public async Task<IEnumerable<ActivityDto>> GetRecentActivityAsync()
         {
             var tenantId = _tenantContext!.TenantId;
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
 
-            var appointmentCreatedEvents = await _db.Appointments
-                .Where(a => a.TenantId == tenantId)
+            var scopedAppointments = _departmentAccessService.ApplyAppointmentVisibility(
+                _db.Appointments.Where(a => a.TenantId == tenantId),
+                accessContext);
+
+            var appointmentCreatedEvents = await scopedAppointments
                 .Include(a => a.Client)
                 .Include(a => a.Staff).ThenInclude(st => st.User)
                 .Include(a => a.Service)
@@ -36,8 +47,8 @@ namespace Clienta.Api.Services
                 })
                 .ToListAsync();
 
-            var appointmentCompletedEvents = await _db.Appointments
-                .Where(a => a.TenantId == tenantId && a.Status == "Completed")
+            var appointmentCompletedEvents = await scopedAppointments
+                .Where(a => a.Status == "Completed")
                 .Include(a => a.Client)
                 .Include(a => a.Staff).ThenInclude(st => st.User)
                 .Include(a => a.Service)
@@ -54,87 +65,128 @@ namespace Clienta.Api.Services
                 })
                 .ToListAsync();
 
-            var clientEvents = await _db.Clients
-                .Where(c => c.TenantId == tenantId)
-                .Select(c => new ActivityDto
+            var scopedVisitSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
+                _db.VisitSummaries.Where(v => v.TenantId == tenantId),
+                accessContext);
+
+            var visitSummaryEvents = await scopedVisitSummaries
+                .Select(v => new ActivityDto
                 {
-                    id = c.Id,
-                    type = "client_created",
-                    title = "Client created",
-                    clientName = c.FullName,
-                    staffName = null,
+                    id = v.Id,
+                    type = "visit_summary_created",
+                    title = "Visit summary created",
+                    clientName = _db.Clients
+                        .Where(c => c.Id == v.ClientId)
+                        .Select(c => c.FullName)
+                        .FirstOrDefault(),
+                    staffName = v.StaffId.HasValue
+                        ? _db.Users
+                            .Where(u => u.Id == v.StaffId.Value)
+                            .Select(u => u.FullName)
+                            .FirstOrDefault()
+                        : null,
                     serviceName = null,
-                    performedBy = "Admin",
-                    timestamp = c.CreatedAt
+                    performedBy = v.StaffId.HasValue
+                        ? _db.Users
+                            .Where(u => u.Id == v.StaffId.Value)
+                            .Select(u => u.FullName)
+                            .FirstOrDefault()
+                        : "Admin",
+                    timestamp = v.CreatedAt
                 })
                 .ToListAsync();
 
-            var staffEvents = await _db.BusinessUsers
-                .Where(s => s.TenantId == tenantId)
-                .Include(s => s.User)
-                .Select(s => new ActivityDto
-                {
-                    id = s.Id,
-                    type = "staff_created",
-                    title = "Staff member added",
-                    clientName = null,
-                    staffName = s.User != null ? s.User.FullName : null,
-                    serviceName = null,
-                    performedBy = s.User != null ? s.User.FullName : "Admin",
-                    timestamp = s.User != null ? s.User.CreatedAt : DateTime.MinValue
-                })
-                .ToListAsync();
+            var clientEvents = new List<ActivityDto>();
+            var staffEvents = new List<ActivityDto>();
+            var auditEvents = new List<ActivityDto>();
+            var userDeletedEvents = new List<ActivityDto>();
+            var clientDeletedEvents = new List<ActivityDto>();
 
-            var auditEvents = await _db.AuditLogs
-                .Where(a => a.TenantId == tenantId && a.ActionType == "staff_deleted")
-                .Include(a => a.User)
-                .Select(a => new ActivityDto
-                {
-                    id = a.Id,
-                    type = "staff_deleted",
-                    title = "Staff member deleted",
-                    clientName = null,
-                    staffName = a.NewValues,
-                    serviceName = null,
-                    performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
-                    timestamp = a.CreatedAt
-                })
-                .ToListAsync();
+            if (!accessContext.HasDepartmentFilter)
+            {
+                clientEvents = await _db.Clients
+                    .Where(c => c.TenantId == tenantId)
+                    .Select(c => new ActivityDto
+                    {
+                        id = c.Id,
+                        type = "client_created",
+                        title = "Client created",
+                        clientName = c.FullName,
+                        staffName = null,
+                        serviceName = null,
+                        performedBy = "Admin",
+                        timestamp = c.CreatedAt
+                    })
+                    .ToListAsync();
 
-            var userDeletedEvents = await _db.AuditLogs
-                .Where(a => a.TenantId == tenantId && a.ActionType == "user_deleted")
-                .Include(a => a.User)
-                .Select(a => new ActivityDto
-                {
-                    id = a.Id,
-                    type = "user_deleted",
-                    title = "User deleted",
-                    clientName = null,
-                    staffName = a.NewValues,
-                    serviceName = null,
-                    performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
-                    timestamp = a.CreatedAt
-                })
-                .ToListAsync();
+                staffEvents = await _db.BusinessUsers
+                    .Where(s => s.TenantId == tenantId)
+                    .Include(s => s.User)
+                    .Select(s => new ActivityDto
+                    {
+                        id = s.Id,
+                        type = "staff_created",
+                        title = "Staff member added",
+                        clientName = null,
+                        staffName = s.User != null ? s.User.FullName : null,
+                        serviceName = null,
+                        performedBy = s.User != null ? s.User.FullName : "Admin",
+                        timestamp = s.User != null ? s.User.CreatedAt : DateTime.MinValue
+                    })
+                    .ToListAsync();
 
-            var clientDeletedEvents = await _db.AuditLogs
-                .Where(a => a.TenantId == tenantId && a.ActionType == "client_deleted")
-                .Include(a => a.User)
-                .Select(a => new ActivityDto
-                {
-                    id = a.Id,
-                    type = "client_deleted",
-                    title = "Client deleted",
-                    clientName = a.NewValues,
-                    staffName = null,
-                    serviceName = null,
-                    performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
-                    timestamp = a.CreatedAt
-                })
-                .ToListAsync();
+                auditEvents = await _db.AuditLogs
+                    .Where(a => a.TenantId == tenantId && a.ActionType == "staff_deleted")
+                    .Include(a => a.User)
+                    .Select(a => new ActivityDto
+                    {
+                        id = a.Id,
+                        type = "staff_deleted",
+                        title = "Staff member deleted",
+                        clientName = null,
+                        staffName = a.NewValues,
+                        serviceName = null,
+                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                        timestamp = a.CreatedAt
+                    })
+                    .ToListAsync();
+
+                userDeletedEvents = await _db.AuditLogs
+                    .Where(a => a.TenantId == tenantId && a.ActionType == "user_deleted")
+                    .Include(a => a.User)
+                    .Select(a => new ActivityDto
+                    {
+                        id = a.Id,
+                        type = "user_deleted",
+                        title = "User deleted",
+                        clientName = null,
+                        staffName = a.NewValues,
+                        serviceName = null,
+                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                        timestamp = a.CreatedAt
+                    })
+                    .ToListAsync();
+
+                clientDeletedEvents = await _db.AuditLogs
+                    .Where(a => a.TenantId == tenantId && a.ActionType == "client_deleted")
+                    .Include(a => a.User)
+                    .Select(a => new ActivityDto
+                    {
+                        id = a.Id,
+                        type = "client_deleted",
+                        title = "Client deleted",
+                        clientName = a.NewValues,
+                        staffName = null,
+                        serviceName = null,
+                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                        timestamp = a.CreatedAt
+                    })
+                    .ToListAsync();
+            }
 
             var allEvents = appointmentCreatedEvents
                 .Concat(appointmentCompletedEvents)
+                .Concat(visitSummaryEvents)
                 .Concat(clientEvents)
                 .Concat(staffEvents)
                 .Concat(auditEvents)
@@ -163,19 +215,61 @@ namespace Clienta.Api.Services
         public async Task<DashboardStats> GetDashboardStatsAsync()
         {
             var tenantId = _tenantContext!.TenantId;
-            var today = DateTime.UtcNow.Date;
-            var tomorrow = today.AddDays(1);
+            var businessTimeZone = ResolveBusinessTimeZone();
+            var nowUtc = DateTime.UtcNow;
+            var nowLocal = TimeZoneInfo.ConvertTimeFromUtc(nowUtc, businessTimeZone);
+            var localTodayStart = new DateTime(nowLocal.Year, nowLocal.Month, nowLocal.Day, 0, 0, 0, DateTimeKind.Unspecified);
+            var localTomorrowStart = localTodayStart.AddDays(1);
+            var todayStartUtc = TimeZoneInfo.ConvertTimeToUtc(localTodayStart, businessTimeZone);
+            var tomorrowStartUtc = TimeZoneInfo.ConvertTimeToUtc(localTomorrowStart, businessTimeZone);
 
-            var totalClients = await _db.Clients.CountAsync(c => c.TenantId == tenantId);
-            var notDocumentedClientsCount = await _db.Clients
-                .Where(c => c.TenantId == tenantId)
-                .CountAsync(c => _db.Appointments.Any(a => a.ClientId == c.Id && !a.IsDocumented));
-            var appointmentsToday = await _db.Appointments.CountAsync(a => a.TenantId == tenantId && a.StartTime >= today && a.StartTime < tomorrow);
-            var completedAppointmentsToday = await _db.Appointments.CountAsync(a => a.TenantId == tenantId && a.StartTime >= today && a.StartTime < tomorrow && a.Status == "Completed");
-            var noShowToday = await _db.Appointments.CountAsync(a => a.TenantId == tenantId && a.StartTime >= today && a.StartTime < tomorrow && a.Status == "NoShow");
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
 
-            var upcomingAppointments = await _db.Appointments
-                .Where(a => a.TenantId == tenantId && a.StartTime >= tomorrow)
+            var scopedAppointments = _departmentAccessService.ApplyAppointmentVisibility(
+                _db.Appointments.Where(a => a.TenantId == tenantId),
+                accessContext);
+
+            var scopedClientIds = await scopedAppointments
+                .Select(a => a.ClientId)
+                .Distinct()
+                .ToListAsync();
+
+            var scopedVisitSummaryClientIds = await _departmentAccessService
+                .ApplyVisitSummaryVisibility(
+                    _db.VisitSummaries.Where(v => v.TenantId == tenantId),
+                    accessContext)
+                .Select(v => v.ClientId)
+                .Distinct()
+                .ToListAsync();
+
+            var allScopedClientIds = scopedClientIds
+                .Concat(scopedVisitSummaryClientIds)
+                .Distinct()
+                .ToList();
+
+            var totalClients = accessContext.HasDepartmentFilter
+                ? (allScopedClientIds.Count == 0
+                    ? 0
+                    : await _db.Clients.CountAsync(c => c.TenantId == tenantId && allScopedClientIds.Contains(c.Id)))
+                : await _db.Clients.CountAsync(c => c.TenantId == tenantId);
+
+            var notDocumentedClientsCount = await scopedAppointments
+                .Where(a => !a.IsDocumented)
+                .Select(a => a.ClientId)
+                .Distinct()
+                .CountAsync();
+
+            var appointmentsToday = await scopedAppointments
+                .CountAsync(a => a.StartTime >= todayStartUtc && a.StartTime < tomorrowStartUtc);
+
+            var completedAppointmentsToday = await scopedAppointments
+                .CountAsync(a => a.StartTime >= todayStartUtc && a.StartTime < tomorrowStartUtc && a.Status == AppointmentStatuses.Completed);
+
+            var noShowToday = await scopedAppointments
+                .CountAsync(a => a.StartTime >= todayStartUtc && a.StartTime < tomorrowStartUtc && a.Status == AppointmentStatuses.NoShow);
+
+            var upcomingAppointments = await scopedAppointments
+                .Where(a => a.StartTime >= nowUtc)
                 .OrderBy(a => a.StartTime)
                 .Take(5)
                 .Select(a => new {
@@ -191,6 +285,21 @@ namespace Clienta.Api.Services
                 })
                 .ToListAsync();
 
+            var upcomingAppointmentsLocal = upcomingAppointments
+                .Select(a => new
+                {
+                    a.id,
+                    a.clientId,
+                    a.clientName,
+                    a.serviceName,
+                    a.staffName,
+                    startTime = DateTime.SpecifyKind(a.startTime, DateTimeKind.Unspecified),
+                    endTime = DateTime.SpecifyKind(a.endTime, DateTimeKind.Unspecified),
+                    a.status,
+                    a.isDocumented
+                })
+                .ToList();
+
             return new DashboardStats
             {
                 TotalClients = totalClients,
@@ -198,8 +307,35 @@ namespace Clienta.Api.Services
                 AppointmentsToday = appointmentsToday,
                 CompletedAppointmentsToday = completedAppointmentsToday,
                 NoShowToday = noShowToday,
-                UpcomingAppointments = upcomingAppointments
+                UpcomingAppointments = upcomingAppointmentsLocal
             };
+        }
+
+        private static TimeZoneInfo ResolveBusinessTimeZone()
+        {
+            var primaryId = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "Israel Standard Time"
+                : "Asia/Jerusalem";
+
+            var fallbackId = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "Asia/Jerusalem"
+                : "Israel Standard Time";
+
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(primaryId);
+            }
+            catch
+            {
+                try
+                {
+                    return TimeZoneInfo.FindSystemTimeZoneById(fallbackId);
+                }
+                catch
+                {
+                    return TimeZoneInfo.Utc;
+                }
+            }
         }
     }
 

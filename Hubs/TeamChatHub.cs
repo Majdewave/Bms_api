@@ -4,6 +4,7 @@ using Clienta.Api.Infrastructure.TeamChat.Interfaces;
 using Clienta.Api.Infrastructure.TeamChat.Mappers;
 using Clienta.Api.Infrastructure.TeamChat.Models;
 using Clienta.Api.Infrastructure.TeamChat.Utilities;
+using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
@@ -14,11 +15,16 @@ public class TeamChatHub : Hub
 {
     private readonly ITeamChatOnlineUsersStore _onlineUsersStore;
     private readonly ILogger<TeamChatHub> _logger;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
 
-    public TeamChatHub(ITeamChatOnlineUsersStore onlineUsersStore, ILogger<TeamChatHub> logger)
+    public TeamChatHub(
+        ITeamChatOnlineUsersStore onlineUsersStore,
+        ILogger<TeamChatHub> logger,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService)
     {
         _onlineUsersStore = onlineUsersStore;
         _logger = logger;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
     }
 
     private static string TenantGroup(Guid tenantId) => $"tenant:{tenantId:D}";
@@ -29,6 +35,21 @@ public class TeamChatHub : Hub
         {
             _logger.LogWarning("TeamChat connect skipped: missing claims. ConnectionId={ConnectionId}", Context.ConnectionId);
             await base.OnConnectedAsync();
+            return;
+        }
+
+        var hasAccess = await _userDepartmentFeatureAccessService
+            .CanUserAccessFeatureAsync(connection.TenantId, connection.UserId, "teamChatEnabled");
+
+        if (!hasAccess)
+        {
+            _logger.LogInformation(
+                "TeamChat connect denied by department feature gate. TenantId={TenantId} UserId={UserId} ConnectionId={ConnectionId}",
+                connection.TenantId,
+                connection.UserId,
+                connection.ConnectionId
+            );
+            Context.Abort();
             return;
         }
 
@@ -67,11 +88,23 @@ public class TeamChatHub : Hub
         await base.OnDisconnectedAsync(exception);
     }
 
-    public Task<IReadOnlyCollection<TeamChatOnlineUserDto>> GetOnlineUsers()
+    public async Task<IReadOnlyCollection<TeamChatOnlineUserDto>> GetOnlineUsers()
     {
         if (!TeamChatClaimReader.TryReadTenantId(Context.User, out var tenantId))
         {
-            return Task.FromResult<IReadOnlyCollection<TeamChatOnlineUserDto>>(Array.Empty<TeamChatOnlineUserDto>());
+            return Array.Empty<TeamChatOnlineUserDto>();
+        }
+
+        if (!TeamChatClaimReader.TryReadUserId(Context.User, out var userId))
+        {
+            return Array.Empty<TeamChatOnlineUserDto>();
+        }
+
+        var hasAccess = await _userDepartmentFeatureAccessService
+            .CanUserAccessFeatureAsync(tenantId, userId, "teamChatEnabled");
+        if (!hasAccess)
+        {
+            return Array.Empty<TeamChatOnlineUserDto>();
         }
 
         IReadOnlyCollection<TeamChatOnlineUserDto> users = _onlineUsersStore
@@ -79,7 +112,7 @@ public class TeamChatHub : Hub
             .Select(user => user.ToDto())
             .ToArray();
 
-        return Task.FromResult(users);
+        return users;
     }
 
     public async Task SendMessage(Guid recipientUserId, string text)
@@ -87,6 +120,18 @@ public class TeamChatHub : Hub
         if (!TryBuildConnection(out var senderConnection))
         {
             _logger.LogWarning("TeamChat message skipped: missing claims. ConnectionId={ConnectionId}", Context.ConnectionId);
+            return;
+        }
+
+        var hasAccess = await _userDepartmentFeatureAccessService
+            .CanUserAccessFeatureAsync(senderConnection.TenantId, senderConnection.UserId, "teamChatEnabled");
+        if (!hasAccess)
+        {
+            _logger.LogInformation(
+                "TeamChat send denied by department feature gate. TenantId={TenantId} UserId={UserId}",
+                senderConnection.TenantId,
+                senderConnection.UserId
+            );
             return;
         }
 

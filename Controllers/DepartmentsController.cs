@@ -15,11 +15,13 @@ public class DepartmentsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
+    private readonly IDepartmentFeatureResolver _departmentFeatureResolver;
 
-    public DepartmentsController(AppDbContext context, ITenantContext tenant)
+    public DepartmentsController(AppDbContext context, ITenantContext tenant, IDepartmentFeatureResolver departmentFeatureResolver)
     {
         _context = context;
         _tenant = tenant;
+        _departmentFeatureResolver = departmentFeatureResolver;
     }
 
     [HttpGet]
@@ -130,6 +132,41 @@ public class DepartmentsController : ControllerBase
         await _context.SaveChangesAsync();
 
         return NoContent();
+    }
+
+    [HttpGet("{id:guid}/features")]
+    public async Task<IActionResult> GetFeatures(Guid id, CancellationToken cancellationToken)
+    {
+        if (_tenant.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var departmentExists = await _context.Departments
+            .AnyAsync(d => d.Id == id && d.TenantId == _tenant.TenantId, cancellationToken);
+
+        if (!departmentExists)
+            return NotFound();
+
+        var features = await _departmentFeatureResolver.GetDepartmentFeaturesAsync(_tenant.TenantId, id, cancellationToken);
+        return Ok(features);
+    }
+
+    [HttpPut("{id:guid}/features")]
+    public async Task<IActionResult> UpdateFeatures(Guid id, [FromBody] UpdateDepartmentFeaturesRequest request, CancellationToken cancellationToken)
+    {
+        if (_tenant.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var departmentExists = await _context.Departments
+            .AnyAsync(d => d.Id == id && d.TenantId == _tenant.TenantId, cancellationToken);
+
+        if (!departmentExists)
+            return NotFound();
+
+        var updates = request?.Features ?? new List<DepartmentFeatureUpdateItem>();
+        await _departmentFeatureResolver.UpdateDepartmentFeaturesAsync(_tenant.TenantId, id, updates, cancellationToken);
+
+        var features = await _departmentFeatureResolver.GetDepartmentFeaturesAsync(_tenant.TenantId, id, cancellationToken);
+        return Ok(features);
     }
 
     private static DepartmentResponse MapDepartment(Department department) => new(

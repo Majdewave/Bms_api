@@ -14,17 +14,25 @@ public class DrugsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
 
-    public DrugsController(AppDbContext context, ITenantContext tenant)
+    public DrugsController(
+        AppDbContext context,
+        ITenantContext tenant,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService)
     {
         _context = context;
         _tenant = tenant;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
     }
 
     // GET /api/drugs/search
     [HttpGet("search")]
     public async Task<IActionResult> Search(string q)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("drugsEnabled"))
+            return Forbid();
+
         if (string.IsNullOrWhiteSpace(q))
             return Ok(new List<object>());
 
@@ -47,6 +55,9 @@ public class DrugsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("drugsEnabled"))
+            return Forbid();
+
         var drugs = await _context.Drugs
             .OrderBy(d => d.Name)
             .Select(d => new
@@ -65,6 +76,9 @@ public class DrugsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create([FromBody] CreateDrugRequest request)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("drugsEnabled"))
+            return Forbid();
+
         // Set TenantId from context
         var tenantId = _tenant.TenantId;
         var drug = new Drug
@@ -84,6 +98,9 @@ public class DrugsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, CreateDrugRequest request)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("drugsEnabled"))
+            return Forbid();
+
         var drug = await _context.Drugs.FindAsync(id);
         if (drug == null)
             return NotFound();
@@ -96,6 +113,9 @@ public class DrugsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("drugsEnabled"))
+            return Forbid();
+
         var drug = await _context.Drugs.FindAsync(id);
         if (drug == null)
             return NotFound();

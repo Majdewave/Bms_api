@@ -21,13 +21,20 @@ public class ConsentsController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
     private readonly IFileStorage _fileStorage;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
 
-    public ConsentsController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFileStorage fileStorage)
+    public ConsentsController(
+        AppDbContext context,
+        ITenantContext tenant,
+        IWebHostEnvironment env,
+        IFileStorage fileStorage,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
         _fileStorage = fileStorage;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
     }
 
     [AllowAnonymous]
@@ -107,6 +114,9 @@ public class ConsentsController : ControllerBase
     [HttpPost("sign")]
     public async Task<IActionResult> SignConsent([FromBody] SignConsentRequest request)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("consentFormsEnabled"))
+            return Forbid();
+
         if (_tenant.TenantId == Guid.Empty)
             return Unauthorized("Tenant not resolved");
 
@@ -183,6 +193,9 @@ public class ConsentsController : ControllerBase
     [HttpGet("client/{clientId}")]
     public async Task<IActionResult> GetByClient(Guid clientId)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("consentFormsEnabled"))
+            return Forbid();
+
         var consents = await _context.ClientConsents
             .Include(c => c.Appointment)
                 .ThenInclude(a => a.Service)
@@ -218,6 +231,9 @@ public class ConsentsController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("consentFormsEnabled"))
+            return Forbid();
+
         var consent = await _context.ClientConsents
             .Include(c => c.Appointment)
                 .ThenInclude(a => a.Service)
@@ -257,6 +273,9 @@ public class ConsentsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("consentFormsEnabled"))
+            return Forbid();
+
         var consent = await _context.ClientConsents.FindAsync(id);
         if (consent == null)
             return NotFound();
@@ -270,6 +289,9 @@ public class ConsentsController : ControllerBase
     [HttpGet("{id}/pdf")]
     public async Task<IActionResult> GetSignedConsentPdf(Guid id)
     {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("consentFormsEnabled"))
+            return Forbid();
+
         FontManager.RegisterFont(
             System.IO.File.OpenRead(
         Path.Combine(_env.WebRootPath, "fonts", "NotoSansHebrew-Regular.ttf")
