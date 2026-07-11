@@ -247,11 +247,8 @@ namespace Clienta.Api.Services
                 .Distinct()
                 .ToList();
 
-            var totalClients = accessContext.HasDepartmentFilter
-                ? (allScopedClientIds.Count == 0
-                    ? 0
-                    : await _db.Clients.CountAsync(c => c.TenantId == tenantId && allScopedClientIds.Contains(c.Id)))
-                : await _db.Clients.CountAsync(c => c.TenantId == tenantId);
+            // Clients belong to tenant scope, not department scope.
+            var totalClients = await _db.Clients.CountAsync(c => c.TenantId == tenantId);
 
             var notDocumentedClientsCount = await scopedAppointments
                 .Where(a => !a.IsDocumented)

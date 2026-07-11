@@ -1,8 +1,10 @@
 ﻿// ...existing code...
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Clienta.Api.Entities;
 using Clienta.Api.Services;
+using Clienta.Api.Services.WhatsApp;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
@@ -53,6 +55,10 @@ public class AppDbContext : DbContext
     public DbSet<Business> Businesses { get; set; } = null!;
     // Removed Staffs DbSet
     public DbSet<VisitSummary> VisitSummaries { get; set; } = null!;
+    public DbSet<WhatsAppSettings> WhatsAppSettings { get; set; } = null!;
+    public DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; } = null!;
+    public DbSet<WhatsAppMessage> WhatsAppMessages { get; set; } = null!;
+    public DbSet<WhatsAppOAuthState> WhatsAppOAuthStates { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -298,6 +304,50 @@ public class AppDbContext : DbContext
             .WithOne()
             .HasForeignKey(li => li.InvoiceId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        var whatsAppAccessTokenConverter = new ValueConverter<string?, string?>(
+            value => WhatsAppTokenProtector.Encrypt(value),
+            value => WhatsAppTokenProtector.Decrypt(value));
+
+        modelBuilder.Entity<WhatsAppSettings>()
+            .Property(s => s.AccessToken)
+            .HasConversion(whatsAppAccessTokenConverter);
+
+        modelBuilder.Entity<WhatsAppSettings>()
+            .HasIndex(s => s.TenantId)
+            .IsUnique();
+
+        modelBuilder.Entity<WhatsAppSettings>()
+            .HasIndex(s => new { s.ConnectionStatus, s.TokenExpiresAt });
+
+        modelBuilder.Entity<WhatsAppTemplate>()
+            .HasIndex(t => new { t.TenantId, t.MetaTemplateName })
+            .IsUnique();
+
+        modelBuilder.Entity<WhatsAppMessage>()
+            .HasIndex(m => new { m.TenantId, m.CreatedAt });
+
+        modelBuilder.Entity<WhatsAppOAuthState>()
+            .HasIndex(s => new { s.TenantId, s.NonceHash })
+            .IsUnique();
+
+        modelBuilder.Entity<WhatsAppOAuthState>()
+            .HasIndex(s => new { s.TenantId, s.ExpiresAt });
+
+        modelBuilder.Entity<WhatsAppOAuthState>()
+            .HasIndex(s => new { s.TenantId, s.UsedAt });
+
+        modelBuilder.Entity<WhatsAppSettings>()
+            .HasQueryFilter(s => _tenantContext.TenantId == Guid.Empty || s.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<WhatsAppTemplate>()
+            .HasQueryFilter(t => _tenantContext.TenantId == Guid.Empty || t.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<WhatsAppMessage>()
+            .HasQueryFilter(m => _tenantContext.TenantId == Guid.Empty || m.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<WhatsAppOAuthState>()
+            .HasQueryFilter(s => _tenantContext.TenantId == Guid.Empty || s.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<AuditLog>()
             .HasOne<User>()

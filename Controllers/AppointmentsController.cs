@@ -393,10 +393,19 @@ public class AppointmentsController : ControllerBase
             appointment.EndTime = DateTime.SpecifyKind(request.EndTime, DateTimeKind.Utc);
 
         appointment.Status = newStatus;
-        appointment.Notes = request.Notes;
-        appointment.ServiceId = request.ServiceId;
-        appointment.DepartmentId = selectedService?.DepartmentId;
-        appointment.StaffId = request.StaffId;
+        if (request.Notes != null)
+            appointment.Notes = request.Notes;
+
+        // Keep DepartmentId as an appointment-time snapshot.
+        // It should only change when ServiceId is explicitly changed on the appointment.
+        if (request.ServiceId.HasValue)
+        {
+            appointment.ServiceId = request.ServiceId;
+            appointment.DepartmentId = selectedService?.DepartmentId;
+        }
+
+        if (request.StaffId.HasValue)
+            appointment.StaffId = request.StaffId;
 
         if (request.IsDocumented.HasValue)
         {

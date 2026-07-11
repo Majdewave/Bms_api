@@ -5,6 +5,8 @@ using Clienta.Api.Infrastructure.TeamChat.Interfaces;
 using Clienta.Api.Infrastructure.TeamChat.Stores;
 using Clienta.Api.Middleware;
 using Clienta.Api.Services;
+using Clienta.Api.Services.WhatsApp;
+using Clienta.Api.Services.WhatsApp.Meta;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -74,6 +76,19 @@ builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
 builder.Services.AddHostedService<CleanupService>();
 
 builder.Services.AddScoped<DashboardService>();
+builder.Services.Configure<MetaWhatsAppOptions>(builder.Configuration.GetSection("WhatsApp"));
+builder.Services.AddHttpClient("MetaGraph", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
+builder.Services.AddScoped<IMetaOAuthService, MetaOAuthService>();
+builder.Services.AddScoped<IMetaGraphApiService, MetaGraphApiService>();
+builder.Services.AddScoped<IMetaStateService, MetaStateService>();
+builder.Services.AddScoped<WhatsAppWebhookService>();
+builder.Services.AddScoped<WhatsAppTemplateService>();
+builder.Services.AddSingleton<WhatsAppMessageQueue>();
 builder.Services.AddScoped<Clienta.Api.Repositories.AppointmentsRepository>();
 builder.Services.AddScoped<Clienta.Api.Repositories.ClientsRepository>();
 builder.Services.AddScoped<Clienta.Api.Repositories.BusinessUsersRepository>();
@@ -149,6 +164,9 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy("manage_invoices",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_invoices")));
+
+    options.AddPolicy("manage_whatsapp",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_whatsapp")));
 });
 
 builder.Services.AddControllers();
