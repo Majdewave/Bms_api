@@ -17,4 +17,6 @@ public class UpdateTenantRequest
     public string? Currency { get; set; }
     public string? InvoicePrefix { get; set; }
     public int? NextInvoiceNumber { get; set; }
+    public string? QuotePrefix { get; set; }
+    public int? NextQuoteNumber { get; set; }
 }

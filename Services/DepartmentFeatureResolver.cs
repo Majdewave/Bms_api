@@ -16,6 +16,7 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
 {
     private static readonly string[] SupportedFeatureKeys =
     [
+        "quotesEnabled",
         "prescriptionsEnabled",
         "drugsEnabled",
         "consentFormsEnabled",
@@ -152,6 +153,7 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
             TenantId = tenantId,
             ReportsEnabled = true,
             InvoicesEnabled = true,
+            QuotesEnabled = false,
             PrescriptionsEnabled = false,
             DrugsEnabled = false,
             BeforeAfterPhotosEnabled = true,
@@ -172,6 +174,7 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
     {
         return featureKey switch
         {
+            "quotesEnabled" => tenantFeatures.QuotesEnabled,
             "prescriptionsEnabled" => tenantFeatures.PrescriptionsEnabled,
             "drugsEnabled" => tenantFeatures.DrugsEnabled,
             "consentFormsEnabled" => true,

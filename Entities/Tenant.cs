@@ -37,6 +37,8 @@ public class Tenant
     public string Currency { get; set; } = "ILS";
     public string InvoicePrefix { get; set; } = "INV-";
     public int NextInvoiceNumber { get; set; } = 1;
+    public string QuotePrefix { get; set; } = "QT-";
+    public int NextQuoteNumber { get; set; } = 1;
 
 
     public string? StripeCustomerId { get; set; }

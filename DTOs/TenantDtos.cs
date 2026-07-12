@@ -20,7 +20,9 @@ public record TenantResponse(
     string DefaultInvoiceStatus,
     string Currency,
     string InvoicePrefix,
-    int NextInvoiceNumber
+    int NextInvoiceNumber,
+    string QuotePrefix,
+    int NextQuoteNumber
 );
 
 public record AutoDeleteSettingsRequest(

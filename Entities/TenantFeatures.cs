@@ -6,6 +6,7 @@ public class TenantFeatures : ITenantEntity
     public Guid TenantId { get; set; }
     public bool ReportsEnabled { get; set; } = false;
     public bool InvoicesEnabled { get; set; } = false;
+    public bool QuotesEnabled { get; set; } = false;
     public bool PrescriptionsEnabled { get; set; } = false;
     public bool DrugsEnabled { get; set; } = false;
     public bool BeforeAfterPhotosEnabled { get; set; } = false;

@@ -47,6 +47,8 @@ public class AppDbContext : DbContext
     public DbSet<TenantFeatures> TenantFeatures => Set<TenantFeatures>();
     public DbSet<Invoice> Invoices { get; set; } = null!;
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
+    public DbSet<Quote> Quotes { get; set; } = null!;
+    public DbSet<QuoteLineItem> QuoteLineItems { get; set; } = null!;
     public DbSet<Prescription> Prescriptions { get; set; } = null!;
     public DbSet<ClientConsent> ClientConsents { get; set; } = null!;
     public DbSet<ClientTreatmentPhoto> ClientTreatmentPhotos { get; set; } = null!;
@@ -248,6 +250,10 @@ public class AppDbContext : DbContext
             .HasDefaultValue(true);
 
         modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.QuotesEnabled)
+            .HasDefaultValue(false);
+
+        modelBuilder.Entity<TenantFeatures>()
             .Property(tf => tf.PrescriptionsEnabled)
             .HasDefaultValue(false);
 
@@ -303,6 +309,19 @@ public class AppDbContext : DbContext
             .HasMany(i => i.LineItems)
             .WithOne()
             .HasForeignKey(li => li.InvoiceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Quote>()
+            .HasQueryFilter(quote => _tenantContext.TenantId == Guid.Empty || quote.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Quote>()
+            .HasIndex(quote => new { quote.TenantId, quote.QuoteNumber })
+            .IsUnique();
+
+        modelBuilder.Entity<Quote>()
+            .HasMany(q => q.LineItems)
+            .WithOne()
+            .HasForeignKey(li => li.QuoteId)
             .OnDelete(DeleteBehavior.Cascade);
 
         var whatsAppAccessTokenConverter = new ValueConverter<string?, string?>(

@@ -65,6 +65,8 @@ public class TenantController : ControllerBase
             tenant.Currency,
             tenant.InvoicePrefix,
             tenant.NextInvoiceNumber,
+            tenant.QuotePrefix,
+            tenant.NextQuoteNumber,
             beforeAfterPhotosEnabled = features?.BeforeAfterPhotosEnabled ?? true,
             plan = tenant.Plan.ToString(),
             subscriptionStatus = tenant.SubscriptionStatus.ToString(),
@@ -122,6 +124,12 @@ public class TenantController : ControllerBase
 
         if (request.NextInvoiceNumber.HasValue)
             tenant.NextInvoiceNumber = NormalizeNextInvoiceNumber(request.NextInvoiceNumber.Value);
+
+        if (request.QuotePrefix != null)
+            tenant.QuotePrefix = NormalizeQuotePrefix(request.QuotePrefix);
+
+        if (request.NextQuoteNumber.HasValue)
+            tenant.NextQuoteNumber = NormalizeNextQuoteNumber(request.NextQuoteNumber.Value);
 
         if (request.LogoUrl != null)
             tenant.LogoUrl = request.LogoUrl;
@@ -199,6 +207,12 @@ public class TenantController : ControllerBase
 
         if (request.NextInvoiceNumber.HasValue)
             tenant.NextInvoiceNumber = NormalizeNextInvoiceNumber(request.NextInvoiceNumber.Value);
+
+        if (request.QuotePrefix != null)
+            tenant.QuotePrefix = NormalizeQuotePrefix(request.QuotePrefix);
+
+        if (request.NextQuoteNumber.HasValue)
+            tenant.NextQuoteNumber = NormalizeNextQuoteNumber(request.NextQuoteNumber.Value);
 
         await _context.SaveChangesAsync();
 
@@ -446,6 +460,17 @@ public class TenantController : ControllerBase
         return nextInvoiceNumber > 0 ? nextInvoiceNumber : 1;
     }
 
+    private static string NormalizeQuotePrefix(string? quotePrefix)
+    {
+        var normalized = quotePrefix?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? "QT-" : normalized;
+    }
+
+    private static int NormalizeNextQuoteNumber(int nextQuoteNumber)
+    {
+        return nextQuoteNumber > 0 ? nextQuoteNumber : 1;
+    }
+
     private static string? NormalizeNullableText(string? value)
     {
         if (value == null)
@@ -546,7 +571,9 @@ public class TenantController : ControllerBase
             ToApiInvoiceStatus(tenant.DefaultInvoiceStatus),
             tenant.Currency,
             tenant.InvoicePrefix,
-            tenant.NextInvoiceNumber
+            tenant.NextInvoiceNumber,
+            tenant.QuotePrefix,
+            tenant.NextQuoteNumber
         );
     }
 }

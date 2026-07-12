@@ -33,6 +33,7 @@ QuestPDF.Settings.License = LicenseType.Community;
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantContext, TenantContext>();
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
+builder.Services.AddScoped<IQuoteConversionService, QuoteConversionService>();
 builder.Services.AddScoped<TenantResolver>();
 builder.Services.AddScoped<IFeatureService, FeatureService>();
 builder.Services.AddScoped<IDepartmentFeatureResolver, DepartmentFeatureResolver>();
@@ -164,6 +165,9 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy("manage_invoices",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_invoices")));
+
+    options.AddPolicy("manage_quotes",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_quotes")));
 
     options.AddPolicy("manage_whatsapp",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_whatsapp")));

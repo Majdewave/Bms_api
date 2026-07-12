@@ -38,6 +38,7 @@ public class FeaturesController : ControllerBase
         var dto = new UpdateTenantFeaturesRequest(
             features.ReportsEnabled,
             features.InvoicesEnabled,
+            features.QuotesEnabled,
             features.PrescriptionsEnabled,
             features.DrugsEnabled,
             features.BeforeAfterPhotosEnabled,
@@ -68,6 +69,7 @@ public class FeaturesController : ControllerBase
 
         features.ReportsEnabled = request.ReportsEnabled;
         features.InvoicesEnabled = request.InvoicesEnabled;
+        features.QuotesEnabled = request.QuotesEnabled;
         features.PrescriptionsEnabled = request.PrescriptionsEnabled;
         features.DrugsEnabled = request.DrugsEnabled;
         features.BeforeAfterPhotosEnabled = request.BeforeAfterPhotosEnabled;

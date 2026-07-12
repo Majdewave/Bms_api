@@ -39,6 +39,7 @@ public class AuthSeedService
             "manage_files",
             "manage_staff",
             "manage_invoices",
+            "manage_quotes",
             "manage_whatsapp"
         };
 

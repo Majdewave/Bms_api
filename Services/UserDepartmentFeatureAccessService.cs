@@ -20,6 +20,7 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
 
     private static readonly string[] FirstConsumerFeatureKeys =
     [
+        "quotesEnabled",
         "prescriptionsEnabled",
         "drugsEnabled",
         "consentFormsEnabled",
@@ -55,6 +56,22 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
 
         if (departmentId.HasValue)
         {
+            var user = await _db.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == userId.Value && u.TenantId == tenantId);
+
+            var isAdmin = string.Equals(user?.Role, "Admin", StringComparison.OrdinalIgnoreCase);
+
+            if (!isAdmin)
+            {
+                var assigned = await _db.StaffDepartments
+                    .AsNoTracking()
+                    .AnyAsync(sd => sd.TenantId == tenantId && sd.Staff.UserId == userId.Value && sd.DepartmentId == departmentId.Value);
+
+                if (!assigned)
+                    return false;
+            }
+
             return await _departmentFeatureResolver.IsFeatureEnabledAsync(tenantId, departmentId.Value, featureKey);
         }
 
@@ -105,6 +122,7 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
                 false,
                 false,
                 false,
+                false,
                 false
             );
         }
@@ -117,6 +135,7 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
         }
 
         return new EffectiveDepartmentFeaturesResponse(
+            results["quotesEnabled"],
             results["prescriptionsEnabled"],
             results["drugsEnabled"],
             results["consentFormsEnabled"],
