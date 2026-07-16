@@ -23,9 +23,17 @@ public class Appointment : ITenantEntity
     [Required]
     public DateTime EndTime { get; set; }
 
+    // Persistence optimization only (NOT a business field):
+    // derived from StartTime.Date and used for indexing, uniqueness, and waiting-queue grouping.
+    // Business logic should continue to use StartTime.
+    [Required]
+    public DateTime AppointmentDate { get; set; }
+
     [Required]
     public string Status { get; set; } = AppointmentStatuses.Scheduled;
     // Allowed: Scheduled, Waiting, InProgress, Completed, Cancelled, NoShow
+
+    public int? QueueNumber { get; set; }
 
     public string? Notes { get; set; }
 

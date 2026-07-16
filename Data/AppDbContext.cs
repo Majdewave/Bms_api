@@ -294,6 +294,15 @@ public class AppDbContext : DbContext
          .HasIndex(a => new { a.TenantId, a.Status, a.StartTime })
          .HasDatabaseName("IX_Appointments_Tenant_Status_StartTime");
 
+        modelBuilder.Entity<Appointment>()
+            .Property(a => a.AppointmentDate)
+            .HasColumnType("date");
+
+        modelBuilder.Entity<Appointment>()
+            .HasIndex(a => new { a.TenantId, a.AppointmentDate, a.Status, a.QueueNumber })
+            .HasDatabaseName("IX_Appointments_Tenant_AppointmentDate_Status_QueueNumber")
+            .IsUnique();
+
         modelBuilder.Entity<ClientConsent>()
             .HasIndex(c => c.AppointmentId)
             .HasDatabaseName("IX_ClientConsents_AppointmentId");
@@ -418,10 +427,8 @@ public class AppDbContext : DbContext
         CancellationToken cancellationToken = default)
     {
         ApplyTenantId();
+        SynchronizeDerivedAppointmentDate();
         var auditEntries = new List<AuditLog>();
-
-        Console.WriteLine("TenantId: " + _tenantContext.TenantId);
-        Console.WriteLine("UserId: " + _tenantContext.UserId);
 
         foreach (var entry in ChangeTracker.Entries())
         {
@@ -486,11 +493,6 @@ public class AppDbContext : DbContext
             auditEntries.Add(audit);
         }
 
-        foreach (var entry in ChangeTracker.Entries())
-        {
-            Console.WriteLine($"Entity: {entry.Entity.GetType().Name} | State: {entry.State}");
-        }
-
         var result = await base.SaveChangesAsync(cancellationToken);
 
         return result;
@@ -514,6 +516,43 @@ public class AppDbContext : DbContext
             if (entry.Entity.TenantId == Guid.Empty)
             {
                 entry.Entity.TenantId = tenantId;
+            }
+        }
+    }
+
+    private void SynchronizeDerivedAppointmentDate()
+    {
+        // AppointmentDate is a derived persistence field, never a client/business input.
+        // Keep it self-healed from StartTime for every added/updated appointment.
+        var appointmentEntries = ChangeTracker.Entries<Appointment>()
+            .Where(e => e.State == EntityState.Added || e.State == EntityState.Modified);
+
+        foreach (var entry in appointmentEntries)
+        {
+            var normalizedStartTime = entry.Entity.StartTime.Kind switch
+            {
+                DateTimeKind.Utc => entry.Entity.StartTime,
+                DateTimeKind.Local => entry.Entity.StartTime.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(entry.Entity.StartTime, DateTimeKind.Utc)
+            };
+
+            if (entry.Entity.StartTime != normalizedStartTime)
+            {
+                entry.Entity.StartTime = normalizedStartTime;
+            }
+
+            var derivedDate = new DateTime(
+                normalizedStartTime.Year,
+                normalizedStartTime.Month,
+                normalizedStartTime.Day,
+                0,
+                0,
+                0,
+                DateTimeKind.Utc);
+
+            if (entry.Entity.AppointmentDate != derivedDate)
+            {
+                entry.Entity.AppointmentDate = derivedDate;
             }
         }
     }

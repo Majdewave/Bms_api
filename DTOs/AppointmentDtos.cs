@@ -17,7 +17,8 @@ public record UpdateAppointmentRequest(
     string? Notes,
     Guid? ServiceId,
     Guid? StaffId,
-    bool? IsDocumented = true
+    bool? IsDocumented = true,
+    int? QueueNumber = null
 );
 
 public record AppointmentDto(
@@ -34,10 +35,20 @@ public record AppointmentDto(
     DateTime StartTime,
     DateTime EndTime,
     string Status,
+    int? QueueNumber,
     string? Notes,
     DateTime CreatedAt,
     bool IsDocumented,
     bool HasSignedConsent
+);
+
+public record ReorderWaitingQueueItemRequest(
+    Guid Id,
+    int QueueNumber
+);
+
+public record ReorderWaitingQueueRequest(
+    List<ReorderWaitingQueueItemRequest> Items
 );
 
 public record AppointmentResponse(
