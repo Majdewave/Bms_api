@@ -299,8 +299,9 @@ public class AppDbContext : DbContext
             .HasColumnType("date");
 
         modelBuilder.Entity<Appointment>()
-            .HasIndex(a => new { a.TenantId, a.AppointmentDate, a.Status, a.QueueNumber })
+            .HasIndex(a => new { a.TenantId, a.AppointmentDate, a.QueueNumber })
             .HasDatabaseName("IX_Appointments_Tenant_AppointmentDate_Status_QueueNumber")
+            .HasFilter("\"QueueNumber\" IS NOT NULL AND \"Status\" IN ('Scheduled','Waiting','InProgress')")
             .IsUnique();
 
         modelBuilder.Entity<ClientConsent>()

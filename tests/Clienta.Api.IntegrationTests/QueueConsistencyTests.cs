@@ -32,7 +32,7 @@ public class QueueConsistencyTests
             entity.ServiceId,
             entity.StaffId,
             entity.IsDocumented,
-            entity.QueueNumber));
+            null));
 
         Assert.IsInstanceOfType<OkObjectResult>(update);
 

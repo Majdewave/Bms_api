@@ -15,6 +15,13 @@ namespace Clienta.Api.Controllers;
 [Authorize(Policy = "manage_appointments")]
 public class AppointmentsController : ControllerBase
 {
+    private static readonly string[] ActiveQueueStatuses =
+    {
+        AppointmentStatuses.Scheduled,
+        AppointmentStatuses.Waiting,
+        AppointmentStatuses.InProgress
+    };
+
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
     private readonly IDepartmentAccessService _departmentAccessService;
@@ -141,12 +148,8 @@ public class AppointmentsController : ControllerBase
             .Include(a => a.Department)
             .Include(a => a.Staff)
                 .ThenInclude(s => s.User)
-            .OrderBy(a =>
-                a.Status == AppointmentStatuses.InProgress ? 0 :
-                a.Status == AppointmentStatuses.Waiting ? 1 :
-                2
-            )
-            .ThenBy(a => a.Status == AppointmentStatuses.Waiting ? (a.QueueNumber ?? int.MaxValue) : int.MaxValue)
+            .OrderBy(a => ActiveQueueStatuses.Contains(a.Status) ? 0 : 1)
+            .ThenBy(a => ActiveQueueStatuses.Contains(a.Status) ? (a.QueueNumber ?? int.MaxValue) : int.MaxValue)
             .ThenBy(a => a.StartTime)
             .Select(a => new AppointmentDto(
                 a.Id,
@@ -272,6 +275,7 @@ public class AppointmentsController : ControllerBase
         var normalizedStartTimeUtc = NormalizeToUtc(request.StartTime);
         var normalizedEndTimeUtc = NormalizeToUtc(request.EndTime);
         var appointmentDate = NormalizeAppointmentDate(normalizedStartTimeUtc);
+        var nextQueueNumber = await GetNextActiveQueueNumberAsync(_tenant.TenantId, appointmentDate, null);
 
         var appointment = new Appointment
         {
@@ -286,7 +290,7 @@ public class AppointmentsController : ControllerBase
             EndTime = normalizedEndTimeUtc,
             AppointmentDate = appointmentDate,
             Status = AppointmentStatuses.Scheduled,
-            QueueNumber = null,
+            QueueNumber = nextQueueNumber,
             Notes = request.Notes,
             CreatedAt = DateTime.UtcNow
         };
@@ -410,44 +414,37 @@ public class AppointmentsController : ControllerBase
         var appointmentDate = NormalizeAppointmentDate(appointment.StartTime);
         appointment.AppointmentDate = appointmentDate;
 
+        var currentIsActive = IsActiveQueueStatus(currentStatus);
+        var newIsActive = IsActiveQueueStatus(newStatus);
+
         appointment.Status = newStatus;
         if (request.Notes != null)
             appointment.Notes = request.Notes;
 
-        if (newStatus == AppointmentStatuses.Waiting)
+        if (request.QueueNumber.HasValue)
         {
-            if (currentStatus != AppointmentStatuses.Waiting)
-            {
-                var maxQueue = await _context.Appointments
-                    .Where(a => a.TenantId == appointment.TenantId
-                        && a.StartTime.Date == appointmentDate.Date
-                        && a.Status == AppointmentStatuses.Waiting
-                        && a.Id != appointment.Id)
-                    .MaxAsync(a => (int?)a.QueueNumber) ?? 0;
-
-                appointment.QueueNumber = maxQueue + 1;
-            }
-            else if (request.QueueNumber.HasValue)
-            {
-                if (request.QueueNumber.Value <= 0)
-                    return BadRequest("QueueNumber must be greater than zero.");
-
-                var queueConflict = await _context.Appointments.AnyAsync(a =>
-                    a.TenantId == appointment.TenantId
-                    && a.StartTime.Date == appointmentDate.Date
-                    && a.Status == AppointmentStatuses.Waiting
-                    && a.QueueNumber == request.QueueNumber.Value
-                    && a.Id != appointment.Id);
-
-                if (queueConflict)
-                    return BadRequest("QueueNumber must be unique for waiting appointments on the same appointment date.");
-
-                appointment.QueueNumber = request.QueueNumber.Value;
-            }
+            return BadRequest("QueueNumber cannot be set manually.");
         }
-        else if (request.QueueNumber.HasValue)
+
+        if (!currentIsActive && newIsActive)
         {
-            return BadRequest("QueueNumber can only be set for waiting appointments.");
+            // History -> Active always gets a new queue number.
+            appointment.QueueNumber = await GetNextActiveQueueNumberAsync(appointment.TenantId, appointmentDate, appointment.Id);
+        }
+        else if (currentIsActive && !newIsActive)
+        {
+            // Active -> History leaves active queue.
+            appointment.QueueNumber = null;
+        }
+        else if (!newIsActive)
+        {
+            // History stays history.
+            appointment.QueueNumber = null;
+        }
+        else if (!appointment.QueueNumber.HasValue)
+        {
+            // Self-heal legacy active records with missing queue number.
+            appointment.QueueNumber = await GetNextActiveQueueNumberAsync(appointment.TenantId, appointmentDate, appointment.Id);
         }
 
         // Keep DepartmentId as an appointment-time snapshot.
@@ -546,80 +543,129 @@ public class AppointmentsController : ControllerBase
         if (duplicateQueueNumbers.Count > 0)
             return BadRequest("QueueNumber values must be unique.");
 
-        var orderedQueueNumbers = request.Items
-            .Select(i => i.QueueNumber)
-            .OrderBy(x => x)
-            .ToList();
-        for (var i = 0; i < orderedQueueNumbers.Count; i++)
-        {
-            if (orderedQueueNumbers[i] != i + 1)
-                return BadRequest("QueueNumber values must be sequential starting at 1.");
-        }
-
         var appointmentIds = request.Items.Select(i => i.Id).ToList();
 
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var strategy = _context.Database.CreateExecutionStrategy();
+        string? validationError = null;
+
         try
         {
-            var appointments = await _context.Appointments
-                .Where(a => a.TenantId == _tenant.TenantId && appointmentIds.Contains(a.Id))
-                .ToListAsync();
-
-            if (appointments.Count != appointmentIds.Count)
-                return BadRequest("One or more appointments were not found.");
-
-            if (appointments.Any(a => a.Status != AppointmentStatuses.Waiting))
-                return BadRequest("Only waiting appointments can be reordered.");
-
-            var appointmentDate = NormalizeAppointmentDate(appointments[0].StartTime);
-            if (appointments.Any(a => NormalizeAppointmentDate(a.StartTime) != appointmentDate))
-                return BadRequest("All reordered appointments must belong to the same appointment date.");
-
-            var allWaitingForDate = await _context.Appointments
-                .Where(a => a.TenantId == _tenant.TenantId
-                    && a.Status == AppointmentStatuses.Waiting
-                    && a.StartTime.Date == appointmentDate.Date)
-                .Select(a => a.Id)
-                .ToListAsync();
-
-            if (allWaitingForDate.Count != appointmentIds.Count)
-                return BadRequest("Reorder payload must include all waiting appointments for the appointment date.");
-
-            var allWaitingSet = allWaitingForDate.ToHashSet();
-            if (appointmentIds.Any(id => !allWaitingSet.Contains(id)))
-                return BadRequest("Reorder payload contains invalid appointments for this waiting queue.");
-
-            var queueLookup = request.Items.ToDictionary(i => i.Id, i => i.QueueNumber);
-
-            // Two-phase update avoids transient unique index conflicts when swapping queue numbers.
-            // Phase 1 writes temporary negative values, phase 2 writes final positive sequence.
-            foreach (var appointment in appointments)
+            await strategy.ExecuteAsync(async () =>
             {
-                // Self-heal persisted optimization field from StartTime.
-                appointment.AppointmentDate = NormalizeAppointmentDate(appointment.StartTime);
-                appointment.QueueNumber = -queueLookup[appointment.Id];
-            }
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var appointments = await _context.Appointments
+                        .Where(a => a.TenantId == _tenant.TenantId && appointmentIds.Contains(a.Id))
+                        .ToListAsync();
 
-            await _context.SaveChangesAsync();
+                    if (appointments.Count != appointmentIds.Count)
+                    {
+                        validationError = "One or more appointments were not found.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
 
-            foreach (var appointment in appointments)
-            {
-                appointment.QueueNumber = queueLookup[appointment.Id];
-            }
+                    if (appointments.Any(a => !ActiveQueueStatuses.Contains(a.Status)))
+                    {
+                        validationError = "Only active appointments can be reordered.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
 
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
+                    var appointmentDate = NormalizeAppointmentDate(appointments[0].StartTime);
+                    if (appointments.Any(a => NormalizeAppointmentDate(a.StartTime) != appointmentDate))
+                    {
+                        validationError = "All reordered appointments must belong to the same appointment date.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    var allActiveForDate = await _context.Appointments
+                        .Where(a => a.TenantId == _tenant.TenantId
+                            && ActiveQueueStatuses.Contains(a.Status)
+                            && a.StartTime.Date == appointmentDate.Date)
+                        .Select(a => new { a.Id, a.QueueNumber })
+                        .ToListAsync();
+
+                    if (allActiveForDate.Count != appointmentIds.Count)
+                    {
+                        validationError = "Reorder payload must include all active appointments for the appointment date.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    if (allActiveForDate.Any(a => !a.QueueNumber.HasValue))
+                    {
+                        validationError = "Active queue contains appointments without QueueNumber.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    var allActiveSet = allActiveForDate.Select(a => a.Id).ToHashSet();
+                    if (appointmentIds.Any(id => !allActiveSet.Contains(id)))
+                    {
+                        validationError = "Reorder payload contains invalid appointments for this active queue.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    var existingQueueNumbers = allActiveForDate
+                        .Select(a => a.QueueNumber!.Value)
+                        .OrderBy(q => q)
+                        .ToArray();
+                    var requestedQueueNumbers = request.Items
+                        .Select(i => i.QueueNumber)
+                        .OrderBy(q => q)
+                        .ToArray();
+
+                    if (!existingQueueNumbers.SequenceEqual(requestedQueueNumbers))
+                    {
+                        validationError = "QueueNumber values must preserve the existing active queue range for the appointment date.";
+                        await transaction.RollbackAsync();
+                        return;
+                    }
+
+                    var queueLookup = request.Items.ToDictionary(i => i.Id, i => i.QueueNumber);
+
+                    // Two-phase update avoids transient unique index conflicts when swapping queue numbers.
+                    // Phase 1 writes temporary negative values, phase 2 writes final positive sequence.
+                    foreach (var appointment in appointments)
+                    {
+                        // Self-heal persisted optimization field from StartTime.
+                        appointment.AppointmentDate = NormalizeAppointmentDate(appointment.StartTime);
+                        appointment.QueueNumber = -queueLookup[appointment.Id];
+                    }
+
+                    await _context.SaveChangesAsync();
+
+                    foreach (var appointment in appointments)
+                    {
+                        appointment.QueueNumber = queueLookup[appointment.Id];
+                    }
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+                catch (DbUpdateException ex)
+                {
+                    await transaction.RollbackAsync();
+                    throw new DbUpdateException("Invalid queue update. Queue numbers must remain unique per tenant and appointment date across active statuses.", ex);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (ex.Message.StartsWith("Invalid queue update."))
         {
-            await transaction.RollbackAsync();
-            return BadRequest("Invalid queue update. Queue numbers must remain unique per tenant, appointment date, and waiting status.");
+            return BadRequest(ex.Message);
         }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+
+        if (validationError != null)
+            return BadRequest(validationError);
 
         await _hubContext.Clients.Group(_tenant.TenantId.ToString())
             .SendAsync("WaitingQueueReordered");
@@ -666,6 +712,27 @@ public class AppointmentsController : ControllerBase
     private static DateTime NormalizeAppointmentDate(DateTime utcStartTime)
     {
         return new DateTime(utcStartTime.Year, utcStartTime.Month, utcStartTime.Day, 0, 0, 0, DateTimeKind.Utc);
+    }
+
+    private static bool IsActiveQueueStatus(string status)
+    {
+        return ActiveQueueStatuses.Contains(status);
+    }
+
+    private async Task<int> GetNextActiveQueueNumberAsync(Guid tenantId, DateTime appointmentDate, Guid? excludeAppointmentId)
+    {
+        var query = _context.Appointments
+            .Where(a => a.TenantId == tenantId
+                && a.StartTime.Date == appointmentDate.Date
+                && ActiveQueueStatuses.Contains(a.Status));
+
+        if (excludeAppointmentId.HasValue)
+        {
+            query = query.Where(a => a.Id != excludeAppointmentId.Value);
+        }
+
+        var maxQueue = await query.MaxAsync(a => (int?)a.QueueNumber) ?? 0;
+        return maxQueue + 1;
     }
 
     private async Task<IQueryable<Appointment>> ApplyStaffDepartmentVisibilityAsync(IQueryable<Appointment> query)
