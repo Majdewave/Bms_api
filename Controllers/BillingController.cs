@@ -1,4 +1,5 @@
 using Stripe.BillingPortal;
+using Stripe;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Clienta.Api.Services;
@@ -17,64 +18,109 @@ public class BillingController : ControllerBase
     private readonly IStripeService _stripeService;
     private readonly ITenantContext _tenantContext;
     private readonly AppDbContext _db;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<BillingController> _logger;
 
     public BillingController(
         IStripeService stripeService,
         ITenantContext tenantContext,
-        AppDbContext db)
+        AppDbContext db,
+        IConfiguration configuration,
+        ILogger<BillingController> logger)
     {
         _stripeService = stripeService;
         _tenantContext = tenantContext;
         _db = db;
+        _configuration = configuration;
+        _logger = logger;
     }
 
 
     [Authorize]
     [HttpPost("portal")]
     public async Task<IActionResult> CreatePortalSession()
+    {
+        try
         {
-            try
+            var tenantId = _tenantContext.TenantId;
+            if (tenantId == Guid.Empty)
             {
-                var tenantId =
-                    Guid.Parse(
-                        User.FindFirst("tenant_id")!.Value
-                    );
-
-                var tenant = await _db.Tenants
-                    .FirstOrDefaultAsync(x =>
-                        x.Id == tenantId);
-
-                if (tenant == null)
-                    return BadRequest("Tenant not found");
-
-                if (string.IsNullOrEmpty(tenant.StripeCustomerId))
-                    return BadRequest("Stripe customer missing");
-
-                var options = new SessionCreateOptions
-                {
-                    Customer = tenant.StripeCustomerId,
-                    ReturnUrl =
-                        "https://clienta.digitalpenpro.com/billing"
-                };
-
-                var service = new SessionService();
-
-                var session =
-                    await service.CreateAsync(options);
-
-                return Ok(new
-                {
-                    url = session.Url
-                });
+                _logger.LogWarning("Billing portal request rejected: missing tenant context.");
+                return BadRequest(new { error = "Tenant context missing" });
             }
-            catch (Exception ex)
+
+            var tenant = await _db.Tenants
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == tenantId);
+
+            if (tenant == null)
             {
-                return BadRequest(new
-                {
-                    error = ex.Message
-                });
+                _logger.LogWarning("Billing portal request rejected: tenant {TenantId} not found.", tenantId);
+                return BadRequest(new { error = "Tenant not found" });
             }
+
+            if (string.IsNullOrWhiteSpace(tenant.StripeCustomerId))
+            {
+                _logger.LogWarning(
+                    "Billing portal request rejected: Stripe customer missing for tenant {TenantId}. SubscriptionId={SubscriptionId}, Plan={Plan}, Status={Status}",
+                    tenant.Id,
+                    tenant.StripeSubscriptionId,
+                    tenant.Plan,
+                    tenant.SubscriptionStatus);
+
+                return BadRequest(new { error = "Stripe customer missing" });
+            }
+
+            var baseUrl = (_configuration["App:BaseUrl"] ?? "https://clienta.digitalpenpro.com").TrimEnd('/');
+            var returnUrl = $"{baseUrl}/billing";
+
+            var options = new SessionCreateOptions
+            {
+                Customer = tenant.StripeCustomerId,
+                ReturnUrl = returnUrl
+            };
+
+            _logger.LogInformation(
+                "Creating Stripe billing portal session. TenantId={TenantId}, CustomerId={CustomerId}, SubscriptionId={SubscriptionId}, ReturnUrl={ReturnUrl}",
+                tenant.Id,
+                tenant.StripeCustomerId,
+                tenant.StripeSubscriptionId,
+                returnUrl);
+
+            var service = new SessionService();
+            var session = await service.CreateAsync(options);
+
+            return Ok(new { url = session.Url });
         }
+        catch (StripeException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Stripe billing portal error. Code={Code}, Type={Type}, Param={Param}, HttpStatus={HttpStatus}, Message={Message}",
+                ex.StripeError?.Code,
+                ex.StripeError?.Type,
+                ex.StripeError?.Param,
+                ex.HttpStatusCode,
+                ex.StripeError?.Message ?? ex.Message);
+
+            return BadRequest(new
+            {
+                error = ex.StripeError?.Message ?? ex.Message,
+                stripe = new
+                {
+                    code = ex.StripeError?.Code,
+                    type = ex.StripeError?.Type,
+                    param = ex.StripeError?.Param,
+                    httpStatus = (int?)ex.HttpStatusCode
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected billing portal error.");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Unexpected billing portal failure" });
+        }
+    }
 
 
     [HttpGet("status")]

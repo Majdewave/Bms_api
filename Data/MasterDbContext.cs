@@ -20,6 +20,8 @@ public class MasterDbContext : DbContext
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<BusinessUser> BusinessUsers => Set<BusinessUser>();
+    public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
+    public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +31,41 @@ public class MasterDbContext : DbContext
         modelBuilder.Entity<Tenant>()
             .HasIndex(t => t.Subdomain)
             .IsUnique();
+
+        modelBuilder.Entity<Tenant>()
+            .HasOne(t => t.OwnerUser)
+            .WithMany()
+            .HasForeignKey(t => t.OwnerUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Tenant>()
+            .HasMany(t => t.Users)
+            .WithOne()
+            .HasForeignKey(u => u.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<BusinessUser>()
+            .HasOne(bu => bu.Tenant)
+            .WithMany()
+            .HasForeignKey(bu => bu.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<BusinessUser>()
+            .HasOne(bu => bu.User)
+            .WithMany()
+            .HasForeignKey(bu => bu.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlatformUser>()
+            .Property(pu => pu.Role)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<PlatformUser>()
+            .HasIndex(pu => pu.Email)
+            .IsUnique();
+
+        modelBuilder.Entity<PlatformSettings>()
+            .HasKey(settings => settings.Id);
 
         // No global query filters - this is master data accessible to all tenants
     }

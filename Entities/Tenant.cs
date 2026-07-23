@@ -13,8 +13,10 @@ public class Tenant
     public string? BusinessStampUrl { get; set; }
 
     public PlanType Plan { get; set; } = PlanType.Trial;
-    public SubscriptionStatus SubscriptionStatus { get; set; } = SubscriptionStatus.Trialing;
+    public SubscriptionStatus SubscriptionStatus { get; set; } = SubscriptionStatus.PendingApproval;
 
+    public string PreferredLanguage { get; set; } = "en";
+    public DateTime? TrialStartsAt { get; set; }
     public DateTime? TrialEndsAt { get; set; }
     public bool IsTrial { get; set; }
 

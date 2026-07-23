@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260722214123_AddPlatformSettings")]
+    partial class AddPlatformSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -766,35 +769,94 @@ namespace Clienta.Api.Migrations
                     b.Property<bool>("AllowRegistrations")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ApprovalEmailTemplate")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("AuditLogEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("BillingDefaultPlan")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DefaultPlan")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<int>("DefaultTrialDays")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("EnableBilling")
+                    b.Property<bool>("ForcePasswordReset")
                         .HasColumnType("boolean");
 
-                    b.Property<bool>("EnableHelpCenter")
+                    b.Property<string>("LogoUrl")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("MaintenanceMode")
                         .HasColumnType("boolean");
 
-                    b.Property<decimal>("ProAnnualPrice")
-                        .HasColumnType("numeric");
+                    b.Property<bool>("MfaEnabled")
+                        .HasColumnType("boolean");
 
-                    b.Property<string>("ProDescription")
+                    b.Property<int>("MinimumPasswordLength")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("PlatformName")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("ProDisplayOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("ProEnabled")
+                    b.Property<bool>("ReadOnlyMode")
                         .HasColumnType("boolean");
 
-                    b.Property<decimal>("ProMonthlyPrice")
-                        .HasColumnType("numeric");
-
                     b.Property<bool>("RequireManualApproval")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequireNumberPassword")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequireSpecialCharacterPassword")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("RequireUppercasePassword")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("SendGridEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SenderEmail")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SenderName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SessionTimeoutMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SmtpHost")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SmtpPassword")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SmtpPort")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("SmtpUseSsl")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("SmtpUsername")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("StripeEnabled")
                         .HasColumnType("boolean");
 
                     b.Property<string>("SupportEmail")
@@ -810,7 +872,10 @@ namespace Clienta.Api.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("WebsiteUrl")
+                    b.Property<decimal>("VatRate")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("WelcomeEmailTemplate")
                         .HasColumnType("text");
 
                     b.Property<bool>("WhatsAppEnabled")

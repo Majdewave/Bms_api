@@ -28,6 +28,8 @@ public class AppDbContext : DbContext
 }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
+    public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
@@ -117,6 +119,17 @@ public class AppDbContext : DbContext
             .HasOne(p => p.User)
             .WithMany(u => u.Permissions)
             .HasForeignKey(p => p.UserId);
+
+        modelBuilder.Entity<PlatformUser>()
+            .Property(pu => pu.Role)
+            .HasConversion<string>();
+
+        modelBuilder.Entity<PlatformUser>()
+            .HasIndex(pu => pu.Email)
+            .IsUnique();
+
+        modelBuilder.Entity<PlatformSettings>()
+            .HasKey(settings => settings.Id);
 
         // Global Tenant Filters (CRITICAL for shared database multi-tenancy)
         modelBuilder.Entity<User>()

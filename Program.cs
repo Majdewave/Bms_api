@@ -5,6 +5,7 @@ using Clienta.Api.Infrastructure.TeamChat.Interfaces;
 using Clienta.Api.Infrastructure.TeamChat.Stores;
 using Clienta.Api.Middleware;
 using Clienta.Api.Services;
+using Clienta.Api.Services.Platform;
 using Clienta.Api.Services.WhatsApp;
 using Clienta.Api.Services.WhatsApp.Meta;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -64,10 +65,14 @@ builder.Services.AddDbContext<MasterDbContext>(options =>
 
 
 builder.Services.AddScoped<JwtService>();
+builder.Services.AddScoped<PlatformJwtService>();
 builder.Services.AddScoped<AuthSeedService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<Clienta.Api.Services.TokenService>();
 builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+builder.Services.AddScoped<IOnboardingLocalizationService, OnboardingLocalizationService>();
+builder.Services.AddScoped<ITenantApprovalService, TenantApprovalService>();
+builder.Services.AddScoped<ITenantAccessValidator, TenantAccessValidator>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();
 builder.Services.AddScoped<ITenantSeedService, TenantSeedService>();
@@ -75,6 +80,10 @@ builder.Services.AddScoped<IStripeService, StripeService>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
 builder.Services.AddHostedService<CleanupService>();
+builder.Services.AddScoped<IPlatformTenantManagementService, PlatformTenantManagementService>();
+builder.Services.AddScoped<IPlatformDashboardService, PlatformDashboardService>();
+builder.Services.AddScoped<IPlatformUserManagementService, PlatformUserManagementService>();
+builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
 
 builder.Services.AddScoped<DashboardService>();
 builder.Services.Configure<MetaWhatsAppOptions>(builder.Configuration.GetSection("WhatsApp"));
@@ -98,15 +107,18 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<ResetRateLimiter>();
 
 // JWT
-var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
+var tenantJwtSettings = builder.Configuration.GetSection("JwtSettings");
+var tenantJwtKey = Encoding.UTF8.GetBytes(tenantJwtSettings["Key"]!);
+
+var platformJwtSettings = builder.Configuration.GetSection("PlatformJwtSettings");
+var platformJwtKey = Encoding.UTF8.GetBytes(platformJwtSettings["Key"]!);
 
 builder.Services.AddAuthentication(options =>
 {
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultAuthenticateScheme = PlatformAuthConstants.TenantScheme;
+    options.DefaultChallengeScheme = PlatformAuthConstants.TenantScheme;
 })
-.AddJwtBearer(options =>
+.AddJwtBearer(PlatformAuthConstants.TenantScheme, options =>
 {
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -114,9 +126,9 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtSettings["Issuer"],
-        ValidAudience = jwtSettings["Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(key)
+        ValidIssuer = tenantJwtSettings["Issuer"],
+        ValidAudience = tenantJwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(tenantJwtKey)
     };
     options.Events = new JwtBearerEvents
     {
@@ -129,6 +141,58 @@ builder.Services.AddAuthentication(options =>
                 (path.StartsWithSegments("/hubs/appointments") || path.StartsWithSegments("/hubs/team-chat")))
             {
                 context.Token = accessToken;
+            }
+
+            return Task.CompletedTask;
+        },
+        OnTokenValidated = context =>
+        {
+            var hasTenantId = context.Principal?.HasClaim(c => c.Type == "tenant_id") == true;
+            if (!hasTenantId)
+            {
+                context.Fail("Tenant JWT must include tenant_id claim.");
+                return Task.CompletedTask;
+            }
+
+            var tenantIdClaim = context.Principal?.FindFirst("tenant_id")?.Value;
+            if (!Guid.TryParse(tenantIdClaim, out var tenantId))
+            {
+                context.Fail("Tenant JWT must include a valid tenant_id claim.");
+                return Task.CompletedTask;
+            }
+
+            using var scope = context.HttpContext.RequestServices.CreateScope();
+            var validator = scope.ServiceProvider.GetRequiredService<ITenantAccessValidator>();
+            var isAllowed = validator.IsTenantAllowedAsync(tenantId, context.HttpContext.RequestAborted).GetAwaiter().GetResult();
+            if (!isAllowed)
+            {
+                context.Fail("Tenant is suspended or unavailable.");
+            }
+
+            return Task.CompletedTask;
+        }
+    };
+})
+.AddJwtBearer(PlatformAuthConstants.PlatformScheme, options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = platformJwtSettings["Issuer"],
+        ValidAudience = platformJwtSettings["Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(platformJwtKey)
+    };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = context =>
+        {
+            var scope = context.Principal?.Claims.FirstOrDefault(c => c.Type == "token_scope")?.Value;
+            if (!string.Equals(scope, "platform", StringComparison.Ordinal))
+            {
+                context.Fail("Platform JWT requires token_scope=platform.");
             }
 
             return Task.CompletedTask;
@@ -171,6 +235,27 @@ builder.Services.AddAuthorization(options =>
 
     options.AddPolicy("manage_whatsapp",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_whatsapp")));
+
+    options.AddPolicy(PlatformAuthConstants.PolicyOwner, policy =>
+    {
+        policy.AddAuthenticationSchemes(PlatformAuthConstants.PlatformScheme);
+        policy.RequireAuthenticatedUser();
+        policy.RequireRole("Owner");
+    });
+
+    options.AddPolicy(PlatformAuthConstants.PolicyAdminOrOwner, policy =>
+    {
+        policy.AddAuthenticationSchemes(PlatformAuthConstants.PlatformScheme);
+        policy.RequireAuthenticatedUser();
+        policy.RequireRole("Owner", "PlatformAdmin");
+    });
+
+    options.AddPolicy(PlatformAuthConstants.PolicySupportOrAbove, policy =>
+    {
+        policy.AddAuthenticationSchemes(PlatformAuthConstants.PlatformScheme);
+        policy.RequireAuthenticatedUser();
+        policy.RequireRole("Owner", "PlatformAdmin", "Support");
+    });
 });
 
 builder.Services.AddControllers();
@@ -181,14 +266,24 @@ builder.Services.AddSwaggerGen(options =>
     options.SwaggerDoc("v1", new() { Title = "Clienta API", Version = "v1" });
 
     // ?? JWT Authentication
-    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("TenantBearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
     {
         Name = "Authorization",
         Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-        Description = "Enter JWT token like: Bearer {your token}"
+        Description = "Tenant JWT: Bearer {token}"
+    });
+
+    options.AddSecurityDefinition("PlatformBearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Platform JWT: Bearer {token}"
     });
 
     options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
@@ -199,7 +294,18 @@ builder.Services.AddSwaggerGen(options =>
                 Reference = new Microsoft.OpenApi.Models.OpenApiReference
                 {
                     Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
+                    Id = "TenantBearer"
+                }
+            },
+            new string[] {}
+        },
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "PlatformBearer"
                 }
             },
             new string[] {}

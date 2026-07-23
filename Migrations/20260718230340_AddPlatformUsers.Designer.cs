@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260718230340_AddPlatformUsers")]
+    partial class AddPlatformUsers
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -755,70 +758,6 @@ namespace Clienta.Api.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Permissions");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.PlatformSettings", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("AllowRegistrations")
-                        .HasColumnType("boolean");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DefaultTrialDays")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("EnableBilling")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("EnableHelpCenter")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("ProAnnualPrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("ProDescription")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("ProDisplayOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("ProEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("ProMonthlyPrice")
-                        .HasColumnType("numeric");
-
-                    b.Property<bool>("RequireManualApproval")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("SupportEmail")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SupportPhone")
-                        .HasColumnType("text");
-
-                    b.Property<int>("TrialReminderDays")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("WebsiteUrl")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("WhatsAppEnabled")
-                        .HasColumnType("boolean");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("PlatformSettings");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.PlatformUser", b =>

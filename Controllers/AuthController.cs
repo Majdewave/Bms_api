@@ -21,6 +21,9 @@ public class AuthController : ControllerBase
     private readonly ILogger<AuthController> _logger;
     private readonly ResetRateLimiter _rateLimiter;
     private readonly IEmailService _emailService;
+    private readonly IOnboardingLocalizationService _onboardingLocalization;
+    private readonly ITenantApprovalService _tenantApprovalService;
+    private readonly IConfiguration _configuration;
 
     public AuthController(
         AppDbContext context,
@@ -28,7 +31,10 @@ public class AuthController : ControllerBase
         IAuthService authService,
         ILogger<AuthController> logger,
         ResetRateLimiter rateLimiter,
-        IEmailService emailService)
+        IEmailService emailService,
+        IOnboardingLocalizationService onboardingLocalization,
+        ITenantApprovalService tenantApprovalService,
+        IConfiguration configuration)
     {
         _context = context;
         _jwtService = jwtService;
@@ -36,6 +42,9 @@ public class AuthController : ControllerBase
         _logger = logger;
         _rateLimiter = rateLimiter;
         _emailService = emailService;
+        _onboardingLocalization = onboardingLocalization;
+        _tenantApprovalService = tenantApprovalService;
+        _configuration = configuration;
     }
 
     [HttpPost("register")]
@@ -44,15 +53,90 @@ public class AuthController : ControllerBase
     {
         try
         {
+            var language = _onboardingLocalization.ResolveLanguage(request.Language, Request.Headers["Accept-Language"].ToString());
+
+            if (string.IsNullOrWhiteSpace(request.BusinessName))
+            {
+                return BadRequest(new
+                {
+                    code = "BUSINESS_NAME_REQUIRED",
+                    message = _onboardingLocalization.GetMessage("BUSINESS_NAME_REQUIRED", language),
+                    field = "businessName"
+                });
+            }
+
             if (string.IsNullOrWhiteSpace(request.FullName))
             {
                 return BadRequest(new
                 {
                     code = "FULL_NAME_REQUIRED",
-                    message = "Full name is required",
+                    message = _onboardingLocalization.GetMessage("FULL_NAME_REQUIRED", language),
                     field = "fullName"
                 });
             }
+
+            if (string.IsNullOrWhiteSpace(request.Email))
+            {
+                return BadRequest(new
+                {
+                    code = "EMAIL_REQUIRED",
+                    message = _onboardingLocalization.GetMessage("EMAIL_REQUIRED", language),
+                    field = "email"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Phone))
+            {
+                return BadRequest(new
+                {
+                    code = "PHONE_REQUIRED",
+                    message = _onboardingLocalization.GetMessage("PHONE_REQUIRED", language),
+                    field = "phone"
+                });
+            }
+
+            var normalizedPhone = request.Phone.Trim();
+            var phoneDigits = new string(normalizedPhone.Where(char.IsDigit).ToArray());
+            if (phoneDigits.Length < 7 || phoneDigits.Length > 15 || !System.Text.RegularExpressions.Regex.IsMatch(normalizedPhone, @"^\+?[0-9()\-\s.]{7,20}$"))
+            {
+                return BadRequest(new
+                {
+                    code = "PHONE_INVALID",
+                    message = _onboardingLocalization.GetMessage("PHONE_INVALID", language),
+                    field = "phone"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Password))
+            {
+                return BadRequest(new
+                {
+                    code = "PASSWORD_REQUIRED",
+                    message = _onboardingLocalization.GetMessage("PASSWORD_REQUIRED", language),
+                    field = "password"
+                });
+            }
+
+            if (request.Password.Length < 6)
+            {
+                return BadRequest(new
+                {
+                    code = "PASSWORD_TOO_SHORT",
+                    message = _onboardingLocalization.GetMessage("PASSWORD_TOO_SHORT", language),
+                    field = "password"
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ConfirmPassword) || request.Password != request.ConfirmPassword)
+            {
+                return BadRequest(new
+                {
+                    code = "PASSWORDS_DO_NOT_MATCH",
+                    message = _onboardingLocalization.GetMessage("PASSWORDS_DO_NOT_MATCH", language),
+                    field = "confirmPassword"
+                });
+            }
+
             var normalizedEmail = request.Email.Trim().ToLower();
 
             var existingUser = await _context.Users
@@ -63,7 +147,7 @@ public class AuthController : ControllerBase
                 return BadRequest(new
                 {
                     code = "USER_ALREADY_EXISTS",
-                    message = "User with this email already exists",
+                    message = _onboardingLocalization.GetMessage("USER_ALREADY_EXISTS", language),
                     field = "email"
                 });
             }
@@ -81,9 +165,24 @@ public class AuthController : ControllerBase
                 return BadRequest(new
                 {
                     code = "BUSINESS_ALREADY_EXISTS",
-                    message = "Business name already taken",
+                    message = _onboardingLocalization.GetMessage("BUSINESS_ALREADY_EXISTS", language),
                     field = "businessName"
                 });
+            }
+
+            DateTime? registrationLocal = null;
+            var registrationUtc = DateTime.UtcNow;
+            if (!string.IsNullOrWhiteSpace(request.TimeZoneId))
+            {
+                try
+                {
+                    var tz = TimeZoneInfo.FindSystemTimeZoneById(request.TimeZoneId);
+                    registrationLocal = TimeZoneInfo.ConvertTimeFromUtc(registrationUtc, tz);
+                }
+                catch
+                {
+                    registrationLocal = null;
+                }
             }
 
 
@@ -91,12 +190,15 @@ public class AuthController : ControllerBase
             {
                 Id = Guid.NewGuid(),
                 Name = request.BusinessName,
+                Phone = normalizedPhone,
                 Subdomain = subdomain,
                 Plan = PlanType.Trial,
-                SubscriptionStatus = SubscriptionStatus.Trialing,
-                TrialEndsAt = DateTime.UtcNow.AddDays(7),
+                SubscriptionStatus = SubscriptionStatus.PendingApproval,
+                PreferredLanguage = language,
+                TrialStartsAt = null,
+                TrialEndsAt = null,
                 IsSuspended = false,
-                CreatedAt = DateTime.UtcNow,
+                CreatedAt = registrationUtc,
             };
 
             _context.Tenants.Add(tenant);
@@ -130,15 +232,8 @@ public class AuthController : ControllerBase
             {
                 await _emailService.SendEmailAsync(
                     "mjd.salman@gmail.com",
-                    "🎉 New Clienta Trial Registration",
-                    $@"
-                    <h2>New Trial Registration</h2>
-
-                    <p><strong>Business:</strong> {tenant.Name}</p>
-                    <p><strong>Email:</strong> {user.Email}</p>
-                    <p><strong>Full Name:</strong> {user.FullName}</p>
-                    <p><strong>Tenant Id:</strong> {tenant.Id}</p>
-                     "
+                    "🎉 New Clienta Registration (Pending Approval)",
+                    BuildRegistrationAdminEmail(tenant, user, request, language, registrationUtc, registrationLocal)
                 );
             }
             catch (Exception ex)
@@ -147,28 +242,27 @@ public class AuthController : ControllerBase
             }
 
 
-            var token = _jwtService.GenerateToken(user, tenant.Id);
-
-            // Return user object in the same format as Login
-            var permissions = await _context.UserPermissions
-                .Where(p => p.UserId == user.Id)
-                .Select(p => p.Permission.Key)
-                .ToListAsync();
+            try
+            {
+                var emailLanguage = _onboardingLocalization.ResolveLanguage(tenant.PreferredLanguage, Request.Headers["Accept-Language"].ToString());
+                var customerWelcome = _onboardingLocalization.BuildPendingApprovalWelcomeEmail(emailLanguage, user.FullName ?? string.Empty);
+                await _emailService.SendEmailAsync(
+                    user.Email,
+                    customerWelcome.Subject,
+                    customerWelcome.HtmlBody
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed sending pending-approval welcome email");
+            }
 
             return Ok(new
             {
-                token = token,
-                user = new
-                {
-                    id = user.Id,
-                    email = user.Email,
-                    name = user.FullName,
-                    role = user.Role,
-                    businessId = user.TenantId,
-                    permissions = permissions,
-                    stampUrl = user.StampUrl,
-                    useStamp = user.UseStamp
-                }
+                success = true,
+                message = _onboardingLocalization.GetMessage("REGISTER_PENDING_APPROVAL_SUCCESS", language),
+                status = "PendingApproval",
+                tenantId = tenant.Id
             });
         }
         catch (DbUpdateException ex)
@@ -215,6 +309,31 @@ public class AuthController : ControllerBase
                 message = "Email or password is incorrect"
             });
 
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(t => t.Id == user.TenantId);
+
+        if (tenant != null && tenant.IsSuspended)
+        {
+            var language = _onboardingLocalization.ResolveLanguage(tenant.PreferredLanguage, Request.Headers["Accept-Language"].ToString());
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                code = "ACCOUNT_SUSPENDED",
+                message = _onboardingLocalization.GetMessage("ACCOUNT_SUSPENDED", language)
+            });
+        }
+
+        if (tenant != null && tenant.SubscriptionStatus == SubscriptionStatus.PendingApproval)
+        {
+            var language = _onboardingLocalization.ResolveLanguage(tenant.PreferredLanguage, Request.Headers["Accept-Language"].ToString());
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                code = "ACCOUNT_PENDING_APPROVAL",
+                message = _onboardingLocalization.GetMessage("PENDING_APPROVAL_LOGIN", language)
+            });
+        }
+
         user.LastLoginAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
 
@@ -238,6 +357,54 @@ public class AuthController : ControllerBase
                 useStamp = user.UseStamp
             }
         });
+    }
+
+    [AllowAnonymous]
+    [HttpPost("approve-tenant/{tenantId:guid}")]
+    public async Task<IActionResult> ApproveTenant(
+        Guid tenantId,
+        [FromHeader(Name = "X-Approval-Key")] string? approvalKey,
+        CancellationToken cancellationToken)
+    {
+        var configuredApprovalKey = _configuration["Onboarding:ApprovalApiKey"];
+
+        if (string.IsNullOrWhiteSpace(configuredApprovalKey))
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                code = "APPROVAL_NOT_CONFIGURED",
+                message = "Approval endpoint is not configured."
+            });
+        }
+
+        if (string.IsNullOrWhiteSpace(approvalKey) || approvalKey != configuredApprovalKey)
+        {
+            return Unauthorized(new
+            {
+                code = "INVALID_APPROVAL_KEY",
+                message = "Invalid approval key."
+            });
+        }
+
+        try
+        {
+            await _tenantApprovalService.ApproveTenantAsync(tenantId, cancellationToken);
+
+            return Ok(new
+            {
+                success = true,
+                status = SubscriptionStatus.Trialing.ToString(),
+                tenantId
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new
+            {
+                code = "APPROVAL_INVALID_STATE",
+                message = ex.Message
+            });
+        }
     }
 
     /// <summary>
@@ -415,6 +582,35 @@ public class AuthController : ControllerBase
     private string HashPassword(string password)
     {
         return BCrypt.Net.BCrypt.HashPassword(password);
+    }
+
+    private static string BuildRegistrationAdminEmail(
+        Tenant tenant,
+        User user,
+        RegisterRequest request,
+        string preferredLanguage,
+        DateTime registrationUtc,
+        DateTime? registrationLocal)
+    {
+        var localSection = registrationLocal.HasValue
+            ? $"<p><strong>Registration Date & Time (Local):</strong> {registrationLocal.Value:yyyy-MM-dd HH:mm:ss}</p>"
+            : string.Empty;
+
+        return $@"
+            <h2>New Clienta Registration Received</h2>
+            <p><strong>Business Name:</strong> {tenant.Name}</p>
+            <p><strong>Owner:</strong> {user.FullName}</p>
+            <p><strong>Phone:</strong> {(string.IsNullOrWhiteSpace(tenant.Phone) ? "N/A" : tenant.Phone)}</p>
+            <p><strong>Email:</strong> {user.Email}</p>
+            <p><strong>Preferred Language:</strong> {preferredLanguage}</p>
+            <p><strong>Business Type:</strong> {(string.IsNullOrWhiteSpace(request.BusinessType) ? "N/A" : request.BusinessType)}</p>
+            <p><strong>Registration Date & Time (UTC):</strong> {registrationUtc:yyyy-MM-dd HH:mm:ss} UTC</p>
+            {localSection}
+            <p><strong>Tenant Id:</strong> {tenant.Id}</p>
+            <p><strong>Subdomain:</strong> {tenant.Subdomain}</p>
+            <p><strong>Trial Plan:</strong> {tenant.Plan} (starts after approval)</p>
+            <p><strong>Status:</strong> {tenant.SubscriptionStatus}</p>
+        ";
     }
 }
 

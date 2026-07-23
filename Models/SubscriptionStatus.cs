@@ -10,5 +10,6 @@ public enum SubscriptionStatus
     PastDue = 2,
     GracePeriod = 3,
     Canceled = 4,
-    Unpaid = 5
+    Unpaid = 5,
+    PendingApproval = 6
 }
