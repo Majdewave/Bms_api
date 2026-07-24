@@ -27,19 +27,22 @@ public class AppointmentsController : ControllerBase
     private readonly IDepartmentAccessService _departmentAccessService;
     private readonly IPlanEnforcementService _planEnforcement;
     private readonly IHubContext<AppointmentsHub> _hubContext;
+    private readonly IHubContext<QueueDisplayHub> _queueDisplayHubContext;
 
     public AppointmentsController(
         AppDbContext context,
         ITenantContext tenant,
         IDepartmentAccessService departmentAccessService,
         IPlanEnforcementService planEnforcement,
-        IHubContext<AppointmentsHub> hubContext)
+        IHubContext<AppointmentsHub> hubContext,
+        IHubContext<QueueDisplayHub> queueDisplayHubContext)
     {
         _context = context;
         _tenant = tenant;
         _departmentAccessService = departmentAccessService;
         _planEnforcement = planEnforcement;
         _hubContext = hubContext;
+        _queueDisplayHubContext = queueDisplayHubContext;
     }
 
     // GET /appointments/queue
@@ -299,6 +302,7 @@ public class AppointmentsController : ControllerBase
         await _context.SaveChangesAsync();
 
         await _hubContext.Clients.Group(_tenant.TenantId.ToString()).SendAsync("AppointmentUpdated");
+        await BroadcastQueueDisplayUpdateAsync();
 
         var createdAppointment = await _context.Appointments
             .Include(a => a.Client)
@@ -482,6 +486,7 @@ public class AppointmentsController : ControllerBase
 
         await _context.SaveChangesAsync();
         await _hubContext.Clients.Group(_tenant.TenantId.ToString()).SendAsync("AppointmentUpdated");
+        await BroadcastQueueDisplayUpdateAsync();
 
         var updatedAppointment = await _context.Appointments
             .Include(a => a.Client)
@@ -512,6 +517,8 @@ public class AppointmentsController : ControllerBase
 
         _context.Appointments.Remove(appointment);
         await _context.SaveChangesAsync();
+
+        await BroadcastQueueDisplayUpdateAsync();
 
         return NoContent();
     }
@@ -669,6 +676,7 @@ public class AppointmentsController : ControllerBase
 
         await _hubContext.Clients.Group(_tenant.TenantId.ToString())
             .SendAsync("WaitingQueueReordered");
+        await BroadcastQueueDisplayUpdateAsync();
 
         return NoContent();
     }
@@ -756,5 +764,12 @@ public class AppointmentsController : ControllerBase
             return true;
 
         return departmentIds.Contains(serviceDepartmentId.Value);
+    }
+
+    private async Task BroadcastQueueDisplayUpdateAsync()
+    {
+        await _queueDisplayHubContext.Clients
+            .Group(QueueDisplayHub.GetGroupName(_tenant.TenantId))
+            .SendAsync("QueueDisplayUpdated");
     }
 }

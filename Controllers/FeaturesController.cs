@@ -43,7 +43,8 @@ public class FeaturesController : ControllerBase
             features.DrugsEnabled,
             features.BeforeAfterPhotosEnabled,
             features.VisitSummariesEnabled,
-            features.TeamChatEnabled
+            features.TeamChatEnabled,
+            features.QueueDisplayEnabled
         );
         return Ok(dto);
     }
@@ -75,6 +76,7 @@ public class FeaturesController : ControllerBase
         features.BeforeAfterPhotosEnabled = request.BeforeAfterPhotosEnabled;
         features.VisitSummariesEnabled = request.VisitSummariesEnabled;
         features.TeamChatEnabled = request.TeamChatEnabled;
+        features.QueueDisplayEnabled = request.QueueDisplayEnabled;
 
         await _context.SaveChangesAsync();
 

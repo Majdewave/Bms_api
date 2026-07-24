@@ -4,6 +4,10 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <DisableBuildCompression>true</DisableBuildCompression>
+    <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
+    <StaticWebAssetFingerprintingEnabled>false</StaticWebAssetFingerprintingEnabled>
   </PropertyGroup>
 
 	

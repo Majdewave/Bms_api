@@ -36,7 +36,8 @@ public class FeatureService : IFeatureService
                 PrescriptionsEnabled = false,
                 DrugsEnabled = false,
                 BeforeAfterPhotosEnabled = true,
-                TeamChatEnabled = false
+                TeamChatEnabled = false,
+                QueueDisplayEnabled = false
             };
         }
 
@@ -56,7 +57,8 @@ public class FeatureService : IFeatureService
             PrescriptionsEnabled = false,
             DrugsEnabled = false,
             BeforeAfterPhotosEnabled = true,
-            TeamChatEnabled = false
+            TeamChatEnabled = false,
+            QueueDisplayEnabled = false
         };
 
         _db.TenantFeatures.Add(features);
@@ -85,6 +87,9 @@ public class FeatureService : IFeatureService
             "before_after_photos" => features.BeforeAfterPhotosEnabled,
             "teamchat" => features.TeamChatEnabled,
             "team_chat" => features.TeamChatEnabled,
+            "queuedisplay" => features.QueueDisplayEnabled,
+            "queue_display" => features.QueueDisplayEnabled,
+            "queuedisplayenabled" => features.QueueDisplayEnabled,
             _ => true
         };
     }

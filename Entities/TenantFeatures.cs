@@ -12,6 +12,7 @@ public class TenantFeatures : ITenantEntity
     public bool BeforeAfterPhotosEnabled { get; set; } = false;
     public bool VisitSummariesEnabled { get; set; } = false;
     public bool TeamChatEnabled { get; set; } = false;
+    public bool QueueDisplayEnabled { get; set; } = false;
 
     public virtual Tenant Tenant { get; set; } = default!;
 }

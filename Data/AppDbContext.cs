@@ -47,6 +47,7 @@ public class AppDbContext : DbContext
     public DbSet<ProcessedStripeEvent> ProcessedStripeEvents => Set<ProcessedStripeEvent>();
     public DbSet<Service> Services => Set<Service>();
     public DbSet<TenantFeatures> TenantFeatures => Set<TenantFeatures>();
+    public DbSet<QueueDisplaySettings> QueueDisplaySettings => Set<QueueDisplaySettings>();
     public DbSet<Invoice> Invoices { get; set; } = null!;
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
     public DbSet<Quote> Quotes { get; set; } = null!;
@@ -171,6 +172,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<TenantFeatures>()
             .HasQueryFilter(tf => _tenantContext.TenantId == Guid.Empty || tf.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<QueueDisplaySettings>()
+            .HasQueryFilter(qds => _tenantContext.TenantId == Guid.Empty || qds.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<UserToken>()
             .HasQueryFilter(ut => _tenantContext.TenantId == Guid.Empty || ut.TenantId == _tenantContext.TenantId);
 
@@ -277,6 +281,32 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<TenantFeatures>()
             .Property(tf => tf.TeamChatEnabled)
             .HasDefaultValue(false);
+
+        modelBuilder.Entity<TenantFeatures>()
+            .Property(tf => tf.QueueDisplayEnabled)
+            .HasDefaultValue(false);
+
+        modelBuilder.Entity<QueueDisplaySettings>()
+            .HasIndex(qds => qds.TenantId)
+            .IsUnique();
+
+        modelBuilder.Entity<QueueDisplaySettings>()
+            .HasIndex(qds => qds.PublicToken)
+            .IsUnique();
+
+        modelBuilder.Entity<QueueDisplaySettings>()
+            .Property(qds => qds.PrivacyMode)
+            .HasDefaultValue(QueueDisplayPrivacyMode.FullName);
+
+        modelBuilder.Entity<QueueDisplaySettings>()
+            .Property(qds => qds.Theme)
+            .HasDefaultValue(QueueDisplayTheme.Default);
+
+        modelBuilder.Entity<QueueDisplaySettings>()
+            .HasOne(qds => qds.Tenant)
+            .WithMany()
+            .HasForeignKey(qds => qds.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ClientTreatmentPhoto>()
             .HasOne(p => p.Client)

@@ -8,7 +8,8 @@ public record UpdateTenantFeaturesRequest(
     bool DrugsEnabled,
     bool BeforeAfterPhotosEnabled,
     bool VisitSummariesEnabled,
-    bool TeamChatEnabled
+    bool TeamChatEnabled,
+    bool QueueDisplayEnabled
 );
 
 public record EffectiveDepartmentFeaturesResponse(

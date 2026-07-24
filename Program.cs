@@ -84,6 +84,7 @@ builder.Services.AddScoped<IPlatformTenantManagementService, PlatformTenantManag
 builder.Services.AddScoped<IPlatformDashboardService, PlatformDashboardService>();
 builder.Services.AddScoped<IPlatformUserManagementService, PlatformUserManagementService>();
 builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
+builder.Services.AddScoped<IQueueDisplayService, QueueDisplayService>();
 
 builder.Services.AddScoped<DashboardService>();
 builder.Services.Configure<MetaWhatsAppOptions>(builder.Configuration.GetSection("WhatsApp"));
@@ -409,6 +410,7 @@ app.MapControllers();
 // SignalR Hubs
 app.MapHub<AppointmentsHub>("/hubs/appointments");
 app.MapHub<TeamChatHub>("/hubs/team-chat");
+app.MapHub<QueueDisplayHub>("/hubs/queue-display");
 app.MapFallbackToFile("index.html");
 
 app.Run();

@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723210120_AddQueueDisplayInfrastructure")]
+    partial class AddQueueDisplayInfrastructure
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -930,13 +933,13 @@ namespace Clienta.Api.Migrations
                     b.Property<string>("AdvertisementImageUrl")
                         .HasColumnType("text");
 
-                    b.Property<string>("LogoOverrideUrl")
+                    b.Property<string>("LogoUrl")
                         .HasColumnType("text");
 
-                    b.Property<int>("PrivacyMode")
+                    b.Property<bool>("PrivacyMode")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("PublicToken")
                         .IsRequired()
@@ -945,16 +948,14 @@ namespace Clienta.Api.Migrations
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
 
-                    b.Property<int>("Theme")
+                    b.Property<string>("Theme")
+                        .IsRequired()
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
+                        .HasColumnType("text")
+                        .HasDefaultValue("default");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("VoiceSettingsJson")
-                        .HasColumnType("text");
 
                     b.HasKey("Id");
 
