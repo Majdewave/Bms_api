@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260802184735_AddQueueDisplayAdvertisementVideoSupport")]
+    partial class AddQueueDisplayAdvertisementVideoSupport
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -235,9 +238,7 @@ namespace Clienta.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "IdNumber")
-                        .IsUnique()
-                        .HasFilter("\"IdNumber\" IS NOT NULL AND btrim(\"IdNumber\") <> ''");
+                    b.HasIndex("TenantId");
 
                     b.ToTable("Clients");
                 });
@@ -921,37 +922,6 @@ namespace Clienta.Api.Migrations
                     b.HasKey("EventId");
 
                     b.ToTable("ProcessedStripeEvents");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.QueueDisplayAdvertisementImage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("DisplayOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("ImageUrl")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("QueueDisplaySettingsId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("QueueDisplaySettingsId");
-
-                    b.HasIndex("TenantId", "QueueDisplaySettingsId", "DisplayOrder");
-
-                    b.ToTable("QueueDisplayAdvertisementImages");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.QueueDisplaySettings", b =>
@@ -2032,17 +2002,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.QueueDisplayAdvertisementImage", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.QueueDisplaySettings", "QueueDisplaySettings")
-                        .WithMany("AdvertisementImages")
-                        .HasForeignKey("QueueDisplaySettingsId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("QueueDisplaySettings");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.QueueDisplaySettings", b =>
                 {
                     b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
@@ -2198,11 +2157,6 @@ namespace Clienta.Api.Migrations
             modelBuilder.Entity("Clienta.Api.Entities.Invoice", b =>
                 {
                     b.Navigation("LineItems");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.QueueDisplaySettings", b =>
-                {
-                    b.Navigation("AdvertisementImages");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Quote", b =>

@@ -37,3 +37,9 @@ public record ClientResponse(
     bool IsNotDocumented
 );
 
+public record DuplicateClientIdNumberCheckResponse(
+    bool Exists,
+    Guid? ClientId,
+    string? ClientName
+);
+

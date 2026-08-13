@@ -48,6 +48,7 @@ public class AppDbContext : DbContext
     public DbSet<Service> Services => Set<Service>();
     public DbSet<TenantFeatures> TenantFeatures => Set<TenantFeatures>();
     public DbSet<QueueDisplaySettings> QueueDisplaySettings => Set<QueueDisplaySettings>();
+    public DbSet<QueueDisplayAdvertisementImage> QueueDisplayAdvertisementImages => Set<QueueDisplayAdvertisementImage>();
     public DbSet<Invoice> Invoices { get; set; } = null!;
     public DbSet<InvoiceLineItem> InvoiceLineItems { get; set; } = null!;
     public DbSet<Quote> Quotes { get; set; } = null!;
@@ -175,6 +176,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<QueueDisplaySettings>()
             .HasQueryFilter(qds => _tenantContext.TenantId == Guid.Empty || qds.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<QueueDisplayAdvertisementImage>()
+            .HasQueryFilter(ad => _tenantContext.TenantId == Guid.Empty || ad.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<UserToken>()
             .HasQueryFilter(ut => _tenantContext.TenantId == Guid.Empty || ut.TenantId == _tenantContext.TenantId);
 
@@ -186,6 +190,11 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Department>()
             .HasIndex(d => new { d.TenantId, d.Name })
             .IsUnique();
+
+        modelBuilder.Entity<Client>()
+            .HasIndex(c => new { c.TenantId, c.IdNumber })
+            .IsUnique()
+            .HasFilter("\"IdNumber\" IS NOT NULL AND btrim(\"IdNumber\") <> ''");
 
         modelBuilder.Entity<Department>()
             .HasOne(d => d.Tenant)
@@ -303,9 +312,22 @@ public class AppDbContext : DbContext
             .HasDefaultValue(QueueDisplayTheme.Default);
 
         modelBuilder.Entity<QueueDisplaySettings>()
+            .Property(qds => qds.AdvertisementType)
+            .HasDefaultValue(QueueDisplayAdvertisementType.Image);
+
+        modelBuilder.Entity<QueueDisplaySettings>()
             .HasOne(qds => qds.Tenant)
             .WithMany()
             .HasForeignKey(qds => qds.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<QueueDisplayAdvertisementImage>()
+            .HasIndex(ad => new { ad.TenantId, ad.QueueDisplaySettingsId, ad.DisplayOrder });
+
+        modelBuilder.Entity<QueueDisplayAdvertisementImage>()
+            .HasOne(ad => ad.QueueDisplaySettings)
+            .WithMany(qds => qds.AdvertisementImages)
+            .HasForeignKey(ad => ad.QueueDisplaySettingsId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ClientTreatmentPhoto>()

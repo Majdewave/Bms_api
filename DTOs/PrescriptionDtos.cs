@@ -58,3 +58,27 @@ public class PrescriptionResponse
     [JsonPropertyName("staffStampUrl")]
     public string? StaffStampUrl { get; set; }
 }
+
+public class UpdatePrescriptionRequest
+{
+    [JsonPropertyName("clientId")]
+    public Guid ClientId { get; set; }
+
+    [JsonPropertyName("staffId")]
+    public Guid? StaffId { get; set; }
+
+    [JsonPropertyName("date")]
+    public DateTime Date { get; set; }
+
+    [JsonPropertyName("drugs")]
+    public List<string> Drugs { get; set; } = new();
+
+    [JsonPropertyName("instructions")]
+    public string? Instructions { get; set; }
+
+    [JsonPropertyName("doctorName")]
+    public string? DoctorName { get; set; }
+
+    [JsonPropertyName("notes")]
+    public string? Notes { get; set; }
+}

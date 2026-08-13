@@ -140,13 +140,20 @@ public class QueueDisplayService : IQueueDisplayService
 
         var waitingCount = queueRows.Count(a => a.Status == AppointmentStatuses.Waiting);
         var generatedAt = DateTime.UtcNow;
+        var advertisementImages = await _db.QueueDisplayAdvertisementImages
+            .AsNoTracking()
+            .Where(ad => ad.TenantId == tenantId && ad.QueueDisplaySettingsId == settings.Id)
+            .OrderBy(ad => ad.DisplayOrder)
+            .ThenBy(ad => ad.CreatedAt)
+            .Select(ad => new QueueDisplayAdvertisementImageDto(ad.Id, ad.ImageUrl, ad.DisplayOrder))
+            .ToListAsync(cancellationToken);
 
         return new QueueDisplayDto(
             businessName ?? "Clienta",
             settings.LogoOverrideUrl ?? tenantLogoUrl,
             settings.Theme,
             settings.PrivacyMode,
-            settings.AdvertisementImageUrl,
+            advertisementImages,
             waitingCount,
             ToQueuePatient(inProgress, settings.PrivacyMode),
             ToQueuePatient(nextWaiting, settings.PrivacyMode),

@@ -14,7 +14,7 @@ public record QueueDisplayDto(
     string? LogoUrl,
     QueueDisplayTheme Theme,
     QueueDisplayPrivacyMode PrivacyMode,
-    string? AdvertisementImageUrl,
+    IReadOnlyList<QueueDisplayAdvertisementImageDto> AdvertisementImages,
     int WaitingCount,
     QueueDisplayPatientDto? Current,
     QueueDisplayPatientDto? Next,
@@ -23,12 +23,18 @@ public record QueueDisplayDto(
     DateTime GeneratedAtUtc
 );
 
+public record QueueDisplayAdvertisementImageDto(
+    Guid Id,
+    string ImageUrl,
+    int DisplayOrder
+);
+
 public record QueueDisplaySettingsDto(
     string PublicToken,
     QueueDisplayPrivacyMode PrivacyMode,
     QueueDisplayTheme Theme,
     string? LogoOverrideUrl,
-    string? AdvertisementImageUrl
+    IReadOnlyList<QueueDisplayAdvertisementImageDto> AdvertisementImages
 );
 
 public record QueueDisplayAccessLinkDto(
@@ -38,6 +44,5 @@ public record QueueDisplayAccessLinkDto(
 public record UpdateQueueDisplaySettingsRequest(
     QueueDisplayPrivacyMode PrivacyMode,
     QueueDisplayTheme Theme,
-    string? LogoOverrideUrl,
-    string? AdvertisementImageUrl
+    string? LogoOverrideUrl
 );

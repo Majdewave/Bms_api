@@ -15,6 +15,8 @@ public class ClientsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenantContext;
+    private const string DuplicateIdNumberCode = "DUPLICATE_CLIENT_ID_NUMBER";
+    private const string DuplicateIdNumberMessage = "A client with this ID number already exists.";
 
 
     public ClientsController(AppDbContext context, ITenantContext tenantContext)
@@ -23,12 +25,37 @@ public class ClientsController : ControllerBase
         _tenantContext = tenantContext;
     }
 
+    private static string? NormalizeIdNumber(string? idNumber)
+    {
+        if (string.IsNullOrWhiteSpace(idNumber))
+        {
+            return null;
+        }
+
+        return idNumber.Trim();
+    }
+
     // GET /api/clients
     [Authorize(Policy = "view_clients")]
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] string? searchTerm = null)
     {
-        var clients = await _context.Clients
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var clientsQuery = _context.Clients
+            .Where(c => c.TenantId == _tenantContext.TenantId);
+
+        var normalizedSearch = searchTerm?.Trim();
+        if (!string.IsNullOrWhiteSpace(normalizedSearch))
+        {
+            clientsQuery = clientsQuery.Where(c =>
+                EF.Functions.ILike(c.FullName, $"%{normalizedSearch}%") ||
+                (c.IdNumber != null && EF.Functions.ILike(c.IdNumber, $"%{normalizedSearch}%"))
+            );
+        }
+
+        var clients = await clientsQuery
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new ClientResponse(
             c.Id,
@@ -86,6 +113,36 @@ public class ClientsController : ControllerBase
         return Ok(client);
     }
 
+    [Authorize(Policy = "manage_clients")]
+    [HttpGet("check-id-number")]
+    public async Task<IActionResult> CheckDuplicateIdNumber([FromQuery] string? idNumber, [FromQuery] Guid? excludeClientId)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var normalizedIdNumber = NormalizeIdNumber(idNumber);
+        if (normalizedIdNumber is null)
+        {
+            return Ok(new DuplicateClientIdNumberCheckResponse(false, null, null));
+        }
+
+        var duplicateClient = await _context.Clients
+            .Where(c =>
+                c.TenantId == _tenantContext.TenantId &&
+                c.IdNumber != null &&
+                c.IdNumber.Trim() == normalizedIdNumber &&
+                (!excludeClientId.HasValue || c.Id != excludeClientId.Value))
+            .OrderBy(c => c.CreatedAt)
+            .Select(c => new { c.Id, c.FullName })
+            .FirstOrDefaultAsync();
+
+        return Ok(new DuplicateClientIdNumberCheckResponse(
+            duplicateClient != null,
+            duplicateClient?.Id,
+            duplicateClient?.FullName
+        ));
+    }
+
     // POST /api/clients
     [Authorize(Policy = "manage_clients")]
     [HttpPost]
@@ -94,12 +151,34 @@ public class ClientsController : ControllerBase
         if (_tenantContext.TenantId == Guid.Empty)
             return Unauthorized("Tenant not resolved");
 
+        var normalizedIdNumber = NormalizeIdNumber(request.IdNumber);
+
+        if (normalizedIdNumber is not null)
+        {
+            var duplicateClient = await _context.Clients
+                .Where(c => c.TenantId == _tenantContext.TenantId && c.IdNumber != null && c.IdNumber.Trim() == normalizedIdNumber)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new { c.Id, c.FullName })
+                .FirstOrDefaultAsync();
+
+            if (duplicateClient != null)
+            {
+                return Conflict(new
+                {
+                    code = DuplicateIdNumberCode,
+                    message = DuplicateIdNumberMessage,
+                    clientId = duplicateClient.Id,
+                    clientName = duplicateClient.FullName
+                });
+            }
+        }
+
         var client = new Client
         {
             Id = Guid.NewGuid(),
             TenantId = _tenantContext.TenantId,
             FullName = request.FullName,
-            IdNumber = request.IdNumber,
+            IdNumber = normalizedIdNumber,
             BirthDate = request.BirthDate.HasValue
                         ? DateTime.SpecifyKind(request.BirthDate.Value, DateTimeKind.Utc)
                         : null,
@@ -138,8 +217,35 @@ public class ClientsController : ControllerBase
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Id == id);
         if (client == null)
             return NotFound();
+
+        var normalizedIdNumber = NormalizeIdNumber(request.IdNumber);
+
+        if (normalizedIdNumber is not null)
+        {
+            var duplicateClient = await _context.Clients
+                .Where(c =>
+                    c.TenantId == _tenantContext.TenantId &&
+                    c.Id != id &&
+                    c.IdNumber != null &&
+                    c.IdNumber.Trim() == normalizedIdNumber)
+                .OrderBy(c => c.CreatedAt)
+                .Select(c => new { c.Id, c.FullName })
+                .FirstOrDefaultAsync();
+
+            if (duplicateClient != null)
+            {
+                return Conflict(new
+                {
+                    code = DuplicateIdNumberCode,
+                    message = DuplicateIdNumberMessage,
+                    clientId = duplicateClient.Id,
+                    clientName = duplicateClient.FullName
+                });
+            }
+        }
+
         client.FullName = request.FullName;
-        client.IdNumber = request.IdNumber;
+        client.IdNumber = normalizedIdNumber;
         client.BirthDate = request.BirthDate.HasValue
                             ? DateTime.SpecifyKind(request.BirthDate.Value, DateTimeKind.Utc)
                             : null;

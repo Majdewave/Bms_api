@@ -110,6 +110,35 @@ namespace Clienta.Api.Controllers
             return Ok(summaries);
         }
 
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(Guid id)
+        {
+            if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("visitSummariesEnabled"))
+                return Forbid();
+
+            var tenantClaim = User.Claims.FirstOrDefault(c => c.Type == "tenant_id");
+
+            if (tenantClaim == null || !Guid.TryParse(tenantClaim.Value, out var tenantId))
+                return Unauthorized();
+
+            var accessContext = await _departmentAccessService.GetCurrentUserAccessContextAsync();
+
+            var scopedSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
+                _context.VisitSummaries.Where(x => x.Id == id && x.TenantId == tenantId),
+                accessContext);
+
+            var summary = await scopedSummaries.FirstOrDefaultAsync();
+
+            if (summary == null)
+                return NotFound();
+
+            Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
+            Response.Headers.Pragma = "no-cache";
+            Response.Headers.Expires = "0";
+
+            return Ok(summary);
+        }
+
         [HttpGet("{id}/pdf")]
         public async Task<IActionResult> GetPdf(Guid id)
         {

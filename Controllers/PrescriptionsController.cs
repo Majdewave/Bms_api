@@ -132,6 +132,92 @@ public class PrescriptionsController : ControllerBase
         return Ok(response);
     }
 
+    // ✅ GET BY ID
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("prescriptionsEnabled"))
+            return Forbid();
+
+        var prescription = await _context.Prescriptions
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (prescription == null)
+            return NotFound();
+
+        User? staff = null;
+        if (prescription.StaffId.HasValue)
+        {
+            var businessUser = await _context.BusinessUsers
+                .Include(bu => bu.User)
+                .FirstOrDefaultAsync(bu => bu.Id == prescription.StaffId.Value && bu.TenantId == _tenant.TenantId);
+
+            staff = businessUser?.User;
+        }
+
+        return Ok(new PrescriptionResponse
+        {
+            Id = prescription.Id,
+            ClientId = prescription.ClientId,
+            StaffId = prescription.StaffId,
+            Date = prescription.Date,
+            Drugs = prescription.Drugs,
+            Instructions = prescription.Instructions,
+            DoctorName = prescription.DoctorName,
+            Notes = prescription.Notes,
+            CreatedAt = prescription.CreatedAt,
+            StaffStampUrl = staff?.UseStamp == true ? staff.StampUrl : null
+        });
+    }
+
+    // ✅ UPDATE
+    [HttpPut("{id}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdatePrescriptionRequest request)
+    {
+        if (!await _userDepartmentFeatureAccessService.CanCurrentUserAccessFeatureAsync("prescriptionsEnabled"))
+            return Forbid();
+
+        var prescription = await _context.Prescriptions
+            .FirstOrDefaultAsync(p => p.Id == id);
+
+        if (prescription == null)
+            return NotFound();
+
+        prescription.ClientId = request.ClientId;
+        prescription.StaffId = request.StaffId;
+        prescription.Date = request.Date.ToUniversalTime();
+        prescription.Drugs = request.Drugs ?? new List<string>();
+        prescription.Instructions = request.Instructions ?? string.Empty;
+        prescription.DoctorName = request.DoctorName ?? string.Empty;
+        prescription.Notes = request.Notes ?? string.Empty;
+
+        await _context.SaveChangesAsync();
+
+        User? staff = null;
+        if (prescription.StaffId.HasValue)
+        {
+            var businessUser = await _context.BusinessUsers
+                .Include(bu => bu.User)
+                .FirstOrDefaultAsync(bu => bu.Id == prescription.StaffId.Value && bu.TenantId == _tenant.TenantId);
+
+            staff = businessUser?.User;
+        }
+
+        return Ok(new PrescriptionResponse
+        {
+            Id = prescription.Id,
+            ClientId = prescription.ClientId,
+            StaffId = prescription.StaffId,
+            Date = prescription.Date,
+            Drugs = prescription.Drugs,
+            Instructions = prescription.Instructions,
+            DoctorName = prescription.DoctorName,
+            Notes = prescription.Notes,
+            CreatedAt = prescription.CreatedAt,
+            StaffStampUrl = staff?.UseStamp == true ? staff.StampUrl : null
+        });
+    }
+
     // ✅ DELETE
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
