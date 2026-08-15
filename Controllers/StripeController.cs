@@ -19,15 +19,13 @@ public class StripeController : ControllerBase
     private readonly IConfiguration _config;
     private readonly Clienta.Api.Services.TokenService _tokenService;
     private readonly Clienta.Api.Services.IStripeService _stripeService;
-    private readonly IEmailService _emailService;
 
-    public StripeController(AppDbContext context, IConfiguration config, Clienta.Api.Services.TokenService tokenService, Clienta.Api.Services.IStripeService stripeService, IEmailService emailService)
+    public StripeController(AppDbContext context, IConfiguration config, Clienta.Api.Services.TokenService tokenService, Clienta.Api.Services.IStripeService stripeService)
     {
         _context = context;
         _config = config;
         _tokenService = tokenService;
         _stripeService = stripeService;
-        _emailService = emailService;
 
     }
     /// <summary>
@@ -77,85 +75,155 @@ public class StripeController : ControllerBase
     [HttpGet("confirm-session")]
     public async Task<IActionResult> ConfirmSession([FromQuery] string session_id)
     {
+        const int maxRetries = 10;
+        const int retryDelayMs = 2000;
+
         try
         {
             StripeConfiguration.ApiKey = _config["Stripe:SecretKey"];
 
-                if (string.IsNullOrEmpty(session_id))
-                return BadRequest("Missing session_id");
+            if (string.IsNullOrWhiteSpace(session_id))
+            {
+                return BadRequest(new
+                {
+                    error = "missing_session_id",
+                    message = "Missing session_id."
+                });
+            }
 
             var sessionService = new SessionService();
-            var session = await sessionService.GetAsync(session_id);
+            Session? session;
+
+            try
+            {
+                session = await sessionService.GetAsync(session_id);
+            }
+            catch (StripeException ex)
+            {
+                Console.WriteLine($"❌ Stripe session fetch failed for {session_id}: {ex.Message}");
+                return BadRequest(new
+                {
+                    error = "session_not_found",
+                    message = "Session not found."
+                });
+            }
 
             if (session == null)
-                return BadRequest("Session not found");
-
-            if (session.PaymentStatus != "paid")
-                return BadRequest("Payment not completed");
-
-            var customerId = session.CustomerId;
-            Console.WriteLine("CONFIRM customerId: " + customerId);
-
-            if (string.IsNullOrEmpty(customerId))
-                return BadRequest("Missing customerId");
-
-          
-            Tenant? tenant = null; 
-
-            for (int i = 0; i < 10; i++)
             {
-                 tenant = await _context.Tenants
+                return BadRequest(new
+                {
+                    error = "session_not_found",
+                    message = "Session not found."
+                });
+            }
+
+            Console.WriteLine($"ConfirmSession SessionId: {session.Id}");
+            Console.WriteLine($"ConfirmSession PaymentStatus: {session.PaymentStatus}");
+
+            if (!string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest(new
+                {
+                    error = "payment_not_completed",
+                    message = "Payment not completed."
+                });
+            }
+
+            if (session.Metadata == null ||
+                !session.Metadata.TryGetValue("tenant_id", out var tenantIdRaw) ||
+                string.IsNullOrWhiteSpace(tenantIdRaw))
+            {
+                return BadRequest(new
+                {
+                    error = "tenant_metadata_missing",
+                    message = "tenant_id metadata missing from Stripe session."
+                });
+            }
+
+            if (!Guid.TryParse(tenantIdRaw, out var tenantId))
+            {
+                return BadRequest(new
+                {
+                    error = "tenant_metadata_missing",
+                    message = "tenant_id metadata is invalid."
+                });
+            }
+
+            Console.WriteLine($"ConfirmSession TenantId(metadata): {tenantId}");
+
+            Tenant? tenant = null;
+
+            for (int i = 0; i < maxRetries; i++)
+            {
+                tenant = await _context.Tenants
                     .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.StripeCustomerId == customerId);
+                    .FirstOrDefaultAsync(t => t.Id == tenantId);
 
-                if (tenant != null)
+                if (tenant == null)
+                {
                     break;
+                }
 
-                await Task.Delay(1500); // מחכה ל-webhook
+                if (tenant.Plan != PlanType.Trial && tenant.SubscriptionStatus == SubscriptionStatus.Active)
+                {
+                    break;
+                }
+
+                if (i < maxRetries - 1)
+                {
+                    await Task.Delay(retryDelayMs);
+                }
             }
 
             if (tenant == null)
-                return BadRequest("Tenant not found (webhook not completed yet)");
+            {
+                return BadRequest(new
+                {
+                    error = "tenant_not_found",
+                    message = "Tenant not found."
+                });
+            }
+
+            if (tenant.Plan == PlanType.Trial || tenant.SubscriptionStatus != SubscriptionStatus.Active)
+            {
+                return StatusCode(409, new
+                {
+                    error = "subscription_processing",
+                    message = "Payment completed. Subscription is still being activated."
+                });
+            }
 
             var user = await _context.Users
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(u => u.TenantId == tenant.Id && u.Role == "Admin");
 
-            //  אם לא נמצא - נתקן
             if (user == null)
             {
-                user = await _context.Users
-                    .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(u =>
-                        u.Role == "Admin" &&
-                        u.TenantId == tenant.Id
-                    );
-
-                if (user == null)
-                    return BadRequest("Admin user not found");
-
-                user.TenantId = tenant.Id;
-                await _context.SaveChangesAsync();
+                return BadRequest(new
+                {
+                    error = "admin_user_not_found",
+                    message = "Admin user not found."
+                });
             }
-
-            // גם אם נמצא אבל tenantId ריק
-            if (user.TenantId == Guid.Empty)
-            {
-                user.TenantId = tenant.Id;
-                await _context.SaveChangesAsync();
-            }
-
-            if (user == null)
-                return BadRequest("Admin user not found");
 
             var token = _tokenService.GenerateJwtToken(user);
 
-            return Ok(new { token });
+            return Ok(new
+            {
+                success = true,
+                token,
+                plan = tenant.Plan.ToString(),
+                subscriptionStatus = tenant.SubscriptionStatus.ToString()
+            });
         }
         catch (Exception ex)
         {
             Console.WriteLine("🔥 ERROR confirm-session: " + ex);
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new
+            {
+                error = "server_error",
+                message = "An unexpected error occurred while confirming payment."
+            });
         }
     }
 
@@ -163,193 +231,24 @@ public class StripeController : ControllerBase
     // WEBHOOK
     // =========================
     [HttpPost("webhook")]
+    [AllowAnonymous]
     public async Task<IActionResult> Webhook()
     {
-        var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
+        var json = await new StreamReader(HttpContext.Request.Body)
+            .ReadToEndAsync();
+
+        var signature = Request.Headers["Stripe-Signature"].ToString();
 
         try
         {
-            
-            var stripeEvent = EventUtility.ConstructEvent(
-                json,
-                Request.Headers["Stripe-Signature"],
-                _config["Stripe:WebhookSecret"],
-                throwOnApiVersionMismatch: false
-            );
-
-
-            switch (stripeEvent.Type)
-            {
-                case "checkout.session.completed":
-                {
-                    var session = stripeEvent.Data.Object as Session;
-                    if (session == null)
-                        return Ok();
-
-                    var customerId = session.CustomerId;
-                    var subscriptionId = session.SubscriptionId;
-                    Console.WriteLine("CONFIRM customerId: " + customerId);
-
-                    // send mail to TENANT after Register
-                    session = stripeEvent.Data.Object as Session;
-
-                    var email = session?.CustomerDetails?.Email;
-                    var html = "Payment Suucceed";
-
-                    if (!string.IsNullOrEmpty(email))
-                    {
-                        await _emailService.SendEmailAsync(
-                            email,
-                             "🎉 התשלום בוצע בהצלחה",
-
-                             html = @"<div style='font-family:Arial, sans-serif; direction:rtl; background:#f9fafb; padding:40px'>
-                                    <div style='max-width:500px; margin:auto; background:white; border-radius:10px; padding:30px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.05)'>
-
-                                        <p style='font-size:16px; color:#374151; margin-bottom:20px;'>
-                                            החשבון שלך שודרג בהצלחה לתוכנית פרימיום.
-                                        </p>
-
-                                        <div style='margin:25px 0;'>
-                                            <a href='https://clienta.digitalpenpro.com/login'
-                                               style='background:#2563eb; color:white; padding:12px 24px; border-radius:6px; text-decoration:none; font-size:14px;'>
-                                                מעבר למערכת
-                                            </a>
-                                        </div>
-
-                                        <hr style='margin:30px 0; border:none; border-top:1px solid #e5e7eb;' />
-
-                                        <p style='font-size:13px; color:#6b7280; margin:0;'>
-                                            תודה שבחרת ב־Clienta 💙
-                                        </p>
-
-                                        <p style='font-size:13px; color:#6b7280; margin-top:5px;'>
-                                            Clienta Team
-                                        </p>
-
-                                    </div>
-                                </div>"
-                            );
-                        }
-
-
-                    if (string.IsNullOrEmpty(customerId))
-                        return Ok();
-
-                    if (session.Metadata == null ||
-                        !session.Metadata.TryGetValue("tenant_id", out var tenantIdString) ||
-                        !Guid.TryParse(tenantIdString, out var tenantId))
-                    {
-                        return Ok();
-                    }
-
-                    var tenant = await _context.Tenants.FindAsync(tenantId);
-                    if (tenant == null)
-                        return Ok();
-
-                    // Update tenant on payment success
-                    tenant.StripeCustomerId = customerId;
-                    tenant.StripeSubscriptionId = subscriptionId;
-                    tenant.Plan = PlanType.Pro;
-                    tenant.SubscriptionStatus = SubscriptionStatus.Active;
-                    tenant.IsSuspended = false;
-
-                    await _context.SaveChangesAsync();
-
-                        await _emailService.SendEmailAsync(
-                            "mjd.salman@gmail.com",
-                            "💰 New Paid Subscription in Clienta",
-                            $@"
-                            <h2>New Paid Client</h2>
-
-                            <p><strong>Business:</strong> {tenant.Name}</p>
-                            <p><strong>Subdomain:</strong> {tenant.Subdomain}</p>
-
-                            <p><strong>Customer Id:</strong> {customerId}</p>
-                            <p><strong>Subscription Id:</strong> {subscriptionId}</p>
-
-                            <p><strong>Plan:</strong> Pro</p>
-                        ");
-                        Console.WriteLine("✅ Tenant updated from webhook (plan upgraded to Pro, subscription active, not suspended)");
-                    break;
-                }
-                case "customer.subscription.updated":
-                {
-                    var subscription = stripeEvent.Data.Object as Subscription;
-
-                        if (subscription == null)
-                        break;
-
-                    var tenant = await _context.Tenants
-                        .FirstOrDefaultAsync(x => x.StripeSubscriptionId == subscription.Id);
-
-                    if (tenant != null)
-                    {
-                        tenant.SubscriptionStatus =
-                            subscription.Status switch
-                            {
-                                "active" => SubscriptionStatus.Active,
-                                "trialing" => SubscriptionStatus.Active,
-                                "past_due" => SubscriptionStatus.PastDue,
-                                "canceled" => SubscriptionStatus.Canceled,
-                                "unpaid" => SubscriptionStatus.Unpaid,
-                                _ => SubscriptionStatus.Canceled
-                            };
-
-
-                            var currentPeriodEnd =
-                                subscription.Items.Data
-                                    .FirstOrDefault()
-                                    ?.CurrentPeriodEnd;
-
-                            // Cancellation scheduled
-                            if (subscription.CancelAt != null)
-                            {
-                                tenant.SubscriptionEndsAt = subscription.CancelAt;
-                            }
-                            else
-                            {
-                                tenant.SubscriptionEndsAt = null;
-                            }
-
-                            Console.WriteLine(
-                                $"Stripe Update => Status={subscription.Status}, " +
-                                $"CancelAt={subscription.CancelAt}, " +
-                                $"CurrentPeriodEnd={currentPeriodEnd}, " +
-                                $"SavedEndsAt={tenant.SubscriptionEndsAt}");
-
-                            await _context.SaveChangesAsync();
-                        }
-
-                    break;
-                }
-                case "customer.subscription.deleted":
-                {
-                    var subscription = stripeEvent.Data.Object as Subscription;
-
-                    var tenant = await _context.Tenants
-                        .FirstOrDefaultAsync(x => x.StripeSubscriptionId == subscription.Id);
-
-                    if (tenant != null)
-                    {
-                            tenant.SubscriptionStatus = SubscriptionStatus.Canceled;
-                            tenant.StripeSubscriptionId = null; 
-                            tenant.StripePriceId = null;
-                            tenant.SubscriptionEndsAt = DateTime.UtcNow;
-                            tenant.Plan = PlanType.Trial; 
-
-                            await _context.SaveChangesAsync();
-                    }
-
-                    break;
-                }
-            }
+            await _stripeService.HandleWebhookAsync(json, signature);
 
             return Ok();
         }
         catch (Exception ex)
         {
             Console.WriteLine("🔥 WEBHOOK ERROR: " + ex);
-            return Ok(); //  לא מחזירים 400 ל-Stripe
+            return StatusCode(500);
         }
     }
 

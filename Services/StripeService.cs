@@ -4,7 +4,6 @@ using Clienta.Api.Data;
 using Clienta.Api.Models;
 using Clienta.Api.Entities;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 
 namespace Clienta.Api.Services;
 
@@ -19,11 +18,13 @@ public class StripeService : IStripeService
 {
     private readonly AppDbContext _db;
     private readonly IConfiguration _configuration;
+    private readonly IEmailService _emailService;
 
-    public StripeService(AppDbContext db, IConfiguration configuration)
+    public StripeService(AppDbContext db, IConfiguration configuration, IEmailService emailService)
     {
         _db = db;
         _configuration = configuration;
+        _emailService = emailService;
         
         // Set Stripe API key
         StripeConfiguration.ApiKey = _configuration["Stripe:SecretKey"];
@@ -238,9 +239,13 @@ public class StripeService : IStripeService
                 throwOnApiVersionMismatch: false
                 );
 
+            Console.WriteLine($"Stripe event received: {stripeEvent.Type}");
+            Console.WriteLine($"Stripe EventId: {stripeEvent.Id}");
+
             //  Idempotency: Check if event already processed
             if (await _db.ProcessedStripeEvents.AnyAsync(e => e.EventId == stripeEvent.Id))
             {
+                Console.WriteLine($"Stripe event already processed, skipping: {stripeEvent.Id}");
                 return; // Already processed, skip
             }
 
@@ -266,6 +271,10 @@ public class StripeService : IStripeService
                 case "invoice.payment_failed":
                     await HandleInvoicePaymentFailed(stripeEvent);
                     break;
+
+                default:
+                    Console.WriteLine($"Unhandled Stripe event type: {stripeEvent.Type}");
+                    break;
             }
 
             // Mark event as processed
@@ -285,8 +294,6 @@ public class StripeService : IStripeService
 
     private async Task HandleCheckoutSessionCompleted(Event stripeEvent)
     {
-        var sessionData = stripeEvent.Data.Object as Stripe.EventData;
-
         var sessionId = stripeEvent.Data.Object switch
         {
             Stripe.Checkout.Session s => s.Id,
@@ -295,51 +302,86 @@ public class StripeService : IStripeService
 
         if (sessionId == null)
         {
-            Console.WriteLine("Session ID is null");
+            Console.WriteLine("❌ Stripe checkout session ID is null");
             return;
         }
+
+        Console.WriteLine($"Checkout Session ID: {sessionId}");
 
         // fetch fresh session from Stripe
         var sessionService = new SessionService();
         var session = await sessionService.GetAsync(sessionId);
 
-        if (session == null) return;
+        if (session == null)
+        {
+            Console.WriteLine("❌ Stripe checkout session not found when re-fetching");
+            return;
+        }
+
+        Console.WriteLine($"PaymentStatus: {session.PaymentStatus}");
+
+        if (!string.Equals(session.PaymentStatus, "paid", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"❌ Stripe checkout payment is not paid. SessionId={session.Id}, PaymentStatus={session.PaymentStatus}");
+            return;
+        }
 
         if (session.Metadata == null)
         {
-            Console.WriteLine("❌ Metadata is null");
+            Console.WriteLine("❌ Stripe checkout metadata is null");
             return;
         }
 
         if (!session.Metadata.TryGetValue("tenant_id", out var tenantIdString))
         {
-            Console.WriteLine("❌ tenant_id missing");
+            Console.WriteLine("❌ Stripe checkout metadata tenant_id missing");
             return;
         }
 
         if (!Guid.TryParse(tenantIdString, out var tenantId))
         {
-            Console.WriteLine("❌ tenant_id invalid");
+            Console.WriteLine("❌ Stripe checkout metadata tenant_id invalid");
+            return;
+        }
+
+        if (!session.Metadata.TryGetValue("plan_type", out var planTypeStr) || string.IsNullOrWhiteSpace(planTypeStr))
+        {
+            Console.WriteLine("❌ Stripe checkout metadata plan_type missing");
+            return;
+        }
+
+        if (!Enum.TryParse<PlanType>(planTypeStr, true, out var planType))
+        {
+            Console.WriteLine($"❌ Stripe checkout metadata plan_type invalid: {planTypeStr}");
+            return;
+        }
+
+        if (!session.Metadata.TryGetValue("billing_cycle", out var billingCycleStr) || string.IsNullOrWhiteSpace(billingCycleStr))
+        {
+            Console.WriteLine("❌ Stripe checkout metadata billing_cycle missing");
+            return;
+        }
+
+        if (!Enum.TryParse<BillingCycle>(billingCycleStr, true, out var billingCycle))
+        {
+            Console.WriteLine($"❌ Stripe checkout metadata billing_cycle invalid: {billingCycleStr}");
             return;
         }
 
         var tenant = await _db.Tenants.FindAsync(tenantId);
 
-        if (tenant == null) return;
+        if (tenant == null)
+        {
+            Console.WriteLine($"❌ Tenant not found for tenant_id: {tenantId}");
+            return;
+        }
 
-        // Get plan type from metadata
-        var planTypeStr = session.Metadata.ContainsKey("plan_type") 
-            ? session.Metadata["plan_type"] 
-            : "Pro";
-        
-        var planType = Enum.Parse<PlanType>(planTypeStr);
-
-        // Get billing cycle from metadata
-        var billingCycleStr = session.Metadata.ContainsKey("billing_cycle")
-            ? session.Metadata["billing_cycle"]
-            : "Monthly";
-        
-        var billingCycle = Enum.Parse<BillingCycle>(billingCycleStr);
+        Console.WriteLine("✅ Stripe checkout completed");
+        Console.WriteLine($"TenantId: {tenantId}");
+        Console.WriteLine($"CustomerId: {session.CustomerId}");
+        Console.WriteLine($"SubscriptionId: {session.SubscriptionId}");
+        Console.WriteLine($"Plan: {planType}");
+        Console.WriteLine($"BillingCycle: {billingCycle}");
 
         // Get plan configuration from PlanProvider
         var planProvider = new PlanProvider();
@@ -356,6 +398,66 @@ public class StripeService : IStripeService
         tenant.PaymentGracePeriodEndsAt = null; // Clear grace period
 
         await _db.SaveChangesAsync();
+
+        try
+        {
+            var email = session.CustomerDetails?.Email;
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                var html = @"<div style='font-family:Arial, sans-serif; direction:rtl; background:#f9fafb; padding:40px'>
+                    <div style='max-width:500px; margin:auto; background:white; border-radius:10px; padding:30px; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.05)'>
+                        <p style='font-size:16px; color:#374151; margin-bottom:20px;'>
+                            החשבון שלך שודרג בהצלחה לתוכנית פרימיום.
+                        </p>
+                        <div style='margin:25px 0;'>
+                            <a href='https://clienta.digitalpenpro.com/login'
+                               style='background:#2563eb; color:white; padding:12px 24px; border-radius:6px; text-decoration:none; font-size:14px;'>
+                                מעבר למערכת
+                            </a>
+                        </div>
+                        <hr style='margin:30px 0; border:none; border-top:1px solid #e5e7eb;' />
+                        <p style='font-size:13px; color:#6b7280; margin:0;'>
+                            תודה שבחרת ב-Clienta
+                        </p>
+                        <p style='font-size:13px; color:#6b7280; margin-top:5px;'>
+                            Clienta Team
+                        </p>
+                    </div>
+                </div>";
+
+                await _emailService.SendEmailAsync(
+                    email,
+                    "🎉 החשבון שלך שודרג ל-Pro",
+                    html
+                );
+            }
+        }
+        catch (Exception emailEx)
+        {
+            Console.WriteLine("⚠️ Customer payment email failed: " + emailEx);
+        }
+
+        try
+        {
+            await _emailService.SendEmailAsync(
+                "mjd.salman@gmail.com",
+                "New Paid Subscription in Clienta",
+                $@"<h2>New Paid Subscription in Clienta</h2>
+                <p><strong>Tenant Name:</strong> {tenant.Name}</p>
+                <p><strong>Tenant ID:</strong> {tenant.Id}</p>
+                <p><strong>Email:</strong> {session.CustomerDetails?.Email}</p>
+                <p><strong>Stripe Customer ID:</strong> {session.CustomerId}</p>
+                <p><strong>Stripe Subscription ID:</strong> {session.SubscriptionId}</p>
+                <p><strong>Plan:</strong> {planType}</p>
+                <p><strong>Billing Cycle:</strong> {billingCycle}</p>"
+            );
+        }
+        catch (Exception adminEmailEx)
+        {
+            Console.WriteLine("⚠️ Admin payment email failed: " + adminEmailEx);
+        }
+
+        Console.WriteLine("✅ Tenant upgraded successfully to Pro");
     }
 
     private async Task HandleSubscriptionUpdated(Event stripeEvent)
