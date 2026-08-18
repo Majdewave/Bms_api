@@ -43,6 +43,8 @@
 
   <ItemGroup>
     <Compile Remove="tests\**\*.cs" />
+    <Compile Remove="ImagingGatewayCredentialTool\**\*.cs" />
+    <Compile Remove="ImagingGatewayCredentialTool\**\*.csx" />
     <Content Remove="tests\**\*" />
     <None Remove="tests\**\*" />
     <EmbeddedResource Remove="tests\**\*" />

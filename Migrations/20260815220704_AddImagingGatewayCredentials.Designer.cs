@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260815220704_AddImagingGatewayCredentials")]
+    partial class AddImagingGatewayCredentials
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -552,80 +555,6 @@ namespace Clienta.Api.Migrations
                     b.ToTable("ImagingGatewayCredentials");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.ImagingInstance", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long?>("FileSizeBytes")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("ImagingSeriesId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ImagingStudyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int?>("InstanceNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LocalFilePath")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<DateTime>("ReceivedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("S3Bucket")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("S3ETag")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("S3Key")
-                        .HasMaxLength(2048)
-                        .HasColumnType("character varying(2048)");
-
-                    b.Property<DateTime?>("S3UploadedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("SOPClassUID")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("SOPInstanceUID")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("StorageStatus")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ImagingSeriesId");
-
-                    b.HasIndex("ImagingStudyId");
-
-                    b.HasIndex("TenantId", "SOPInstanceUID")
-                        .IsUnique();
-
-                    b.ToTable("ImagingInstances");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.ImagingOrder", b =>
                 {
                     b.Property<Guid>("Id")
@@ -682,118 +611,6 @@ namespace Clienta.Api.Migrations
                     b.HasIndex("TenantId", "Status", "ScheduledStartTime");
 
                     b.ToTable("ImagingOrders");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.ImagingSeries", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("ImagingStudyId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Modality")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<string>("SeriesDescription")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("SeriesInstanceUID")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<int?>("SeriesNumber")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ImagingStudyId");
-
-                    b.HasIndex("TenantId", "SeriesInstanceUID")
-                        .IsUnique();
-
-                    b.ToTable("ImagingSeries");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.ImagingStudy", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AccessionNumber")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<Guid>("ClientId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ImagingOrderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("LocalStoragePath")
-                        .IsRequired()
-                        .HasMaxLength(1024)
-                        .HasColumnType("character varying(1024)");
-
-                    b.Property<string>("Modality")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("character varying(16)");
-
-                    b.Property<DateTime>("ReceivedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("StorageStatus")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
-                    b.Property<string>("StudyInstanceUID")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ClientId");
-
-                    b.HasIndex("ImagingOrderId");
-
-                    b.HasIndex("TenantId", "AccessionNumber");
-
-                    b.HasIndex("TenantId", "StudyInstanceUID")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "ClientId", "ReceivedAt");
-
-                    b.ToTable("ImagingStudies");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Invoice", b =>
@@ -2285,33 +2102,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.ImagingInstance", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.ImagingSeries", "ImagingSeries")
-                        .WithMany()
-                        .HasForeignKey("ImagingSeriesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.ImagingStudy", "ImagingStudy")
-                        .WithMany()
-                        .HasForeignKey("ImagingStudyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ImagingSeries");
-
-                    b.Navigation("ImagingStudy");
-
-                    b.Navigation("Tenant");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.ImagingOrder", b =>
                 {
                     b.HasOne("Clienta.Api.Entities.Appointment", "Appointment")
@@ -2342,51 +2132,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Client");
 
                     b.Navigation("Service");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.ImagingSeries", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.ImagingStudy", "ImagingStudy")
-                        .WithMany()
-                        .HasForeignKey("ImagingStudyId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("ImagingStudy");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.ImagingStudy", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.Client", "Client")
-                        .WithMany()
-                        .HasForeignKey("ClientId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.ImagingOrder", "ImagingOrder")
-                        .WithMany()
-                        .HasForeignKey("ImagingOrderId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Client");
-
-                    b.Navigation("ImagingOrder");
 
                     b.Navigation("Tenant");
                 });

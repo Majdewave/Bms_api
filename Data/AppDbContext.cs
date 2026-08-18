@@ -65,6 +65,11 @@ public class AppDbContext : DbContext
     public DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; } = null!;
     public DbSet<WhatsAppMessage> WhatsAppMessages { get; set; } = null!;
     public DbSet<WhatsAppOAuthState> WhatsAppOAuthStates { get; set; } = null!;
+    public DbSet<ImagingOrder> ImagingOrders { get; set; } = null!;
+    public DbSet<ImagingStudy> ImagingStudies { get; set; } = null!;
+    public DbSet<ImagingSeries> ImagingSeries { get; set; } = null!;
+    public DbSet<ImagingInstance> ImagingInstances { get; set; } = null!;
+    public DbSet<ImagingGatewayCredential> ImagingGatewayCredentials { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -154,6 +159,21 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<Appointment>()
             .HasQueryFilter(a => _tenantContext.TenantId == Guid.Empty || a.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasQueryFilter(io => _tenantContext.TenantId == Guid.Empty || io.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasQueryFilter(study => _tenantContext.TenantId == Guid.Empty || study.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingSeries>()
+            .HasQueryFilter(series => _tenantContext.TenantId == Guid.Empty || series.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasQueryFilter(instance => _tenantContext.TenantId == Guid.Empty || instance.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingGatewayCredential>()
+            .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<Note>()
             .HasQueryFilter(n => _tenantContext.TenantId == Guid.Empty || n.TenantId == _tenantContext.TenantId);
@@ -358,6 +378,193 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Appointment>()
          .HasIndex(a => new { a.TenantId, a.Status, a.StartTime })
          .HasDatabaseName("IX_Appointments_Tenant_Status_StartTime");
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasOne(io => io.Tenant)
+            .WithMany()
+            .HasForeignKey(io => io.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasOne(io => io.Client)
+            .WithMany()
+            .HasForeignKey(io => io.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasOne(io => io.Appointment)
+            .WithMany()
+            .HasForeignKey(io => io.AppointmentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasOne(io => io.Service)
+            .WithMany()
+            .HasForeignKey(io => io.ServiceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasIndex(io => io.AccessionNumber)
+            .IsUnique();
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasIndex(io => io.AppointmentId)
+            .IsUnique();
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasIndex(io => new { io.TenantId, io.Status, io.ScheduledStartTime });
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasIndex(io => new { io.TenantId, io.ClientId, io.CreatedAt });
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasOne(study => study.Tenant)
+            .WithMany()
+            .HasForeignKey(study => study.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasOne(study => study.Client)
+            .WithMany()
+            .HasForeignKey(study => study.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasOne(study => study.ImagingOrder)
+            .WithMany()
+            .HasForeignKey(study => study.ImagingOrderId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .Property(study => study.StudyInstanceUID)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .Property(study => study.AccessionNumber)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .Property(study => study.Modality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .Property(study => study.Status)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .Property(study => study.StorageStatus)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .Property(study => study.LocalStoragePath)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasIndex(study => new { study.TenantId, study.StudyInstanceUID })
+            .IsUnique();
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasIndex(study => new { study.TenantId, study.ClientId, study.ReceivedAt });
+
+        modelBuilder.Entity<ImagingStudy>()
+            .HasIndex(study => new { study.TenantId, study.AccessionNumber });
+
+        modelBuilder.Entity<ImagingSeries>()
+            .HasOne(series => series.Tenant)
+            .WithMany()
+            .HasForeignKey(series => series.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingSeries>()
+            .HasOne(series => series.ImagingStudy)
+            .WithMany()
+            .HasForeignKey(series => series.ImagingStudyId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingSeries>()
+            .Property(series => series.SeriesInstanceUID)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ImagingSeries>()
+            .Property(series => series.Modality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<ImagingSeries>()
+            .Property(series => series.SeriesDescription)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ImagingSeries>()
+            .HasIndex(series => new { series.TenantId, series.SeriesInstanceUID })
+            .IsUnique();
+
+        modelBuilder.Entity<ImagingSeries>()
+            .HasIndex(series => series.ImagingStudyId);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasOne(instance => instance.Tenant)
+            .WithMany()
+            .HasForeignKey(instance => instance.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasOne(instance => instance.ImagingStudy)
+            .WithMany()
+            .HasForeignKey(instance => instance.ImagingStudyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasOne(instance => instance.ImagingSeries)
+            .WithMany()
+            .HasForeignKey(instance => instance.ImagingSeriesId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.SOPInstanceUID)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.SOPClassUID)
+            .HasMaxLength(64);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.LocalFilePath)
+            .HasMaxLength(1024);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.StorageStatus)
+            .HasMaxLength(32);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.S3Bucket)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.S3Key)
+            .HasMaxLength(2048);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .Property(instance => instance.S3ETag)
+            .HasMaxLength(256);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasIndex(instance => new { instance.TenantId, instance.SOPInstanceUID })
+            .IsUnique();
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasIndex(instance => instance.ImagingSeriesId);
+
+        modelBuilder.Entity<ImagingInstance>()
+            .HasIndex(instance => instance.ImagingStudyId);
+
+        modelBuilder.Entity<ImagingGatewayCredential>()
+            .HasOne(c => c.Tenant)
+            .WithMany()
+            .HasForeignKey(c => c.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingGatewayCredential>()
+            .HasIndex(c => c.KeyId)
+            .IsUnique();
 
         modelBuilder.Entity<Appointment>()
             .Property(a => a.AppointmentDate)

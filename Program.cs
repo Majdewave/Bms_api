@@ -1,4 +1,5 @@
 using Clienta.Api.Authorization;
+using Clienta.Api.Authentication;
 using Clienta.Api.Data;
 using Clienta.Api.Hubs;
 using Clienta.Api.Infrastructure.TeamChat.Interfaces;
@@ -8,6 +9,7 @@ using Clienta.Api.Services;
 using Clienta.Api.Services.Platform;
 using Clienta.Api.Services.WhatsApp;
 using Clienta.Api.Services.WhatsApp.Meta;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -77,6 +79,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();
 builder.Services.AddScoped<ITenantSeedService, TenantSeedService>();
 builder.Services.AddScoped<IStripeService, StripeService>();
+builder.Services.AddScoped<IImagingAccessionNumberGenerator, ImagingAccessionNumberGenerator>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
 builder.Services.AddHostedService<CleanupService>();
@@ -199,6 +202,9 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         }
     };
+})
+.AddScheme<AuthenticationSchemeOptions, ImagingGatewayAuthenticationHandler>(PlatformAuthConstants.ImagingGatewayScheme, _ =>
+{
 });
 
 // Authorization handler
@@ -256,6 +262,12 @@ builder.Services.AddAuthorization(options =>
         policy.AddAuthenticationSchemes(PlatformAuthConstants.PlatformScheme);
         policy.RequireAuthenticatedUser();
         policy.RequireRole("Owner", "PlatformAdmin", "Support");
+    });
+
+    options.AddPolicy(PlatformAuthConstants.PolicyImagingGateway, policy =>
+    {
+        policy.AddAuthenticationSchemes(PlatformAuthConstants.ImagingGatewayScheme);
+        policy.RequireAuthenticatedUser();
     });
 });
 
@@ -387,12 +399,12 @@ app.UseSwagger();
 
 app.UseAuthentication();
 
-// Tenant AFTER authentication
+app.UseAuthorization();
+
+// Tenant context AFTER authorization so scheme-specific principals are available.
 app.UseMiddleware<TenantMiddleware>();
 
 app.UseMiddleware<SubscriptionMiddleware>();
-
-app.UseAuthorization();
 
 var forwardOptions = new ForwardedHeadersOptions
 {

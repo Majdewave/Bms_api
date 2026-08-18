@@ -18,6 +18,11 @@ namespace Clienta.Api.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ITenantContext _tenant;
+        private static readonly HashSet<string> AllowedImagingModalities = new(StringComparer.Ordinal)
+        {
+            "US",
+            "DX"
+        };
 
         public ServicesController(AppDbContext context, ITenantContext tenant)
         {
@@ -40,6 +45,7 @@ namespace Clienta.Api.Controllers
                     s.Id,
                     s.Name,
                     s.DefaultDurationMinutes,
+                    s.ImagingModality,
                     s.DepartmentId,
                     s.Department != null ? s.Department.Name : null,
                     s.Department != null ? s.Department.Color : null
@@ -63,6 +69,10 @@ namespace Clienta.Api.Controllers
             if (request.DepartmentId == null || request.DepartmentId == Guid.Empty)
                 return BadRequest("Department is required.");
 
+            var normalizedImagingModality = NormalizeImagingModality(request.ImagingModality);
+            if (normalizedImagingModality == null && !string.IsNullOrWhiteSpace(request.ImagingModality))
+                return BadRequest("Imaging modality must be one of: US, DX, or null.");
+
             var department = await _context.Departments
                 .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);
 
@@ -74,6 +84,7 @@ namespace Clienta.Api.Controllers
                 Id = Guid.NewGuid(),
                 Name = request.Name.Trim(),
                 DefaultDurationMinutes = request.DefaultDurationMinutes,
+                ImagingModality = normalizedImagingModality,
                 DepartmentId = request.DepartmentId,
                 IsActive = true,
                 TenantId = _tenant.TenantId,
@@ -87,6 +98,7 @@ namespace Clienta.Api.Controllers
                 service.Id,
                 service.Name,
                 service.DefaultDurationMinutes,
+                service.ImagingModality,
                 service.DepartmentId,
                 department.Name,
                 department.Color
@@ -104,6 +116,10 @@ namespace Clienta.Api.Controllers
             if (request.DepartmentId == null || request.DepartmentId == Guid.Empty)
                 return BadRequest("Department is required.");
 
+            var normalizedImagingModality = NormalizeImagingModality(request.ImagingModality);
+            if (normalizedImagingModality == null && !string.IsNullOrWhiteSpace(request.ImagingModality))
+                return BadRequest("Imaging modality must be one of: US, DX, or null.");
+
             var department = await _context.Departments
                 .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);
 
@@ -118,6 +134,7 @@ namespace Clienta.Api.Controllers
 
             service.Name = request.Name.Trim();
             service.DefaultDurationMinutes = request.DefaultDurationMinutes;
+            service.ImagingModality = normalizedImagingModality;
             service.DepartmentId = request.DepartmentId;
 
             await _context.SaveChangesAsync();
@@ -126,10 +143,20 @@ namespace Clienta.Api.Controllers
                 service.Id,
                 service.Name,
                 service.DefaultDurationMinutes,
+                service.ImagingModality,
                 service.DepartmentId,
                 department.Name,
                 department.Color
             ));
+        }
+
+        private static string? NormalizeImagingModality(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            var normalized = value.Trim().ToUpperInvariant();
+            return AllowedImagingModalities.Contains(normalized) ? normalized : null;
         }
 
         // DELETE: /api/services/{id}

@@ -26,6 +26,7 @@ public class AppointmentsController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly IDepartmentAccessService _departmentAccessService;
     private readonly IPlanEnforcementService _planEnforcement;
+    private readonly IImagingAccessionNumberGenerator _imagingAccessionNumberGenerator;
     private readonly IHubContext<AppointmentsHub> _hubContext;
     private readonly IHubContext<QueueDisplayHub> _queueDisplayHubContext;
 
@@ -34,6 +35,7 @@ public class AppointmentsController : ControllerBase
         ITenantContext tenant,
         IDepartmentAccessService departmentAccessService,
         IPlanEnforcementService planEnforcement,
+        IImagingAccessionNumberGenerator imagingAccessionNumberGenerator,
         IHubContext<AppointmentsHub> hubContext,
         IHubContext<QueueDisplayHub> queueDisplayHubContext)
     {
@@ -41,6 +43,7 @@ public class AppointmentsController : ControllerBase
         _tenant = tenant;
         _departmentAccessService = departmentAccessService;
         _planEnforcement = planEnforcement;
+        _imagingAccessionNumberGenerator = imagingAccessionNumberGenerator;
         _hubContext = hubContext;
         _queueDisplayHubContext = queueDisplayHubContext;
     }
@@ -298,7 +301,37 @@ public class AppointmentsController : ControllerBase
             CreatedAt = DateTime.UtcNow
         };
 
+        ImagingOrder? imagingOrder = null;
+        var normalizedImagingModality = NormalizeImagingModality(selectedService?.ImagingModality);
+        if (normalizedImagingModality != null)
+        {
+            var imagingOrderExists = await _context.ImagingOrders
+                .AnyAsync(io => io.AppointmentId == appointment.Id);
+
+            if (!imagingOrderExists)
+            {
+                imagingOrder = new ImagingOrder
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = _tenant.TenantId,
+                    ClientId = appointment.ClientId,
+                    AppointmentId = appointment.Id,
+                    ServiceId = appointment.ServiceId,
+                    AccessionNumber = await GenerateAccessionNumberAsync(normalizedImagingModality),
+                    Modality = normalizedImagingModality,
+                    Status = ImagingOrderStatuses.Scheduled,
+                    ScheduledStartTime = appointment.StartTime,
+                    CreatedAt = DateTime.UtcNow
+                };
+            }
+        }
+
         _context.Appointments.Add(appointment);
+        if (imagingOrder != null)
+        {
+            _context.ImagingOrders.Add(imagingOrder);
+        }
+
         await _context.SaveChangesAsync();
 
         await _hubContext.Clients.Group(_tenant.TenantId.ToString()).SendAsync("AppointmentUpdated");
@@ -515,6 +548,17 @@ public class AppointmentsController : ControllerBase
         if (appointment == null)
             return NotFound();
 
+        var imagingOrder = await _context.ImagingOrders
+            .FirstOrDefaultAsync(io => io.AppointmentId == appointment.Id);
+
+        if (imagingOrder != null)
+        {
+            // Keep FK as Restrict by design: deletion is explicit at the application layer.
+            // Today ImagingOrder is operational, but future medical artifacts (study/images/report)
+            // must not be cascade-deleted when an appointment is removed.
+            _context.ImagingOrders.Remove(imagingOrder);
+        }
+
         _context.Appointments.Remove(appointment);
         await _context.SaveChangesAsync();
 
@@ -725,6 +769,32 @@ public class AppointmentsController : ControllerBase
     private static bool IsActiveQueueStatus(string status)
     {
         return ActiveQueueStatuses.Contains(status);
+    }
+
+    private static string? NormalizeImagingModality(string? modality)
+    {
+        if (string.IsNullOrWhiteSpace(modality))
+        {
+            return null;
+        }
+
+        var normalized = modality.Trim().ToUpperInvariant();
+        return normalized is "US" or "DX" ? normalized : null;
+    }
+
+    private async Task<string> GenerateAccessionNumberAsync(string modality)
+    {
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var accessionNumber = _imagingAccessionNumberGenerator.Generate(modality, DateTime.UtcNow.Date);
+            var exists = await _context.ImagingOrders.AnyAsync(io => io.AccessionNumber == accessionNumber);
+            if (!exists)
+            {
+                return accessionNumber;
+            }
+        }
+
+        return _imagingAccessionNumberGenerator.Generate(modality, DateTime.UtcNow.Date);
     }
 
     private async Task<int> GetNextActiveQueueNumberAsync(Guid tenantId, DateTime appointmentDate, Guid? excludeAppointmentId)
