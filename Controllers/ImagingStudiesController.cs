@@ -30,6 +30,113 @@ public class ImagingStudiesController : ControllerBase
         _logger = logger;
     }
 
+    [HttpGet("/api/clients/{clientId:guid}/imaging/studies")]
+    [Authorize(Policy = "view_clients")]
+    public async Task<IActionResult> GetClientImagingStudies(Guid clientId, CancellationToken cancellationToken)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+        {
+            return Unauthorized("Tenant not resolved.");
+        }
+
+        var clientExists = await _db.Clients
+            .AsNoTracking()
+            .AnyAsync(c => c.TenantId == _tenantContext.TenantId && c.Id == clientId, cancellationToken);
+
+        if (!clientExists)
+        {
+            return NotFound(new { error = "client_not_found", message = "Client not found for the current tenant." });
+        }
+
+        var studies = await _db.ImagingStudies
+            .AsNoTracking()
+            .Where(s => s.TenantId == _tenantContext.TenantId && s.ClientId == clientId)
+            .OrderByDescending(s => s.ReceivedAt)
+            .Select(s => new ClientImagingStudyDto(
+                s.Id,
+                s.ImagingOrderId,
+                s.AccessionNumber,
+                s.StudyInstanceUID,
+                s.Modality,
+                s.Status,
+                s.ReceivedAt,
+                s.StorageStatus,
+                s.CreatedAt))
+            .ToListAsync(cancellationToken);
+
+        return Ok(studies);
+    }
+
+    [HttpGet("/api/imaging/studies/{studyId:guid}")]
+    [Authorize(Policy = "view_clients")]
+    public async Task<IActionResult> GetStudyHierarchy(Guid studyId, CancellationToken cancellationToken)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+        {
+            return Unauthorized("Tenant not resolved.");
+        }
+
+        var study = await _db.ImagingStudies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.TenantId == _tenantContext.TenantId && s.Id == studyId, cancellationToken);
+
+        if (study == null)
+        {
+            return NotFound(new { error = "imaging_study_not_found", message = "Imaging study not found for the current tenant." });
+        }
+
+        var series = await _db.ImagingSeries
+            .AsNoTracking()
+            .Where(s => s.TenantId == _tenantContext.TenantId && s.ImagingStudyId == studyId)
+            .OrderBy(s => s.SeriesNumber ?? int.MaxValue)
+            .ThenBy(s => s.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var instances = await _db.ImagingInstances
+            .AsNoTracking()
+            .Where(i => i.TenantId == _tenantContext.TenantId && i.ImagingStudyId == studyId)
+            .OrderBy(i => i.InstanceNumber ?? int.MaxValue)
+            .ThenBy(i => i.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        var response = new
+        {
+            Id = study.Id,
+            ImagingOrderId = study.ImagingOrderId,
+            AccessionNumber = study.AccessionNumber,
+            StudyInstanceUID = study.StudyInstanceUID,
+            Modality = study.Modality,
+            Status = study.Status,
+            ReceivedAt = study.ReceivedAt,
+            StorageStatus = study.StorageStatus,
+            CreatedAt = study.CreatedAt,
+            Series = series.Select(s => new
+            {
+                Id = s.Id,
+                SeriesInstanceUID = s.SeriesInstanceUID,
+                Modality = s.Modality,
+                SeriesNumber = s.SeriesNumber,
+                SeriesDescription = s.SeriesDescription,
+                CreatedAt = s.CreatedAt,
+                Instances = instances
+                    .Where(i => i.ImagingSeriesId == s.Id)
+                    .Select(i => new
+                    {
+                        Id = i.Id,
+                        SOPInstanceUID = i.SOPInstanceUID,
+                        SOPClassUID = i.SOPClassUID,
+                        InstanceNumber = i.InstanceNumber,
+                        FileSizeBytes = i.FileSizeBytes,
+                        StorageStatus = i.StorageStatus,
+                        ReceivedAt = i.ReceivedAt
+                    })
+                    .ToList()
+            }).ToList()
+        };
+
+        return Ok(response);
+    }
+
     [HttpPost("register")]
     [Authorize(AuthenticationSchemes = PlatformAuthConstants.ImagingGatewayScheme, Policy = PlatformAuthConstants.PolicyImagingGateway)]
     public async Task<IActionResult> Register([FromBody] RegisterImagingStudyRequest request, CancellationToken cancellationToken)
