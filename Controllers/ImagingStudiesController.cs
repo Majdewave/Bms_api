@@ -1,3 +1,5 @@
+using Amazon.S3;
+using Amazon.S3.Model;
 using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
@@ -21,12 +23,16 @@ public class ImagingStudiesController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly IAmazonS3 _s3Client;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<ImagingStudiesController> _logger;
 
-    public ImagingStudiesController(AppDbContext db, ITenantContext tenantContext, ILogger<ImagingStudiesController> logger)
+    public ImagingStudiesController(AppDbContext db, ITenantContext tenantContext, IAmazonS3 s3Client, IConfiguration configuration, ILogger<ImagingStudiesController> logger)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _s3Client = s3Client;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -135,6 +141,57 @@ public class ImagingStudiesController : ControllerBase
         };
 
         return Ok(response);
+    }
+
+    [HttpGet("/api/imaging/instances/{instanceId:guid}/file")]
+    [Authorize(Policy = "view_clients")]
+    public async Task<IActionResult> GetInstanceFile(Guid instanceId, CancellationToken cancellationToken)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+        {
+            return Unauthorized("Tenant not resolved.");
+        }
+
+        var instance = await _db.ImagingInstances
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.TenantId == _tenantContext.TenantId && i.Id == instanceId, cancellationToken);
+
+        if (instance == null)
+        {
+            return NotFound(new { error = "imaging_instance_not_found", message = "Imaging instance not found for the current tenant." });
+        }
+
+        if (!string.Equals(instance.StorageStatus, ImagingStudyStorageStatuses.LocalAndS3, StringComparison.Ordinal))
+        {
+            return Conflict(new { error = "imaging_instance_not_available", message = "Imaging instance is not yet available for secure retrieval." });
+        }
+
+        if (string.IsNullOrWhiteSpace(instance.S3Bucket) || string.IsNullOrWhiteSpace(instance.S3Key))
+        {
+            return Conflict(new { error = "imaging_instance_s3_metadata_missing", message = "Imaging instance does not have S3 metadata yet." });
+        }
+
+        var bucket = instance.S3Bucket.Trim();
+        var key = instance.S3Key.Trim();
+        var request = new GetObjectRequest
+        {
+            BucketName = bucket,
+            Key = key
+        };
+
+        try
+        {
+            var response = await _s3Client.GetObjectAsync(request, cancellationToken);
+            var contentType = response.Headers.ContentType ?? "application/octet-stream";
+            var fileName = Path.GetFileName(key) ?? $"study-{instanceId}.dcm";
+
+            return File(response.ResponseStream, contentType, fileName);
+        }
+        catch (AmazonS3Exception ex)
+        {
+            _logger.LogError(ex, "S3 read failed for imaging instance {ImagingInstanceId} in bucket {Bucket} key {Key}.", instanceId, bucket, key);
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "s3_read_failed", message = "Unable to retrieve the imaging file from storage." });
+        }
     }
 
     [HttpPost("register")]
