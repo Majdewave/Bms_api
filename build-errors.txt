@@ -1,0 +1,45 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\Program.cs(4,1): error CS8802: Only one compilation unit can have top-level statements. [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\Program.cs(26,1): error CS8802: Only one compilation unit can have top-level statements. [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs(4,12): error CS0579: Duplicate 'global::System.Runtime.Versioning.TargetFrameworkAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(13,12): error CS0579: Duplicate 'System.Reflection.AssemblyCompanyAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(14,12): error CS0579: Duplicate 'System.Reflection.AssemblyConfigurationAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(15,12): error CS0579: Duplicate 'System.Reflection.AssemblyFileVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(16,12): error CS0579: Duplicate 'System.Reflection.AssemblyInformationalVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(17,12): error CS0579: Duplicate 'System.Reflection.AssemblyProductAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(18,12): error CS0579: Duplicate 'System.Reflection.AssemblyTitleAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(19,12): error CS0579: Duplicate 'System.Reflection.AssemblyVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs(4,12): error CS0579: Duplicate 'global::System.Runtime.Versioning.TargetFrameworkAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(14,12): error CS0579: Duplicate 'System.Reflection.AssemblyCompanyAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(15,12): error CS0579: Duplicate 'System.Reflection.AssemblyConfigurationAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(16,12): error CS0579: Duplicate 'System.Reflection.AssemblyFileVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(17,12): error CS0579: Duplicate 'System.Reflection.AssemblyInformationalVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(18,12): error CS0579: Duplicate 'System.Reflection.AssemblyProductAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(19,12): error CS0579: Duplicate 'System.Reflection.AssemblyTitleAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(20,12): error CS0579: Duplicate 'System.Reflection.AssemblyVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+
+Build FAILED.
+
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\Program.cs(4,1): error CS8802: Only one compilation unit can have top-level statements. [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\Program.cs(26,1): error CS8802: Only one compilation unit can have top-level statements. [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs(4,12): error CS0579: Duplicate 'global::System.Runtime.Versioning.TargetFrameworkAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(13,12): error CS0579: Duplicate 'System.Reflection.AssemblyCompanyAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(14,12): error CS0579: Duplicate 'System.Reflection.AssemblyConfigurationAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(15,12): error CS0579: Duplicate 'System.Reflection.AssemblyFileVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(16,12): error CS0579: Duplicate 'System.Reflection.AssemblyInformationalVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(17,12): error CS0579: Duplicate 'System.Reflection.AssemblyProductAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(18,12): error CS0579: Duplicate 'System.Reflection.AssemblyTitleAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\PlatformAdminPasswordTool\obj\Debug\net8.0\ImagingGatewayCredentialTool.AssemblyInfo.cs(19,12): error CS0579: Duplicate 'System.Reflection.AssemblyVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\.NETCoreApp,Version=v8.0.AssemblyAttributes.cs(4,12): error CS0579: Duplicate 'global::System.Runtime.Versioning.TargetFrameworkAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(14,12): error CS0579: Duplicate 'System.Reflection.AssemblyCompanyAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(15,12): error CS0579: Duplicate 'System.Reflection.AssemblyConfigurationAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(16,12): error CS0579: Duplicate 'System.Reflection.AssemblyFileVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(17,12): error CS0579: Duplicate 'System.Reflection.AssemblyInformationalVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(18,12): error CS0579: Duplicate 'System.Reflection.AssemblyProductAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(19,12): error CS0579: Duplicate 'System.Reflection.AssemblyTitleAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+C:\Users\rasha\source\Bms\api\obj\Debug\net8.0\Clienta.Api.AssemblyInfo.cs(20,12): error CS0579: Duplicate 'System.Reflection.AssemblyVersionAttribute' attribute [C:\Users\rasha\source\Bms\api\Clienta.Api.csproj]
+    0 Warning(s)
+    18 Error(s)
+
+Time Elapsed 00:00:21.10

@@ -41,13 +41,22 @@
     <Folder Include=".platform\nginx\conf.d\" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="tests\**\*.cs" />
-    <Compile Remove="ImagingGatewayCredentialTool\**\*.cs" />
-    <Compile Remove="ImagingGatewayCredentialTool\**\*.csx" />
-    <Content Remove="tests\**\*" />
-    <None Remove="tests\**\*" />
-    <EmbeddedResource Remove="tests\**\*" />
-  </ItemGroup>
+<ItemGroup>
+  <Compile Remove="tests\**\*.cs" />
+
+  <!-- Standalone development/admin tools must not compile into Clienta.Api -->
+  <Compile Remove="ImagingGatewayCredentialTool\**\*.cs" />
+  <Compile Remove="ImagingGatewayCredentialTool\**\*.csx" />
+
+  <Compile Remove="PlatformAdminPasswordTool\**\*.cs" />
+  <Compile Remove="PlatformAdminPasswordTool\**\*.csx" />
+
+  <Compile Remove="ImagingDbReadOnlyCheck\**\*.cs" />
+  <Compile Remove="ImagingDbReadOnlyCheck\**\*.csx" />
+
+  <Content Remove="tests\**\*" />
+  <None Remove="tests\**\*" />
+  <EmbeddedResource Remove="tests\**\*" />
+</ItemGroup>
 
 </Project>
