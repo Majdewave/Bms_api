@@ -69,6 +69,7 @@ public class AppDbContext : DbContext
     public DbSet<ImagingStudy> ImagingStudies { get; set; } = null!;
     public DbSet<ImagingSeries> ImagingSeries { get; set; } = null!;
     public DbSet<ImagingInstance> ImagingInstances { get; set; } = null!;
+    public DbSet<ImagingAnnotation> ImagingAnnotations { get; set; } = null!;
     public DbSet<ImagingGatewayCredential> ImagingGatewayCredentials { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -172,8 +173,42 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ImagingInstance>()
             .HasQueryFilter(instance => _tenantContext.TenantId == Guid.Empty || instance.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasQueryFilter(annotation => _tenantContext.TenantId == Guid.Empty || annotation.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<ImagingGatewayCredential>()
             .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasOne(a => a.ImagingInstance)
+            .WithMany(i => i.Annotations)
+            .HasForeignKey(a => a.ImagingInstanceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasOne(a => a.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(a => a.CreatedByUserId)
+            .OnDelete(DeleteBehavior.NoAction);
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasOne(a => a.UpdatedByUser)
+            .WithMany()
+            .HasForeignKey(a => a.UpdatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasIndex(a => new { a.TenantId, a.AnnotationUid })
+            .IsUnique();
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasIndex(a => a.ImagingInstanceId);
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasIndex(a => new { a.TenantId, a.ImagingInstanceId, a.FrameNumber });
+
+        modelBuilder.Entity<ImagingAnnotation>()
+            .HasCheckConstraint("CK_ImagingAnnotations_FrameNumber_GreaterThanZero", "\"FrameNumber\" >= 1");
 
         modelBuilder.Entity<Note>()
             .HasQueryFilter(n => _tenantContext.TenantId == Guid.Empty || n.TenantId == _tenantContext.TenantId);

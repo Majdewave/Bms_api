@@ -46,4 +46,6 @@ public class ImagingInstance : ITenantEntity
 
     [Required]
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public ICollection<ImagingAnnotation> Annotations { get; set; } = new List<ImagingAnnotation>();
 }
