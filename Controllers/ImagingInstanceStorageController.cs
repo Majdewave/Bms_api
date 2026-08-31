@@ -1,3 +1,5 @@
+using Amazon.S3;
+using Amazon.S3.Model;
 using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
@@ -13,17 +15,25 @@ namespace Clienta.Api.Controllers;
 [Route("api/imaging/instances")]
 public class ImagingInstanceStorageController : ControllerBase
 {
+    private static readonly TimeSpan UploadUrlExpiration = TimeSpan.FromMinutes(5);
+
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly IAmazonS3 _s3Client;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<ImagingInstanceStorageController> _logger;
 
     public ImagingInstanceStorageController(
         AppDbContext db,
         ITenantContext tenantContext,
+        IAmazonS3 s3Client,
+        IConfiguration configuration,
         ILogger<ImagingInstanceStorageController> logger)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _s3Client = s3Client;
+        _configuration = configuration;
         _logger = logger;
     }
 
@@ -146,6 +156,90 @@ public class ImagingInstanceStorageController : ControllerBase
             instance.S3UploadedAt,
             instance.FileSizeBytes,
             study?.StorageStatus ?? ImagingStudyStorageStatuses.Local
+        );
+
+        return Ok(response);
+    }
+
+    [HttpPost("{imagingInstanceId:guid}/upload-url")]
+    [Authorize(AuthenticationSchemes = PlatformAuthConstants.ImagingGatewayScheme, Policy = PlatformAuthConstants.PolicyImagingGateway)]
+    public async Task<IActionResult> CreateUploadUrl(
+        Guid imagingInstanceId,
+        CancellationToken cancellationToken)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+        {
+            return Unauthorized("Tenant not resolved.");
+        }
+
+        var tenantId = _tenantContext.TenantId;
+
+        // Same-tenant filter on Id+TenantId ensures instances belonging to other tenants are indistinguishable from not found.
+        var instance = await _db.ImagingInstances
+            .AsNoTracking()
+            .FirstOrDefaultAsync(i => i.TenantId == tenantId && i.Id == imagingInstanceId, cancellationToken);
+
+        if (instance == null)
+        {
+            return NotFound(new { error = "imaging_instance_not_found", message = "ImagingInstance not found for tenant." });
+        }
+
+        var series = await _db.ImagingSeries
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.TenantId == tenantId && s.Id == instance.ImagingSeriesId, cancellationToken);
+
+        var study = await _db.ImagingStudies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.TenantId == tenantId && s.Id == instance.ImagingStudyId, cancellationToken);
+
+        if (series == null || study == null)
+        {
+            return NotFound(new { error = "imaging_instance_not_found", message = "ImagingInstance not found for tenant." });
+        }
+
+        var bucketName = _configuration["AWS:ImagingBucketName"];
+        if (string.IsNullOrWhiteSpace(bucketName))
+        {
+            _logger.LogError("IMAGING_UPLOAD_URL_CONFIG_MISSING tenantId={TenantId} imagingInstanceId={ImagingInstanceId}: AWS:ImagingBucketName is not configured.", tenantId, imagingInstanceId);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "imaging_bucket_not_configured", message = "Imaging storage is not configured." });
+        }
+
+        var objectKey = string.Join('/', "imaging", tenantId.ToString(), study.StudyInstanceUID, series.SeriesInstanceUID, $"{instance.SOPInstanceUID}.dcm");
+
+        var expiresAtUtc = DateTime.UtcNow.Add(UploadUrlExpiration);
+
+        string uploadUrl;
+        try
+        {
+            var presignRequest = new GetPreSignedUrlRequest
+            {
+                BucketName = bucketName,
+                Key = objectKey,
+                Verb = HttpVerb.PUT,
+                Expires = expiresAtUtc,
+                ContentType = "application/dicom"
+            };
+
+            uploadUrl = _s3Client.GetPreSignedURL(presignRequest);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "IMAGING_UPLOAD_URL_PRESIGN_FAILED tenantId={TenantId} imagingInstanceId={ImagingInstanceId} objectKey={ObjectKey}", tenantId, imagingInstanceId, objectKey);
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "upload_url_generation_failed", message = "Unable to generate an upload URL for storage." });
+        }
+
+        _logger.LogInformation(
+            "IMAGING_UPLOAD_URL_ISSUED tenantId={TenantId} imagingInstanceId={ImagingInstanceId} objectKey={ObjectKey} expiresAtUtc={ExpiresAtUtc}",
+            tenantId,
+            imagingInstanceId,
+            objectKey,
+            expiresAtUtc);
+
+        var response = new ImagingInstanceUploadUrlResponse(
+            uploadUrl,
+            bucketName,
+            objectKey,
+            expiresAtUtc
         );
 
         return Ok(response);

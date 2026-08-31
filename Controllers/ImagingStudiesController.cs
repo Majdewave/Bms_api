@@ -389,10 +389,24 @@ public class ImagingStudiesController : ControllerBase
                         return Conflict(new { error = "instance_series_mismatch", message = "Existing instance belongs to a different series." });
                     }
 
-                    instance.LocalFilePath = normalizedLocalFilePath;
-                    instance.FileSizeBytes = request.FileSizeBytes;
-                    instance.StorageStatus = ImagingStudyStorageStatuses.Local;
-                    instance.ReceivedAt = DateTime.UtcNow;
+                    if (string.Equals(instance.StorageStatus, ImagingStudyStorageStatuses.LocalAndS3, StringComparison.Ordinal))
+                    {
+                        _logger.LogInformation(
+                            "IMAGING_REGISTER_IDEMPOTENT_DUPLICATE TenantId {TenantId} SOPInstanceUID {SOPInstanceUID}",
+                            tenantId,
+                            normalizedSopInstanceUid);
+
+                        instance.LocalFilePath = normalizedLocalFilePath;
+                        instance.FileSizeBytes = request.FileSizeBytes;
+                        instance.ReceivedAt = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        instance.LocalFilePath = normalizedLocalFilePath;
+                        instance.FileSizeBytes = request.FileSizeBytes;
+                        instance.StorageStatus = ImagingStudyStorageStatuses.Local;
+                        instance.ReceivedAt = DateTime.UtcNow;
+                    }
                 }
 
                 try
