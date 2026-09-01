@@ -66,6 +66,7 @@ public class AppDbContext : DbContext
     public DbSet<WhatsAppMessage> WhatsAppMessages { get; set; } = null!;
     public DbSet<WhatsAppOAuthState> WhatsAppOAuthStates { get; set; } = null!;
     public DbSet<ImagingOrder> ImagingOrders { get; set; } = null!;
+    public DbSet<ImagingOrderDocument> ImagingOrderDocuments { get; set; } = null!;
     public DbSet<ImagingStudy> ImagingStudies { get; set; } = null!;
     public DbSet<ImagingSeries> ImagingSeries { get; set; } = null!;
     public DbSet<ImagingInstance> ImagingInstances { get; set; } = null!;
@@ -163,6 +164,9 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<ImagingOrder>()
             .HasQueryFilter(io => _tenantContext.TenantId == Guid.Empty || io.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasQueryFilter(document => _tenantContext.TenantId == Guid.Empty || document.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<ImagingStudy>()
             .HasQueryFilter(study => _tenantContext.TenantId == Guid.Empty || study.TenantId == _tenantContext.TenantId);
@@ -451,6 +455,41 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<ImagingOrder>()
             .HasIndex(io => new { io.TenantId, io.ClientId, io.CreatedAt });
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasOne(document => document.Tenant)
+            .WithMany()
+            .HasForeignKey(document => document.TenantId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasOne(document => document.Client)
+            .WithMany()
+            .HasForeignKey(document => document.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasOne(document => document.ImagingOrder)
+            .WithMany(order => order.Documents)
+            .HasForeignKey(document => document.ImagingOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasOne(document => document.UploadedByUser)
+            .WithMany()
+            .HasForeignKey(document => document.UploadedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasOne(document => document.DeletedByUser)
+            .WithMany()
+            .HasForeignKey(document => document.DeletedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ImagingOrderDocument>()
+            .HasIndex(document => new { document.ImagingOrderId, document.DocumentType })
+            .HasFilter("\"DocumentType\" = 'Referral' AND \"IsDeleted\" = FALSE")
+            .IsUnique();
 
         modelBuilder.Entity<ImagingStudy>()
             .HasOne(study => study.Tenant)

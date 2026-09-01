@@ -101,7 +101,8 @@ public class AppointmentsController : ControllerBase
                 inProgress.Notes,
                 inProgress.CreatedAt,
                 inProgress.IsDocumented,
-                await _context.ClientConsents.AnyAsync(c => c.AppointmentId == inProgress.Id)
+                await _context.ClientConsents.AnyAsync(c => c.AppointmentId == inProgress.Id),
+                await GetImagingOrderIdAsync(inProgress.Id)
             ),
             next = nextWaiting == null ? null : new AppointmentDto(
                 nextWaiting.Id,
@@ -121,7 +122,8 @@ public class AppointmentsController : ControllerBase
                 nextWaiting.Notes,
                 nextWaiting.CreatedAt,
                 nextWaiting.IsDocumented,
-                await _context.ClientConsents.AnyAsync(c => c.AppointmentId == nextWaiting.Id)
+                await _context.ClientConsents.AnyAsync(c => c.AppointmentId == nextWaiting.Id),
+                await GetImagingOrderIdAsync(nextWaiting.Id)
             ),
             waitingCount
         });
@@ -175,7 +177,11 @@ public class AppointmentsController : ControllerBase
                 a.Notes,
                 a.CreatedAt,
                 a.IsDocumented,
-                _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
+                _context.ClientConsents.Any(c => c.AppointmentId == a.Id),
+                _context.ImagingOrders
+                    .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
+                    .Select(order => (Guid?)order.Id)
+                    .FirstOrDefault()
             ))
             .ToListAsync();
 
@@ -214,7 +220,11 @@ public class AppointmentsController : ControllerBase
                 a.Notes,
                 a.CreatedAt,
                 a.IsDocumented,
-                _context.ClientConsents.Any(c => c.AppointmentId == a.Id)
+                _context.ClientConsents.Any(c => c.AppointmentId == a.Id),
+                _context.ImagingOrders
+                    .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
+                    .Select(order => (Guid?)order.Id)
+                    .FirstOrDefault()
             ))
             .FirstOrDefaultAsync();
 
@@ -320,6 +330,7 @@ public class AppointmentsController : ControllerBase
                     AccessionNumber = await GenerateAccessionNumberAsync(normalizedImagingModality),
                     Modality = normalizedImagingModality,
                     Status = ImagingOrderStatuses.Scheduled,
+                    ReferringDoctorName = NormalizeReferringDoctorName(request.ReferringDoctorName),
                     ScheduledStartTime = appointment.StartTime,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -517,6 +528,18 @@ public class AppointmentsController : ControllerBase
             }
         }
 
+        if (request.ReferringDoctorName != null)
+        {
+            var imagingOrder = await _context.ImagingOrders
+                .FirstOrDefaultAsync(io => io.Id != Guid.Empty && io.AppointmentId == appointment.Id && io.TenantId == _tenant.TenantId);
+
+            if (imagingOrder != null)
+            {
+                imagingOrder.ReferringDoctorName = NormalizeReferringDoctorName(request.ReferringDoctorName);
+                imagingOrder.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
         await _context.SaveChangesAsync();
         await _hubContext.Clients.Group(_tenant.TenantId.ToString()).SendAsync("AppointmentUpdated");
         await BroadcastQueueDisplayUpdateAsync();
@@ -553,6 +576,19 @@ public class AppointmentsController : ControllerBase
 
         if (imagingOrder != null)
         {
+            var hasImagingStudy = await _context.ImagingStudies
+                .AnyAsync(study =>
+                    study.TenantId == _tenant.TenantId &&
+                    study.ImagingOrderId == imagingOrder.Id);
+
+            if (hasImagingStudy)
+            {
+                return Conflict(new
+                {
+                    error = "Appointment cannot be deleted because it contains medical imaging records."
+                });
+            }
+
             // Keep FK as Restrict by design: deletion is explicit at the application layer.
             // Today ImagingOrder is operational, but future medical artifacts (study/images/report)
             // must not be cascade-deleted when an appointment is removed.
@@ -745,9 +781,16 @@ public class AppointmentsController : ControllerBase
             appointment.Notes,
             appointment.CreatedAt,
             appointment.IsDocumented,
-            await _context.ClientConsents.AnyAsync(c => c.AppointmentId == appointment.Id)
+            await _context.ClientConsents.AnyAsync(c => c.AppointmentId == appointment.Id),
+            await GetImagingOrderIdAsync(appointment.Id)
         );
     }
+
+    private Task<Guid?> GetImagingOrderIdAsync(Guid appointmentId) =>
+        _context.ImagingOrders
+            .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == appointmentId)
+            .Select(order => (Guid?)order.Id)
+            .FirstOrDefaultAsync();
 
     private static DateTime NormalizeToUtc(DateTime value)
     {
@@ -757,6 +800,12 @@ public class AppointmentsController : ControllerBase
             DateTimeKind.Local => value.ToUniversalTime(),
             _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
         };
+    }
+
+    private static string? NormalizeReferringDoctorName(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 
     // Derived persistence key for indexing/uniqueness/queue grouping only.

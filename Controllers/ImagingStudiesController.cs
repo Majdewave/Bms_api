@@ -73,6 +73,70 @@ public class ImagingStudiesController : ControllerBase
         return Ok(studies);
     }
 
+    [HttpGet("/api/clients/{clientId:guid}/imaging/cases")]
+    [Authorize(Policy = "view_clients")]
+    public async Task<IActionResult> GetClientImagingCases(Guid clientId, CancellationToken cancellationToken)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+        {
+            return Unauthorized("Tenant not resolved.");
+        }
+
+        var clientExists = await _db.Clients
+            .AsNoTracking()
+            .AnyAsync(client => client.TenantId == _tenantContext.TenantId && client.Id == clientId, cancellationToken);
+
+        if (!clientExists)
+        {
+            return NotFound(new { error = "client_not_found", message = "Client not found for the current tenant." });
+        }
+
+        var cases = await _db.ImagingOrders
+            .AsNoTracking()
+            .Where(order => order.TenantId == _tenantContext.TenantId && order.ClientId == clientId)
+            .OrderByDescending(order => order.ScheduledStartTime)
+            .Select(order => new ClientImagingCaseDto(
+                order.Id,
+                order.ClientId,
+                order.AppointmentId,
+                order.ServiceId,
+                order.AccessionNumber,
+                order.Modality,
+                order.Status,
+                order.ReferringDoctorName,
+                order.ScheduledStartTime,
+                order.CreatedAt,
+                _db.ImagingOrderDocuments
+                    .Where(document => document.TenantId == _tenantContext.TenantId &&
+                        document.ImagingOrderId == order.Id &&
+                        document.DocumentType == ImagingOrderDocumentTypes.Referral &&
+                        !document.IsDeleted)
+                    .Select(document => new ClientImagingReferralDocumentDto(
+                        document.Id,
+                        document.OriginalFileName,
+                        document.ContentType,
+                        document.FileSize,
+                        document.CreatedAt))
+                    .FirstOrDefault(),
+                _db.ImagingStudies
+                    .Where(study => study.TenantId == _tenantContext.TenantId && study.ImagingOrderId == order.Id)
+                    .OrderByDescending(study => study.ReceivedAt)
+                    .Select(study => new ClientImagingStudyDto(
+                        study.Id,
+                        study.ImagingOrderId,
+                        study.AccessionNumber,
+                        study.StudyInstanceUID,
+                        study.Modality,
+                        study.Status,
+                        study.ReceivedAt,
+                        study.StorageStatus,
+                        study.CreatedAt))
+                    .FirstOrDefault()))
+            .ToListAsync(cancellationToken);
+
+        return Ok(cases);
+    }
+
     [HttpGet("/api/imaging/studies/{studyId:guid}")]
     [Authorize(Policy = "view_clients")]
     public async Task<IActionResult> GetStudyHierarchy(Guid studyId, CancellationToken cancellationToken)

@@ -95,7 +95,7 @@ public class AuthSeedService
         // CREATE ADMIN IF NOT EXISTS
         // ===============================
 
-        var admin = await _db.Users.FirstOrDefaultAsync(u => u.Role == "Admin");
+        var admin = await _db.Users.FirstOrDefaultAsync(u => u.Email == "admin@clienta.local");
 
         if (admin == null)
         {

@@ -29,6 +29,8 @@ public class ImagingOrder : ITenantEntity
     [Required]
     public string Status { get; set; } = ImagingOrderStatuses.Scheduled;
 
+    public string? ReferringDoctorName { get; set; }
+
     [Required]
     public DateTime ScheduledStartTime { get; set; }
 
@@ -36,4 +38,6 @@ public class ImagingOrder : ITenantEntity
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     public DateTime? UpdatedAt { get; set; }
+
+    public ICollection<ImagingOrderDocument> Documents { get; set; } = new List<ImagingOrderDocument>();
 }
