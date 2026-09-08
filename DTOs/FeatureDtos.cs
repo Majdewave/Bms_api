@@ -9,7 +9,10 @@ public record UpdateTenantFeaturesRequest(
     bool BeforeAfterPhotosEnabled,
     bool VisitSummariesEnabled,
     bool TeamChatEnabled,
-    bool QueueDisplayEnabled
+    bool QueueDisplayEnabled,
+    bool WhatsAppEnabled,
+    bool NotDocumentedEnabled,
+    bool MedicalImagingEnabled
 );
 
 public record EffectiveDepartmentFeaturesResponse(
@@ -19,5 +22,8 @@ public record EffectiveDepartmentFeaturesResponse(
     bool ConsentFormsEnabled,
     bool VisitSummariesEnabled,
     bool BeforeAfterPhotosEnabled,
-    bool TeamChatEnabled
+    bool TeamChatEnabled,
+    bool WhatsAppEnabled,
+    bool NotDocumentedEnabled,
+    bool MedicalImagingEnabled
 );

@@ -22,11 +22,16 @@ public class ImagingWorklistController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly IDepartmentFeatureResolver _departmentFeatureResolver;
 
-    public ImagingWorklistController(AppDbContext db, ITenantContext tenantContext)
+    public ImagingWorklistController(
+        AppDbContext db,
+        ITenantContext tenantContext,
+        IDepartmentFeatureResolver departmentFeatureResolver)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _departmentFeatureResolver = departmentFeatureResolver;
     }
 
     [HttpGet("worklist")]
@@ -70,7 +75,36 @@ public class ImagingWorklistController : ControllerBase
             query = query.Where(io => io.ScheduledStartTime <= toUtc.Value);
         }
 
+        var candidateOrders = await query
+            .OrderBy(io => io.ScheduledStartTime)
+            .Take(MaxResults)
+            .Select(io => new
+            {
+                io.Id,
+                DepartmentId = io.Appointment != null
+                    ? io.Appointment.DepartmentId
+                    : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var enabledOrderIds = new HashSet<Guid>();
+
+        foreach (var candidate in candidateOrders)
+        {
+            var enabled = await _departmentFeatureResolver.IsFeatureEnabledAsync(
+                _tenantContext.TenantId,
+                candidate.DepartmentId,
+                "medicalImagingEnabled",
+                cancellationToken);
+
+            if (enabled)
+            {
+                enabledOrderIds.Add(candidate.Id);
+            }
+        }
+
         var items = await query
+            .Where(io => enabledOrderIds.Contains(io.Id))
             .OrderBy(io => io.ScheduledStartTime)
             .Take(MaxResults)
             .Select(io => new ImagingWorklistItemDto(

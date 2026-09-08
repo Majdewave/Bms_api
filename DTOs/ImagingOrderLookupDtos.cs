@@ -6,6 +6,6 @@ public record ImagingOrderByAccessionDto(
     string Modality,
     string Status,
     Guid ClientId,
-    Guid AppointmentId,
+    Guid? AppointmentId,
     Guid? ServiceId
 );

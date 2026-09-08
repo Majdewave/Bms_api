@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901131204_AddInterpretationRequests")]
+    partial class AddInterpretationRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -697,7 +700,7 @@ namespace Clienta.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("AppointmentId")
+                    b.Property<Guid>("AppointmentId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ClientId")
@@ -926,106 +929,6 @@ namespace Clienta.Api.Migrations
                     b.ToTable("ImagingStudies");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.InterpretationReport", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("InterpretationRequestId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("InterpretationRequestId")
-                        .IsUnique();
-
-                    b.HasIndex("TenantId", "UpdatedAt");
-
-                    b.ToTable("InterpretationReports");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.InterpretationReportDocument", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<byte[]>("Content")
-                        .IsRequired()
-                        .HasColumnType("bytea");
-
-                    b.Property<string>("ContentType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("CreatedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("DeletedByUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<long>("FileSize")
-                        .HasColumnType("bigint");
-
-                    b.Property<Guid>("InterpretationReportId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("InterpretationRequestId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Sha256")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("DeletedByUserId");
-
-                    b.HasIndex("InterpretationReportId");
-
-                    b.HasIndex("TenantId");
-
-                    b.HasIndex("InterpretationRequestId", "Version")
-                        .IsUnique();
-
-                    b.ToTable("InterpretationReportDocuments");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.InterpretationRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1042,9 +945,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("ImagingOrderId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ImagingStudyId")
                         .HasColumnType("uuid");
 
                     b.Property<DateTime>("RequestedAt")
@@ -1072,8 +972,6 @@ namespace Clienta.Api.Migrations
 
                     b.HasIndex("ImagingOrderId")
                         .IsUnique();
-
-                    b.HasIndex("ImagingStudyId");
 
                     b.HasIndex("RequestedByUserId");
 
@@ -1927,12 +1825,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
-                    b.Property<bool>("MedicalImagingEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("NotDocumentedEnabled")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("PrescriptionsEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -1962,9 +1854,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<bool>("VisitSummariesEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("WhatsAppEnabled")
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
@@ -1997,14 +1886,8 @@ namespace Clienta.Api.Migrations
                     b.Property<DateTime?>("LastLoginAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("LicenseNumber")
-                        .HasColumnType("text");
-
                     b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Phone")
                         .HasColumnType("text");
 
                     b.Property<string>("Role")
@@ -2652,7 +2535,8 @@ namespace Clienta.Api.Migrations
                     b.HasOne("Clienta.Api.Entities.Appointment", "Appointment")
                         .WithMany()
                         .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Clienta.Api.Entities.Client", "Client")
                         .WithMany()
@@ -2767,67 +2651,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Tenant");
                 });
 
-            modelBuilder.Entity("Clienta.Api.Entities.InterpretationReport", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.InterpretationRequest", "InterpretationRequest")
-                        .WithOne()
-                        .HasForeignKey("Clienta.Api.Entities.InterpretationReport", "InterpretationRequestId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("InterpretationRequest");
-
-                    b.Navigation("Tenant");
-                });
-
-            modelBuilder.Entity("Clienta.Api.Entities.InterpretationReportDocument", b =>
-                {
-                    b.HasOne("Clienta.Api.Entities.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.User", "DeletedByUser")
-                        .WithMany()
-                        .HasForeignKey("DeletedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Clienta.Api.Entities.InterpretationReport", "InterpretationReport")
-                        .WithMany()
-                        .HasForeignKey("InterpretationReportId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.InterpretationRequest", "InterpretationRequest")
-                        .WithMany()
-                        .HasForeignKey("InterpretationRequestId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
-                        .WithMany()
-                        .HasForeignKey("TenantId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("DeletedByUser");
-
-                    b.Navigation("InterpretationReport");
-
-                    b.Navigation("InterpretationRequest");
-
-                    b.Navigation("Tenant");
-                });
-
             modelBuilder.Entity("Clienta.Api.Entities.InterpretationRequest", b =>
                 {
                     b.HasOne("Clienta.Api.Entities.User", "AssignedInterpreter")
@@ -2839,12 +2662,6 @@ namespace Clienta.Api.Migrations
                     b.HasOne("Clienta.Api.Entities.ImagingOrder", "ImagingOrder")
                         .WithMany()
                         .HasForeignKey("ImagingOrderId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Clienta.Api.Entities.ImagingStudy", "ImagingStudy")
-                        .WithMany()
-                        .HasForeignKey("ImagingStudyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -2863,8 +2680,6 @@ namespace Clienta.Api.Migrations
                     b.Navigation("AssignedInterpreter");
 
                     b.Navigation("ImagingOrder");
-
-                    b.Navigation("ImagingStudy");
 
                     b.Navigation("RequestedByUser");
 

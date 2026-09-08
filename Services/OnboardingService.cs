@@ -128,6 +128,8 @@ public class OnboardingService : IOnboardingService
             _db.Users.Add(adminUser);
             await _db.SaveChangesAsync();
 
+            tenant.OwnerUserId = adminUser.Id;
+
             // Create BusinessUser mapping
             var businessUser = new BusinessUser
             {

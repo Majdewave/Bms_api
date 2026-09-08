@@ -26,7 +26,10 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
         "consentFormsEnabled",
         "visitSummariesEnabled",
         "beforeAfterPhotosEnabled",
-        "teamChatEnabled"
+        "teamChatEnabled",
+        "whatsAppEnabled",
+        "notDocumentedEnabled",
+        "medicalImagingEnabled"
     ];
 
     public UserDepartmentFeatureAccessService(
@@ -56,6 +59,13 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
 
         if (departmentId.HasValue)
         {
+            var departmentBelongsToTenant = await _db.Departments
+                .AsNoTracking()
+                .AnyAsync(d => d.Id == departmentId.Value && d.TenantId == tenantId);
+
+            if (!departmentBelongsToTenant)
+                return false;
+
             var user = await _db.Users
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == userId.Value && u.TenantId == tenantId);
@@ -123,6 +133,9 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
                 false,
                 false,
                 false,
+                false,
+                false,
+                false,
                 false
             );
         }
@@ -141,7 +154,10 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
             results["consentFormsEnabled"],
             results["visitSummariesEnabled"],
             results["beforeAfterPhotosEnabled"],
-            results["teamChatEnabled"]
+            results["teamChatEnabled"],
+            results["whatsAppEnabled"],
+            results["notDocumentedEnabled"],
+            results["medicalImagingEnabled"]
         );
     }
 }

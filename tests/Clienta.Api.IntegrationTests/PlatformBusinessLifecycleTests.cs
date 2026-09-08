@@ -373,7 +373,12 @@ internal sealed class NoOpEmailService : IEmailService
 internal sealed class NoOpAuthService : IAuthService
 {
     public Task<bool> InviteUserAsync(string email, Guid tenantId) => Task.FromResult(true);
-    public Task<bool> AcceptInviteAsync(string token, string password, string fullName) => Task.FromResult(true);
+
+    public Task<bool> SendInviteToExistingUserAsync(Guid userId, Guid tenantId) => Task.FromResult(true);
+
+    public Task<bool> AcceptInviteAsync(string token, string password, string? fullName = null) => Task.FromResult(true);
+
     public Task<bool> RequestPasswordResetAsync(string email) => Task.FromResult(true);
+
     public Task<bool> ResetPasswordAsync(string token, string newPassword) => Task.FromResult(true);
 }

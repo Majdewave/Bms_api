@@ -481,16 +481,13 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> AcceptInvite([FromBody] AcceptInviteRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Token) ||
-            string.IsNullOrWhiteSpace(request.Password) ||
-            string.IsNullOrWhiteSpace(request.FullName))
-            return BadRequest("Token, password, and full name are required");
+            string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest("Token and password are required");
+        }
 
         if (request.Password.Length < 8)
             return BadRequest("Password must be at least 8 characters");
-
-        // Extract tenantId from request or use a default (needs to be added to request model)
-        // For now, using Guid.Empty as placeholder - should be extracted from token or request
-        var tenantId = Guid.Empty; // TODO: Extract from token subdomain or request
 
         var success = await _authService.AcceptInviteAsync(
             request.Token,

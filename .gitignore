@@ -493,6 +493,11 @@ appsettings.Development.json
 appsettings.json
 
 
+# Local manual backup files
+*.bak-*
+*.backup-*
+
+
 # Vim temporary swap files
 *.swp
 b i n / 

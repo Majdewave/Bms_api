@@ -22,7 +22,10 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
         "consentFormsEnabled",
         "visitSummariesEnabled",
         "beforeAfterPhotosEnabled",
-        "teamChatEnabled"
+        "teamChatEnabled",
+        "whatsAppEnabled",
+        "notDocumentedEnabled",
+        "medicalImagingEnabled"
     ];
 
     private readonly AppDbContext _context;
@@ -159,6 +162,9 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
             BeforeAfterPhotosEnabled = true,
             VisitSummariesEnabled = false,
             TeamChatEnabled = false,
+            WhatsAppEnabled = false,
+            NotDocumentedEnabled = true,
+            MedicalImagingEnabled = false,
         };
     }
 
@@ -181,6 +187,9 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
             "visitSummariesEnabled" => tenantFeatures.VisitSummariesEnabled,
             "beforeAfterPhotosEnabled" => tenantFeatures.BeforeAfterPhotosEnabled,
             "teamChatEnabled" => tenantFeatures.TeamChatEnabled,
+            "whatsAppEnabled" => tenantFeatures.WhatsAppEnabled,
+            "notDocumentedEnabled" => tenantFeatures.NotDocumentedEnabled,
+            "medicalImagingEnabled" => tenantFeatures.MedicalImagingEnabled,
             _ => true,
         };
     }

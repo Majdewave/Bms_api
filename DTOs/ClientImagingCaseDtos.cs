@@ -11,7 +11,7 @@ public record ClientImagingReferralDocumentDto(
 public record ClientImagingCaseDto(
     Guid Id,
     Guid ClientId,
-    Guid AppointmentId,
+    Guid? AppointmentId,
     Guid? ServiceId,
     string AccessionNumber,
     string Modality,

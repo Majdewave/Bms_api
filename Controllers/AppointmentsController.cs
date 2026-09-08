@@ -29,6 +29,7 @@ public class AppointmentsController : ControllerBase
     private readonly IImagingAccessionNumberGenerator _imagingAccessionNumberGenerator;
     private readonly IHubContext<AppointmentsHub> _hubContext;
     private readonly IHubContext<QueueDisplayHub> _queueDisplayHubContext;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
 
     public AppointmentsController(
         AppDbContext context,
@@ -37,15 +38,44 @@ public class AppointmentsController : ControllerBase
         IPlanEnforcementService planEnforcement,
         IImagingAccessionNumberGenerator imagingAccessionNumberGenerator,
         IHubContext<AppointmentsHub> hubContext,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
         IHubContext<QueueDisplayHub> queueDisplayHubContext)
     {
         _context = context;
         _tenant = tenant;
         _departmentAccessService = departmentAccessService;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
         _planEnforcement = planEnforcement;
         _imagingAccessionNumberGenerator = imagingAccessionNumberGenerator;
         _hubContext = hubContext;
         _queueDisplayHubContext = queueDisplayHubContext;
+    }
+
+    // GET /appointments/staff-options
+    [HttpGet("staff-options")]
+    public async Task<IActionResult> GetStaffOptions()
+    {
+        var tenantId = _tenant.TenantId;
+
+        var staff = await _context.BusinessUsers
+            .AsNoTracking()
+            .Where(b =>
+                b.TenantId == tenantId &&
+                b.User.IsActive &&
+                b.User.Role != "Interpreter")
+            .OrderBy(b => b.User.FullName)
+            .Select(b => new
+            {
+                id = b.Id,
+                fullName = b.User.FullName,
+                email = b.User.Email,
+                departmentIds = b.StaffDepartments
+                    .Select(sd => sd.DepartmentId)
+                    .ToList()
+            })
+            .ToListAsync();
+
+        return Ok(staff);
     }
 
     // GET /appointments/queue
@@ -313,7 +343,14 @@ public class AppointmentsController : ControllerBase
 
         ImagingOrder? imagingOrder = null;
         var normalizedImagingModality = NormalizeImagingModality(selectedService?.ImagingModality);
-        if (normalizedImagingModality != null)
+
+        var medicalImagingEnabled =
+            normalizedImagingModality != null &&
+            await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
+                appointment.DepartmentId,
+                "medicalImagingEnabled");
+
+        if (normalizedImagingModality != null && medicalImagingEnabled)
         {
             var imagingOrderExists = await _context.ImagingOrders
                 .AnyAsync(io => io.AppointmentId == appointment.Id);
@@ -508,6 +545,20 @@ public class AppointmentsController : ControllerBase
 
         if (request.IsDocumented.HasValue)
         {
+            if (request.IsDocumented.Value == false)
+            {
+                var notDocumentedEnabled =
+                    await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
+                        appointment.DepartmentId,
+                        "notDocumentedEnabled");
+
+                if (!notDocumentedEnabled)
+                {
+                    return StatusCode(
+                        StatusCodes.Status403Forbidden,
+                        new { error = "Not documented feature is disabled for this department." });
+                }
+            }
             appointment.IsDocumented = request.IsDocumented.Value;
 
             var appointmentClient = await _context.Clients.FindAsync(appointment.ClientId);
@@ -563,40 +614,40 @@ public class AppointmentsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
-            _context.Appointments.Where(a => a.Id == id));
-
-        var appointment = await scopedAppointments.FirstOrDefaultAsync();
-
-        if (appointment == null)
-            return NotFound();
-
-        var imagingOrder = await _context.ImagingOrders
-            .FirstOrDefaultAsync(io => io.AppointmentId == appointment.Id);
-
-        if (imagingOrder != null)
+        var strategy = _context.Database.CreateExecutionStrategy();
+        var deleted = await strategy.ExecuteAsync(async () =>
         {
-            var hasImagingStudy = await _context.ImagingStudies
-                .AnyAsync(study =>
-                    study.TenantId == _tenant.TenantId &&
-                    study.ImagingOrderId == imagingOrder.Id);
+            var scopedAppointments = await ApplyStaffDepartmentVisibilityAsync(
+                _context.Appointments.Where(appointment => appointment.Id == id));
 
-            if (hasImagingStudy)
+            var appointment = await scopedAppointments.FirstOrDefaultAsync();
+            if (appointment == null)
+                return false;
+
+            var imagingOrder = await _context.ImagingOrders
+                .FirstOrDefaultAsync(order =>
+                    order.TenantId == _tenant.TenantId &&
+                    order.AppointmentId == appointment.Id);
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+
+            if (imagingOrder != null)
             {
-                return Conflict(new
-                {
-                    error = "Appointment cannot be deleted because it contains medical imaging records."
-                });
+                imagingOrder.AppointmentId = null;
+                imagingOrder.UpdatedAt = DateTime.UtcNow;
+
+                if (string.Equals(imagingOrder.Status, ImagingOrderStatuses.Scheduled, StringComparison.OrdinalIgnoreCase))
+                    imagingOrder.Status = ImagingOrderStatuses.Cancelled;
             }
 
-            // Keep FK as Restrict by design: deletion is explicit at the application layer.
-            // Today ImagingOrder is operational, but future medical artifacts (study/images/report)
-            // must not be cascade-deleted when an appointment is removed.
-            _context.ImagingOrders.Remove(imagingOrder);
-        }
+            _context.Appointments.Remove(appointment);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return true;
+        });
 
-        _context.Appointments.Remove(appointment);
-        await _context.SaveChangesAsync();
+        if (!deleted)
+            return NotFound();
 
         await BroadcastQueueDisplayUpdateAsync();
 

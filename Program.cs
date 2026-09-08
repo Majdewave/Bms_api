@@ -49,6 +49,9 @@ builder.Services.AddAWSService<IAmazonS3>();
 FontManager.RegisterFont(
     System.IO.File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))
 );
+FontManager.RegisterFont(
+    System.IO.File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansArabic.ttf"))
+);
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
@@ -347,6 +350,7 @@ builder.Services.AddCors(options =>
 // S3 and IFileStorage services
 builder.Services.AddAWSService<Amazon.S3.IAmazonS3>();
 builder.Services.AddScoped<IFileStorage, S3FileStorage>();
+builder.Services.AddScoped<InterpretationPdfService>();
 builder.Services.AddSingleton<ITeamChatOnlineUsersStore, InMemoryTeamChatOnlineUsersStore>();
 
 var app = builder.Build();

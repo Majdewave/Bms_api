@@ -8,7 +8,7 @@ using Clienta.Api.DTOs;
 
 namespace Clienta.Api.Controllers;
 
-[Authorize]
+[Authorize(Policy = "manage_staff")]
 [ApiController]
 [Route("api/staff")]
 public class StaffController : ControllerBase
@@ -17,13 +17,20 @@ public class StaffController : ControllerBase
     private readonly ITenantContext _tenant;
     private readonly IWebHostEnvironment _env;
     private readonly IFileStorage _fileStorage;
+    private readonly IAuthService _authService;
 
-    public StaffController(AppDbContext context, ITenantContext tenant, IWebHostEnvironment env, IFileStorage fileStorage)
+    public StaffController(
+        AppDbContext context,
+        ITenantContext tenant,
+        IWebHostEnvironment env,
+        IFileStorage fileStorage,
+        IAuthService authService)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
         _fileStorage = fileStorage;
+        _authService = authService;
     }
 
     private async Task<List<Guid>> GetDepartmentIdsAsync(Guid staffId)
@@ -35,14 +42,22 @@ public class StaffController : ControllerBase
             .ToListAsync();
     }
 
-    private async Task SyncDepartmentsAsync(Guid staffId, IEnumerable<Guid>? departmentIds, bool isAdmin)
+    private static string? NormalizeRole(string? role) => role?.Trim() switch
+    {
+        "Admin" => "Admin",
+        "Staff" => "Staff",
+        "Interpreter" => "Interpreter",
+        _ => null
+    };
+
+    private async Task SyncDepartmentsAsync(Guid staffId, IEnumerable<Guid>? departmentIds, bool requiresDepartment)
     {
         var normalizedDepartmentIds = departmentIds?
             .Where(id => id != Guid.Empty)
             .Distinct()
             .ToList() ?? new List<Guid>();
 
-        if (!isAdmin && normalizedDepartmentIds.Count == 0)
+        if (requiresDepartment && normalizedDepartmentIds.Count == 0)
         {
             throw new InvalidOperationException("At least one department must be selected for non-admin staff.");
         }
@@ -101,14 +116,38 @@ public class StaffController : ControllerBase
             departmentIds,
             user.LastLoginAt,
             user.StampUrl,
-            user.UseStamp
+            user.UseStamp,
+            await IsOwnerAsync(user.Id)
         );
     }
+
+    private Task<bool> IsOwnerAsync(Guid userId) => _context.Tenants
+        .AnyAsync(tenant => tenant.Id == _tenant.TenantId && tenant.OwnerUserId == userId);
+
+    private static StaffResponse BuildResponse(User user, Guid id, IReadOnlyList<string> permissions, IReadOnlyList<Guid> departmentIds, bool isOwner) => new(
+        id,
+        user.Id,
+        user.Email,
+        user.FullName ?? string.Empty,
+        user.RoleLabel ?? string.Empty,
+        user.Role,
+        user.IsActive,
+        permissions.ToList(),
+        departmentIds.ToList(),
+        user.LastLoginAt,
+        user.StampUrl,
+        user.UseStamp,
+        isOwner);
 
     // GET /api/staff
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        var ownerUserId = await _context.Tenants
+            .Where(tenant => tenant.Id == _tenant.TenantId)
+            .Select(tenant => tenant.OwnerUserId)
+            .FirstOrDefaultAsync();
+
         var staff = await _context.BusinessUsers
             .Include(bu => bu.User)
             .Where(bu => bu.TenantId == _tenant.TenantId)
@@ -130,20 +169,25 @@ public class StaffController : ControllerBase
             .GroupBy(sd => sd.StaffId)
             .ToDictionaryAsync(group => group.Key, group => group.Select(item => item.DepartmentId).OrderBy(id => id).ToList());
 
-        var staffResponse = staff.Select(bu => new StaffResponse(
+        var staffResponse = staff.Select(bu => BuildResponse(
+            bu.User,
             bu.Id,
-            bu.User.Id,
-            bu.User.Email,
-            bu.User.FullName ?? string.Empty,
-            bu.User.RoleLabel ?? string.Empty,
-            bu.User.Role,
-            bu.User.IsActive,
             permissionMap.TryGetValue(bu.UserId, out var keys) ? keys : new List<string>(),
             departmentMap.TryGetValue(bu.Id, out var ids) ? ids : new List<Guid>(),
-            bu.User.LastLoginAt,
-            bu.User.StampUrl,
-            bu.User.UseStamp
+            bu.User.Id == ownerUserId
         )).ToList();
+
+        if (ownerUserId.HasValue && staff.All(member => member.UserId != ownerUserId.Value))
+        {
+            var owner = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(user => user.Id == ownerUserId.Value && user.TenantId == _tenant.TenantId);
+
+            if (owner != null)
+            {
+                staffResponse.Add(BuildResponse(owner, owner.Id, [], [], true));
+            }
+        }
 
         return Ok(staffResponse);
     }
@@ -161,7 +205,14 @@ public class StaffController : ControllerBase
             .FirstOrDefaultAsync(bu =>(bu.Id == id || bu.UserId == id) && bu.TenantId == _tenant.TenantId);
       
         if (businessUser == null)
-            return NotFound();
+        {
+            var owner = await _context.Users.FirstOrDefaultAsync(user =>
+                user.Id == id &&
+                user.TenantId == _tenant.TenantId &&
+                _context.Tenants.Any(tenant => tenant.Id == _tenant.TenantId && tenant.OwnerUserId == user.Id));
+
+            return owner == null ? NotFound() : Ok(BuildResponse(owner, owner.Id, [], [], true));
+        }
 
         return Ok(await BuildResponseAsync(businessUser));
     }
@@ -173,8 +224,19 @@ public class StaffController : ControllerBase
         if (await _context.Users.AnyAsync(u => u.Email == request.Email))
             return BadRequest("Email already exists.");
 
-        var hashed = BCrypt.Net.BCrypt.HashPassword(request.Password);
-        var role = request.Role == "Admin" ? "Admin" : "Staff";
+        var role = NormalizeRole(request.Role);
+        if (role == null)
+            return BadRequest("Role must be Admin, Staff, or Interpreter.");
+
+        var permissions = role == "Staff" ? request.Permissions : [];
+        var departmentIds = role == "Interpreter" ? [] : request.DepartmentIds;
+
+        if (role != "Interpreter" && string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest("Password is required for Admin and Staff users.");
+
+        var hashed = role == "Interpreter"
+            ? string.Empty
+            : BCrypt.Net.BCrypt.HashPassword(request.Password!);
 
         var user = new User
         {
@@ -185,7 +247,7 @@ public class StaffController : ControllerBase
             RoleLabel = request.RoleLabel,
             FullName = request.FullName,
             UseStamp = request.UseStamp,
-            IsActive = true,
+            IsActive = role != "Interpreter",
             CreatedAt = DateTime.UtcNow,
             TenantId = _tenant.TenantId
         };
@@ -200,13 +262,13 @@ public class StaffController : ControllerBase
         });
 
         // Assign permissions only for Staff users
-        if (role == "Staff" && request.Permissions?.Any() == true)
+        if (role == "Staff" && permissions.Any())
         {
-            var permissions = await _context.Permissions
-                .Where(p => request.Permissions.Contains(p.Key))
+            var allowedPermissions = await _context.Permissions
+            .Where(p => permissions.Contains(p.Key))
                 .ToListAsync();
 
-            foreach (var permission in permissions)
+            foreach (var permission in allowedPermissions)
             {
                 _context.UserPermissions.Add(new UserPermission
                 {
@@ -225,7 +287,7 @@ public class StaffController : ControllerBase
 
         try
         {
-            await SyncDepartmentsAsync(businessUser.Id, request.DepartmentIds, role == "Admin");
+            await SyncDepartmentsAsync(businessUser.Id, departmentIds, role == "Staff");
         }
         catch (InvalidOperationException ex)
         {
@@ -233,6 +295,19 @@ public class StaffController : ControllerBase
         }
         await _context.SaveChangesAsync();
 
+        if (role == "Interpreter")
+        {
+            var inviteSent = await _authService.SendInviteToExistingUserAsync(
+                user.Id,
+                _tenant.TenantId);
+
+            if (!inviteSent)
+            {
+                return StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    "Interpreter was created, but the invitation could not be sent.");
+            }
+        }
         return CreatedAtAction(nameof(GetAll), await BuildResponseAsync(businessUser));
     }
 
@@ -240,23 +315,46 @@ public class StaffController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateStaffRequest request)
     {
-        // Find BusinessUser by Id and TenantId
+        var ownerUserId = await _context.Tenants
+            .Where(tenant => tenant.Id == _tenant.TenantId)
+            .Select(tenant => tenant.OwnerUserId)
+            .FirstOrDefaultAsync();
+
         var businessUser = await _context.BusinessUsers
             .Include(bu => bu.User)
             .ThenInclude(u => u.Permissions)
-            .FirstOrDefaultAsync(bu => bu.Id == id && bu.TenantId == _tenant.TenantId);
+            .FirstOrDefaultAsync(bu => (bu.Id == id || bu.UserId == id) && bu.TenantId == _tenant.TenantId);
 
-        if (businessUser == null)
+        var user = businessUser?.User;
+        if (user == null && ownerUserId == id)
+        {
+            user = await _context.Users.FirstOrDefaultAsync(candidate =>
+                candidate.Id == id && candidate.TenantId == _tenant.TenantId);
+        }
+
+        if (user == null)
             return NotFound();
 
-        var user = businessUser.User;
+        var role = NormalizeRole(request.Role);
+        if (role == null)
+            return BadRequest("Role must be Admin, Staff, or Interpreter.");
+
+        var isOwner = ownerUserId == user.Id;
+        if (isOwner && (!request.IsActive || role != "Admin"))
+            return Conflict("The tenant owner cannot be deactivated or changed from the Admin role.");
+
+        if (isOwner && !string.IsNullOrWhiteSpace(request.Password) && _tenant.UserId != user.Id)
+            return Forbid();
+
+        var permissions = role == "Staff" ? request.Permissions : [];
+        var departmentIds = role == "Interpreter" ? [] : request.DepartmentIds;
 
         user.FullName = request.FullName;
         user.Email = request.Email;
         user.RoleLabel = request.RoleLabel;
         user.IsActive = request.IsActive;
         user.UseStamp = request.UseStamp;
-        user.Role = request.Role == "Admin" ? "Admin" : "Staff";
+        user.Role = role;
 
         // update password
         if (!string.IsNullOrWhiteSpace(request.Password))
@@ -265,20 +363,23 @@ public class StaffController : ControllerBase
         }
 
         // Remove old permissions
-        var existingPermissions = await _context.UserPermissions
-            .Where(up => up.UserId == user.Id)
-            .ToListAsync();
-
-        _context.UserPermissions.RemoveRange(existingPermissions);
-
-        // Assign permissions ONLY if Staff
-        if (user.Role == "Staff" && request.Permissions?.Any() == true)
+        if (!isOwner)
         {
-            var permissions = await _context.Permissions
-                .Where(p => request.Permissions.Contains(p.Key))
+            var existingPermissions = await _context.UserPermissions
+                .Where(up => up.UserId == user.Id)
                 .ToListAsync();
 
-            foreach (var permission in permissions)
+            _context.UserPermissions.RemoveRange(existingPermissions);
+        }
+
+        // Assign permissions ONLY if Staff
+        if (!isOwner && user.Role == "Staff" && permissions.Any())
+        {
+            var allowedPermissions = await _context.Permissions
+            .Where(p => permissions.Contains(p.Key))
+                .ToListAsync();
+
+            foreach (var permission in allowedPermissions)
             {
                 _context.UserPermissions.Add(new UserPermission
                 {
@@ -289,18 +390,26 @@ public class StaffController : ControllerBase
             }
         }
 
-        try
+        if (businessUser != null)
         {
-            await SyncDepartmentsAsync(businessUser.Id, request.DepartmentIds, user.Role == "Admin");
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(ex.Message);
+            try
+            {
+                await SyncDepartmentsAsync(
+                    businessUser.Id,
+                    departmentIds,
+                    user.Role == "Staff");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         await _context.SaveChangesAsync();
 
-        return Ok(await BuildResponseAsync(businessUser));
+        return businessUser == null
+            ? Ok(BuildResponse(user, user.Id, [], [], true))
+            : Ok(await BuildResponseAsync(businessUser));
     }
 
     // POST /api/staff/{id}/stamp
@@ -356,6 +465,14 @@ public class StaffController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        var ownerUserId = await _context.Tenants
+            .Where(tenant => tenant.Id == _tenant.TenantId)
+            .Select(tenant => tenant.OwnerUserId)
+            .FirstOrDefaultAsync();
+
+        if (ownerUserId == id)
+            return Conflict("The tenant owner cannot be deleted.");
+
         // 1. Log current tenant
         var currentTenant = _tenant.TenantId;
         Console.WriteLine($"[DELETE Staff] Current TenantId: {currentTenant}");
@@ -386,6 +503,16 @@ public class StaffController : ControllerBase
             Console.WriteLine($"[DELETE Staff] User not found for BusinessUser.UserId: {businessUser.UserId}");
             return NotFound();
         }
+
+        if (ownerUserId == user.Id)
+            return Conflict("The tenant owner cannot be deleted.");
+
+        var hasInterpretationHistory = await _context.InterpretationRequests.AnyAsync(request =>
+            request.TenantId == _tenant.TenantId &&
+            (request.AssignedInterpreterId == user.Id || request.RequestedByUserId == user.Id));
+
+        if (hasInterpretationHistory)
+            return Conflict("User cannot be deleted because they are linked to an interpretation request.");
 
         // Remove related permissions
         var userPermissions = await _context.UserPermissions

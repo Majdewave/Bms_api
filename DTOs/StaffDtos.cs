@@ -2,7 +2,7 @@ namespace Clienta.Api.DTOs;
 
 public record CreateStaffRequest(
     string Email,
-    string Password,
+    string? Password,
     string FullName,
     string RoleLabel,
     List<string> Permissions,
@@ -35,5 +35,6 @@ public record StaffResponse(
     List<Guid> DepartmentIds,
     DateTime? LastLoginAt,
     string? StampUrl,
-    bool UseStamp
+    bool UseStamp,
+    bool IsOwner
 );

@@ -11,7 +11,7 @@ public record ImagingWorklistItemDto(
     string? IdNumber,
     DateTime? BirthDate,
     string? Phone,
-    Guid AppointmentId,
+    Guid? AppointmentId,
     Guid? ServiceId,
     string? ServiceName
 );

@@ -12,6 +12,8 @@ public class User
     public string Role { get; set; } = string.Empty;
 
     public string? FullName { get; set; }
+    public string? Phone { get; set; }
+    public string? LicenseNumber { get; set; }
     public string? RoleLabel { get; set; }
     public DateTime? LastLoginAt { get; set; }
     public string? StampUrl { get; set; }

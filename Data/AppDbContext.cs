@@ -1,4 +1,4 @@
-﻿// ...existing code...
+// ...existing code...
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -72,6 +72,9 @@ public class AppDbContext : DbContext
     public DbSet<ImagingInstance> ImagingInstances { get; set; } = null!;
     public DbSet<ImagingAnnotation> ImagingAnnotations { get; set; } = null!;
     public DbSet<ImagingGatewayCredential> ImagingGatewayCredentials { get; set; } = null!;
+    public DbSet<InterpretationRequest> InterpretationRequests { get; set; } = null!;
+    public DbSet<InterpretationReport> InterpretationReports { get; set; } = null!;
+    public DbSet<InterpretationReportDocument> InterpretationReportDocuments { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -183,6 +186,15 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ImagingGatewayCredential>()
             .HasQueryFilter(c => _tenantContext.TenantId == Guid.Empty || c.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasQueryFilter(request => _tenantContext.TenantId == Guid.Empty || request.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<InterpretationReport>()
+            .HasQueryFilter(report => _tenantContext.TenantId == Guid.Empty || report.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasQueryFilter(document => _tenantContext.TenantId == Guid.Empty || document.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<ImagingAnnotation>()
             .HasOne(a => a.ImagingInstance)
             .WithMany(i => i.Annotations)
@@ -249,6 +261,40 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Department>()
             .HasIndex(d => new { d.TenantId, d.Name })
             .IsUnique();
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasIndex(document => new { document.InterpretationRequestId, document.Version })
+            .IsUnique();
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasOne(document => document.InterpretationRequest)
+            .WithMany()
+            .HasForeignKey(document => document.InterpretationRequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasOne(document => document.InterpretationReport)
+            .WithMany()
+            .HasForeignKey(document => document.InterpretationReportId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasOne(document => document.Tenant)
+            .WithMany()
+            .HasForeignKey(document => document.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasOne(document => document.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(document => document.CreatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReportDocument>()
+            .HasOne(document => document.DeletedByUser)
+            .WithMany()
+            .HasForeignKey(document => document.DeletedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<Client>()
             .HasIndex(c => new { c.TenantId, c.IdNumber })
@@ -434,7 +480,7 @@ public class AppDbContext : DbContext
             .HasOne(io => io.Appointment)
             .WithMany()
             .HasForeignKey(io => io.AppointmentId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<ImagingOrder>()
             .HasOne(io => io.Service)
@@ -542,6 +588,62 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<ImagingStudy>()
             .HasIndex(study => new { study.TenantId, study.AccessionNumber });
+
+        modelBuilder.Entity<InterpretationReport>()
+            .HasOne(report => report.Tenant)
+            .WithMany()
+            .HasForeignKey(report => report.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReport>()
+            .HasOne(report => report.InterpretationRequest)
+            .WithOne()
+            .HasForeignKey<InterpretationReport>(report => report.InterpretationRequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReport>()
+            .HasIndex(report => report.InterpretationRequestId)
+            .IsUnique();
+
+        modelBuilder.Entity<InterpretationReport>()
+            .HasIndex(report => new { report.TenantId, report.UpdatedAt });
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasOne(request => request.Tenant)
+            .WithMany()
+            .HasForeignKey(request => request.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasOne(request => request.ImagingOrder)
+            .WithMany()
+            .HasForeignKey(request => request.ImagingOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasOne(request => request.ImagingStudy)
+            .WithMany()
+            .HasForeignKey(request => request.ImagingStudyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasOne(request => request.AssignedInterpreter)
+            .WithMany()
+            .HasForeignKey(request => request.AssignedInterpreterId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasOne(request => request.RequestedByUser)
+            .WithMany()
+            .HasForeignKey(request => request.RequestedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasIndex(request => request.ImagingOrderId)
+            .IsUnique();
+
+        modelBuilder.Entity<InterpretationRequest>()
+            .HasIndex(request => new { request.TenantId, request.Status, request.RequestedAt });
 
         modelBuilder.Entity<ImagingSeries>()
             .HasOne(series => series.Tenant)
@@ -904,3 +1006,5 @@ public class AppDbContext : DbContext
         }
     }
     }
+
+

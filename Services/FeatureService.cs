@@ -37,7 +37,10 @@ public class FeatureService : IFeatureService
                 DrugsEnabled = false,
                 BeforeAfterPhotosEnabled = true,
                 TeamChatEnabled = false,
-                QueueDisplayEnabled = false
+                QueueDisplayEnabled = false,
+                WhatsAppEnabled = false,
+                NotDocumentedEnabled = true,
+                MedicalImagingEnabled = false
             };
         }
 
@@ -58,7 +61,10 @@ public class FeatureService : IFeatureService
             DrugsEnabled = false,
             BeforeAfterPhotosEnabled = true,
             TeamChatEnabled = false,
-            QueueDisplayEnabled = false
+            QueueDisplayEnabled = false,
+            WhatsAppEnabled = false,
+            NotDocumentedEnabled = true,
+            MedicalImagingEnabled = false
         };
 
         _db.TenantFeatures.Add(features);
@@ -90,6 +96,19 @@ public class FeatureService : IFeatureService
             "queuedisplay" => features.QueueDisplayEnabled,
             "queue_display" => features.QueueDisplayEnabled,
             "queuedisplayenabled" => features.QueueDisplayEnabled,
+
+            "whatsapp" => features.WhatsAppEnabled,
+            "whatsappenabled" => features.WhatsAppEnabled,
+            "whatsapp_enabled" => features.WhatsAppEnabled,
+
+            "notdocumented" => features.NotDocumentedEnabled,
+            "notdocumentedenabled" => features.NotDocumentedEnabled,
+            "not_documented" => features.NotDocumentedEnabled,
+
+            "medicalimaging" => features.MedicalImagingEnabled,
+            "medicalimagingenabled" => features.MedicalImagingEnabled,
+            "medical_imaging" => features.MedicalImagingEnabled,
+
             _ => true
         };
     }

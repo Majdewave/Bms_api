@@ -3,6 +3,7 @@ using System;
 using Clienta.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Clienta.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260904231225_AddInterpretationReportDocuments")]
+    partial class AddInterpretationReportDocuments
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -697,7 +700,7 @@ namespace Clienta.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("AppointmentId")
+                    b.Property<Guid>("AppointmentId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ClientId")
@@ -964,10 +967,6 @@ namespace Clienta.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<byte[]>("Content")
-                        .IsRequired()
-                        .HasColumnType("bytea");
-
                     b.Property<string>("ContentType")
                         .IsRequired()
                         .HasColumnType("text");
@@ -984,10 +983,6 @@ namespace Clienta.Api.Migrations
                     b.Property<Guid?>("DeletedByUserId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
                     b.Property<long>("FileSize")
                         .HasColumnType("bigint");
 
@@ -1001,6 +996,10 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("StorageKey")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -1927,12 +1926,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
-                    b.Property<bool>("MedicalImagingEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("NotDocumentedEnabled")
-                        .HasColumnType("boolean");
-
                     b.Property<bool>("PrescriptionsEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -1962,9 +1955,6 @@ namespace Clienta.Api.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<bool>("VisitSummariesEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("WhatsAppEnabled")
                         .HasColumnType("boolean");
 
                     b.HasKey("Id");
@@ -2652,7 +2642,8 @@ namespace Clienta.Api.Migrations
                     b.HasOne("Clienta.Api.Entities.Appointment", "Appointment")
                         .WithMany()
                         .HasForeignKey("AppointmentId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("Clienta.Api.Entities.Client", "Client")
                         .WithMany()

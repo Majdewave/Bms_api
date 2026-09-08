@@ -13,9 +13,8 @@ public class ImagingOrder : ITenantEntity
     public Guid ClientId { get; set; }
     public Client Client { get; set; } = null!;
 
-    [Required]
-    public Guid AppointmentId { get; set; }
-    public Appointment Appointment { get; set; } = null!;
+    public Guid? AppointmentId { get; set; }
+    public Appointment? Appointment { get; set; }
 
     public Guid? ServiceId { get; set; }
     public Service? Service { get; set; }

@@ -45,8 +45,6 @@ public class JwtService
             new Claim(ClaimTypes.Role, roleValue),
             new Claim("tenant_id", tenantId.ToString())
         };
-        claims.Add(new Claim("permission", "manage_appointments"));
-
 
         // Add permission claims from DB
         var userPermissions = _db.UserPermissions

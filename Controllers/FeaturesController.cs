@@ -44,7 +44,10 @@ public class FeaturesController : ControllerBase
             features.BeforeAfterPhotosEnabled,
             features.VisitSummariesEnabled,
             features.TeamChatEnabled,
-            features.QueueDisplayEnabled
+            features.QueueDisplayEnabled,
+            features.WhatsAppEnabled,
+            features.NotDocumentedEnabled,
+            features.MedicalImagingEnabled
         );
         return Ok(dto);
     }
@@ -57,6 +60,17 @@ public class FeaturesController : ControllerBase
 
         var effectiveFeatures = await _userDepartmentFeatureAccessService.GetCurrentUserEffectiveFeaturesAsync();
         return Ok(effectiveFeatures);
+    }
+
+    // Department-scoped check, distinct from the user-aggregate GET("effective") above.
+    [HttpGet("effective/{featureKey}")]
+    public async Task<IActionResult> GetEffectiveForFeature(string featureKey, [FromQuery] Guid? departmentId)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var enabled = await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(departmentId, featureKey);
+        return Ok(new { enabled });
     }
 
     [HttpPut]
@@ -77,6 +91,9 @@ public class FeaturesController : ControllerBase
         features.VisitSummariesEnabled = request.VisitSummariesEnabled;
         features.TeamChatEnabled = request.TeamChatEnabled;
         features.QueueDisplayEnabled = request.QueueDisplayEnabled;
+        features.WhatsAppEnabled = request.WhatsAppEnabled;
+        features.NotDocumentedEnabled = request.NotDocumentedEnabled;
+        features.MedicalImagingEnabled = request.MedicalImagingEnabled;
 
         await _context.SaveChangesAsync();
 

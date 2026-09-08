@@ -2,6 +2,7 @@ using Clienta.Api.DTOs;
 using Clienta.Api.Services.WhatsApp;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Clienta.Api.Services;
 
 namespace Clienta.Api.Controllers;
 
@@ -11,15 +12,41 @@ namespace Clienta.Api.Controllers;
 public class WhatsAppController : ControllerBase
 {
     private readonly IWhatsAppService _whatsAppService;
+    private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
 
-    public WhatsAppController(IWhatsAppService whatsAppService)
+    public WhatsAppController(
+        IWhatsAppService whatsAppService,
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService)
     {
         _whatsAppService = whatsAppService;
+        _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
     }
+
+
+    private async Task<IActionResult?> EnsureWhatsAppEnabledAsync()
+    {
+        var enabled =
+            await _userDepartmentFeatureAccessService
+                .CanCurrentUserAccessFeatureAsync("whatsAppEnabled");
+
+        if (!enabled)
+        {
+            return StatusCode(
+                StatusCodes.Status403Forbidden,
+                new { error = "WhatsApp feature is disabled." });
+        }
+
+        return null;
+    }
+
 
     [HttpGet("status")]
     public async Task<IActionResult> GetStatus(CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
+
         var status = await _whatsAppService.GetStatusAsync(cancellationToken);
         return Ok(status);
     }
@@ -27,6 +54,9 @@ public class WhatsAppController : ControllerBase
     [HttpGet("test-connection")]
     public async Task<IActionResult> TestConnection(CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
         var diagnostics = await _whatsAppService.TestConnectionAsync(cancellationToken);
         return Ok(diagnostics);
     }
@@ -34,6 +64,9 @@ public class WhatsAppController : ControllerBase
     [HttpPost("connect")]
     public async Task<IActionResult> Connect(CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
         var payload = await _whatsAppService.InitializeConnectAsync(cancellationToken);
         return Ok(payload);
     }
@@ -41,6 +74,9 @@ public class WhatsAppController : ControllerBase
     [HttpPost("complete")]
     public async Task<IActionResult> CompleteEmbeddedSignup([FromBody] WhatsAppEmbeddedSignupCompleteRequest request, CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
         await _whatsAppService.CompleteEmbeddedSignupAsync(request, cancellationToken);
         return Ok(new { message = "WhatsApp connected successfully." });
     }
@@ -62,6 +98,9 @@ public class WhatsAppController : ControllerBase
     [HttpPost("disconnect")]
     public async Task<IActionResult> Disconnect(CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
         await _whatsAppService.DisconnectAsync(cancellationToken);
         return Ok(new { message = "WhatsApp disconnected." });
     }
@@ -69,6 +108,9 @@ public class WhatsAppController : ControllerBase
     [HttpGet("templates")]
     public async Task<IActionResult> GetTemplates(CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
         var templates = await _whatsAppService.GetTemplatesAsync(cancellationToken);
         return Ok(templates);
     }
@@ -76,6 +118,10 @@ public class WhatsAppController : ControllerBase
     [HttpGet("messages")]
     public async Task<IActionResult> GetMessages(CancellationToken cancellationToken)
     {
+        var featureError = await EnsureWhatsAppEnabledAsync();
+        if (featureError != null)
+            return featureError;
+
         var messages = await _whatsAppService.GetMessagesAsync(cancellationToken);
         return Ok(messages);
     }

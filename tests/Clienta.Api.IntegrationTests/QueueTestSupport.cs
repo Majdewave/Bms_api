@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Clienta.Api.Controllers;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
@@ -167,7 +167,10 @@ internal sealed class QueueTestFixture : IAsyncDisposable
             TenantContext,
             new AllowAllDepartmentAccessService(TenantContext),
             new PassThroughPlanEnforcementService(),
-            HubContext);
+            new TestImagingAccessionNumberGenerator(),
+            HubContext,
+            new AllowAllUserDepartmentFeatureAccessService(),
+            new NoOpQueueDisplayHubContext());
     }
 
     public ValueTask DisposeAsync()
@@ -289,3 +292,36 @@ internal sealed class NoOpGroupManager : IGroupManager
         return Task.CompletedTask;
     }
 }
+
+internal sealed class TestImagingAccessionNumberGenerator : IImagingAccessionNumberGenerator
+{
+    public string Generate(string modality, DateTime utcDate)
+    {
+        return $"{modality}{utcDate:yyMMdd}TEST01";
+    }
+}
+
+internal sealed class NoOpQueueDisplayHubContext : IHubContext<QueueDisplayHub>
+{
+    public IHubClients Clients { get; } = new RecordingHubClients();
+    public IGroupManager Groups { get; } = new NoOpGroupManager();
+}
+
+internal sealed class AllowAllUserDepartmentFeatureAccessService
+    : IUserDepartmentFeatureAccessService
+{
+    public Task<bool> IsFeatureEnabledAsync(Guid? departmentId, string featureKey)
+        => Task.FromResult(true);
+
+    public Task<bool> CanCurrentUserAccessFeatureAsync(string featureKey)
+        => Task.FromResult(true);
+
+    public Task<bool> CanUserAccessFeatureAsync(Guid tenantId, Guid userId, string featureKey)
+        => Task.FromResult(true);
+
+    public Task<EffectiveDepartmentFeaturesResponse> GetCurrentUserEffectiveFeaturesAsync()
+        => throw new NotImplementedException();
+}
+
+
+

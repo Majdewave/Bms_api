@@ -81,11 +81,61 @@ public class AuthService : IAuthService
         return true;
     }
 
+    public async Task<bool> SendInviteToExistingUserAsync(Guid userId, Guid tenantId)
+    {
+        var user = await _context.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u =>
+                u.Id == userId &&
+                u.TenantId == tenantId);
+
+        if (user == null)
+            return false;
+
+        // Invalidate previous unused invite tokens for this user
+        var previousTokens = await _context.UserTokens
+            .IgnoreQueryFilters()
+            .Where(ut =>
+                ut.UserId == userId &&
+                ut.TenantId == tenantId &&
+                ut.Type == "Invite" &&
+                !ut.IsUsed)
+            .ToListAsync();
+
+        foreach (var previousToken in previousTokens)
+            previousToken.IsUsed = true;
+
+        var rawToken = _tokenService.GenerateSecureToken();
+        var tokenHash = _tokenService.HashToken(rawToken);
+
+        var userToken = new UserToken
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            UserId = user.Id,
+            TokenHash = tokenHash,
+            Type = "Invite",
+            ExpiryDate = DateTime.UtcNow.AddHours(24),
+            IsUsed = false
+        };
+
+        _context.UserTokens.Add(userToken);
+        await _context.SaveChangesAsync();
+
+        var baseUrl = _config["App:BaseUrl"] ?? "https://clienta.digitalpenpro.com";
+        var encodedToken = Uri.EscapeDataString(rawToken);
+        var inviteLink = $"{baseUrl}/account/accept-invite?token={encodedToken}";
+
+        await _emailService.SendInviteEmailAsync(user.Email, inviteLink);
+
+        return true;
+    }
+
     // =========================================
     // ACCEPT INVITE
     // =========================================
 
-    public async Task<bool> AcceptInviteAsync(string token, string password, string fullName)
+    public async Task<bool> AcceptInviteAsync(string token, string password, string? fullName = null)
     {
         var tokenHash = _tokenService.HashToken(token);
 
@@ -103,7 +153,12 @@ public class AuthService : IAuthService
         var user = userToken.User;
 
         user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(password);
-        user.FullName = fullName;
+
+        if (!string.IsNullOrWhiteSpace(fullName))
+        {
+            user.FullName = fullName.Trim();
+        }
+
         user.IsActive = true;
 
         userToken.IsUsed = true;
