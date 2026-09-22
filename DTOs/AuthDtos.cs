@@ -10,4 +10,5 @@ public record RegisterRequest(
 	string? Phone,
 	string? BusinessType,
 	string? Language,
-	string? TimeZoneId);
+	string? TimeZoneId,
+	bool AcceptedTerms);

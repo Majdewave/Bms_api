@@ -1,0 +1,1 @@
+import{p as o,d as s,e as n}from"./index-DLI81hVQ.js";const r=async t=>o("/api/notes",t),p=async(t,e)=>n(`/api/notes/${t}`,e),c=async t=>s(`/api/notes/${t}`);export{r as createNote,c as deleteNote,p as updateNote};

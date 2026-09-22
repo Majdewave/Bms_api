@@ -21,7 +21,8 @@ namespace Clienta.Api.Controllers
         private static readonly HashSet<string> AllowedImagingModalities = new(StringComparer.Ordinal)
         {
             "US",
-            "DX"
+            "DX",
+            "CR"
         };
 
         public ServicesController(AppDbContext context, ITenantContext tenant)
@@ -71,7 +72,7 @@ namespace Clienta.Api.Controllers
 
             var normalizedImagingModality = NormalizeImagingModality(request.ImagingModality);
             if (normalizedImagingModality == null && !string.IsNullOrWhiteSpace(request.ImagingModality))
-                return BadRequest("Imaging modality must be one of: US, DX, or null.");
+                return BadRequest("Imaging modality must be one of: US, DX, CR, or null.");
 
             var department = await _context.Departments
                 .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);
@@ -118,7 +119,7 @@ namespace Clienta.Api.Controllers
 
             var normalizedImagingModality = NormalizeImagingModality(request.ImagingModality);
             if (normalizedImagingModality == null && !string.IsNullOrWhiteSpace(request.ImagingModality))
-                return BadRequest("Imaging modality must be one of: US, DX, or null.");
+                return BadRequest("Imaging modality must be one of: US, DX, CR, or null.");
 
             var department = await _context.Departments
                 .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);

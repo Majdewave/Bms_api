@@ -114,7 +114,8 @@ public class ImagingInterpretationsController : ControllerBase
             {
                 const string portalUrl = "https://clienta.digitalpenpro.com/interpreter/requests";
 
-                var subject = "בדיקת אולטרסאונד חדשה ממתינה לפענוח";
+                var modalityLabel = GetImagingModalityLabel(order.Modality);
+                var subject = $"בדיקת {modalityLabel} חדשה ממתינה לפענוח";
 
                 var body = $@"
             <div dir='rtl' style='font-family:Arial,sans-serif;line-height:1.6'>
@@ -123,7 +124,7 @@ public class ImagingInterpretationsController : ControllerBase
                 <p>שלום {System.Net.WebUtility.HtmlEncode(interpreter.FullName)},</p>
 
                 <p>
-                    בדיקת אולטרסאונד חדשה הוקצתה לך לפענוח במערכת Clienta.
+                    בדיקת {modalityLabel} חדשה הוקצתה לך לפענוח במערכת Clienta.
                 </p>
 
                 <p>
@@ -148,6 +149,7 @@ public class ImagingInterpretationsController : ControllerBase
                     subject,
                     body);
             }
+
         }
         catch (Exception exception)
         {
@@ -316,6 +318,16 @@ public class ImagingInterpretationsController : ControllerBase
     private IQueryable<InterpretationRequest> QueryRequests() => _context.InterpretationRequests
         .AsNoTracking()
         .Where(request => request.TenantId == _tenant.TenantId);
+
+    private static string GetImagingModalityLabel(string? modality)
+    {
+        return modality?.Trim().ToUpperInvariant() switch
+        {
+            "US" => "אולטרסאונד",
+            "DX" or "CR" => "רנטגן",
+            _ => "דימות"
+        };
+    }
 
     private static InterpretationRequestDto ToDto(InterpretationRequest request, string? assignedInterpreterName) => new(
         request.Id,

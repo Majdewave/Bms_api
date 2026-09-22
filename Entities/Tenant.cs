@@ -57,6 +57,10 @@ public class Tenant
     public DateTime? ScheduledPlanChangeAt { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    // Legal consent captured during account registration
+    public DateTime? TermsAcceptedAtUtc { get; set; }
+    public string? TermsVersion { get; set; }
+    public string? PrivacyVersion { get; set; }
 
     // Navigation
     public ICollection<User> Users { get; set; } = new List<User>();

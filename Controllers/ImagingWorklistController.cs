@@ -17,7 +17,8 @@ public class ImagingWorklistController : ControllerBase
     private static readonly HashSet<string> AllowedModalities = new(StringComparer.Ordinal)
     {
         "US",
-        "DX"
+        "DX",
+        "CR"
     };
 
     private readonly AppDbContext _db;
@@ -47,7 +48,7 @@ public class ImagingWorklistController : ControllerBase
 
         var normalizedModality = NormalizeModality(modality);
         if (normalizedModality == null && !string.IsNullOrWhiteSpace(modality))
-            return BadRequest("modality must be one of: US, DX.");
+            return BadRequest("modality must be one of: US, DX, CR.");
 
         var fromUtc = from?.UtcDateTime;
         var toUtc = to?.UtcDateTime;

@@ -879,7 +879,7 @@ public class AppointmentsController : ControllerBase
         }
 
         var normalized = modality.Trim().ToUpperInvariant();
-        return normalized is "US" or "DX" ? normalized : null;
+        return normalized is "US" or "DX" or "CR" ? normalized : null;
     }
 
     private async Task<string> GenerateAccessionNumberAsync(string modality)

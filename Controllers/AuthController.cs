@@ -55,6 +55,16 @@ public class AuthController : ControllerBase
         {
             var language = _onboardingLocalization.ResolveLanguage(request.Language, Request.Headers["Accept-Language"].ToString());
 
+            if (!request.AcceptedTerms)
+            {
+                return BadRequest(new
+                {
+                    code = "TERMS_ACCEPTANCE_REQUIRED",
+                    message = "You must accept the Terms of Service and Privacy Policy to create an account.",
+                    field = "acceptedTerms"
+                });
+            }
+
             if (string.IsNullOrWhiteSpace(request.BusinessName))
             {
                 return BadRequest(new
@@ -199,8 +209,12 @@ public class AuthController : ControllerBase
                 TrialEndsAt = null,
                 IsSuspended = false,
                 CreatedAt = registrationUtc,
-            };
 
+                // Legal consent
+                TermsAcceptedAtUtc = registrationUtc,
+                TermsVersion = _configuration["Legal:TermsVersion"],
+                PrivacyVersion = _configuration["Legal:PrivacyVersion"],
+            };
             _context.Tenants.Add(tenant);
             await _context.SaveChangesAsync();
 

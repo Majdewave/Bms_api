@@ -1,6 +1,7 @@
 using Clienta.Api.Data;
 using Clienta.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Clienta.Api.Services.Platform;
 
 namespace Clienta.Api.Services;
 
@@ -15,17 +16,20 @@ public class TenantApprovalService : ITenantApprovalService
     private readonly IEmailService _emailService;
     private readonly IOnboardingLocalizationService _localization;
     private readonly IConfiguration _config;
+    private readonly IPlatformSettingsService _platformSettingsService;
 
     public TenantApprovalService(
         AppDbContext db,
         IEmailService emailService,
         IOnboardingLocalizationService localization,
-        IConfiguration config)
+        IConfiguration config,
+        IPlatformSettingsService platformSettingsService)
     {
         _db = db;
         _emailService = emailService;
         _localization = localization;
         _config = config;
+        _platformSettingsService = platformSettingsService;
     }
 
     public async Task ApproveTenantAsync(Guid tenantId, CancellationToken cancellationToken)
@@ -41,10 +45,12 @@ public class TenantApprovalService : ITenantApprovalService
             throw new InvalidOperationException("Tenant is not pending approval.");
         }
 
-        var trialDays = _config.GetValue<int?>("Onboarding:TrialDays") ?? 7;
+        var platformSettings = await _platformSettingsService.GetAsync(cancellationToken);
+        var trialDays = platformSettings.DefaultTrialDays;
+
         if (trialDays <= 0)
         {
-            trialDays = 7;
+            throw new InvalidOperationException("Platform DefaultTrialDays must be greater than zero.");
         }
 
         var trialStart = DateTime.UtcNow;
