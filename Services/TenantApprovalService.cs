@@ -46,11 +46,11 @@ public class TenantApprovalService : ITenantApprovalService
         }
 
         var platformSettings = await _platformSettingsService.GetAsync(cancellationToken);
-        var trialDays = platformSettings.DefaultTrialDays;
+        var trialDays = TrialDurationResolver.ResolveDays(tenant.ProductType, platformSettings);
 
         if (trialDays <= 0)
         {
-            throw new InvalidOperationException("Platform DefaultTrialDays must be greater than zero.");
+            throw new InvalidOperationException("The configured trial duration for this product must be greater than zero.");
         }
 
         var trialStart = DateTime.UtcNow;

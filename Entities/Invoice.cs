@@ -9,6 +9,7 @@ public class Invoice
     public Guid TenantId { get; set; }
     public string InvoiceNumber { get; set; } = "";
     public Guid ClientId { get; set; }
+    public Guid? ProjectId { get; set; }
     public string ClientName { get; set; } = "";
     public decimal Amount { get; set; }
     public decimal VatRate { get; set; } = 18m;

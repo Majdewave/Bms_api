@@ -7,6 +7,8 @@ public class PlatformSettings
     public string? SupportPhone { get; set; }
     public string? WebsiteUrl { get; set; } = "https://clienta.digitalpenpro.com";
     public int DefaultTrialDays { get; set; } = 21;
+    public int ClinicTrialDays { get; set; } = 21;
+    public int BusinessTrialDays { get; set; } = 14;
     public int TrialReminderDays { get; set; } = 3;
     public bool AllowRegistrations { get; set; } = true;
     public bool RequireManualApproval { get; set; } = true;

@@ -6,6 +6,7 @@ using Clienta.Api.Services;
 using Clienta.Api.Services.Platform;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -25,7 +26,7 @@ public class PlatformBusinessLifecycleTests
         await using var fixture = await PlatformLifecycleTestFixture.CreateAsync();
         await using var app = fixture.CreateAppContext();
         await using var master = fixture.CreateMasterContext();
-        var tenantApprovalService = fixture.CreateTenantApprovalService(app);
+        var tenantApprovalService = fixture.CreateTenantApprovalService(app, master);
         var controller = fixture.CreateAuthController(app, tenantApprovalService);
         var validator = new TenantAccessValidator(master);
 
@@ -51,7 +52,7 @@ public class PlatformBusinessLifecycleTests
         await using var app = fixture.CreateAppContext();
         await using var master = fixture.CreateMasterContext();
         var validator = new TenantAccessValidator(master);
-        var service = fixture.CreatePlatformTenantService(master, app, fixture.CreateTenantApprovalService(app));
+        var service = fixture.CreatePlatformTenantService(master, app, fixture.CreateTenantApprovalService(app, master));
 
         await service.SuspendTenantAsync(fixture.Tenant.Id, CancellationToken.None);
         Assert.IsFalse(await validator.IsTenantAllowedAsync(fixture.Tenant.Id, CancellationToken.None));
@@ -66,7 +67,7 @@ public class PlatformBusinessLifecycleTests
         await using var fixture = await PlatformLifecycleTestFixture.CreateAsync();
         await using var app = fixture.CreateAppContext();
         await using var master = fixture.CreateMasterContext();
-        var service = fixture.CreatePlatformTenantService(master, app, fixture.CreateTenantApprovalService(app));
+        var service = fixture.CreatePlatformTenantService(master, app, fixture.CreateTenantApprovalService(app, master));
 
         var before = await master.Tenants.FirstAsync(t => t.Id == fixture.TrialTenant.Id);
         var originalStart = before.TrialStartsAt;
@@ -87,7 +88,7 @@ public class PlatformBusinessLifecycleTests
         await using var fixture = await PlatformLifecycleTestFixture.CreateAsync();
         await using var app = fixture.CreateAppContext();
         await using var master = fixture.CreateMasterContext();
-        var approvalService = fixture.CreateTenantApprovalService(app);
+        var approvalService = fixture.CreateTenantApprovalService(app, master);
         var service = fixture.CreatePlatformTenantService(master, app, approvalService);
 
         await service.ApproveTenantAsync(fixture.PendingTenant.Id, CancellationToken.None);
@@ -98,6 +99,93 @@ public class PlatformBusinessLifecycleTests
         Assert.IsTrue(approved.IsTrial);
         Assert.IsNotNull(approved.TrialStartsAt);
         Assert.IsNotNull(approved.TrialEndsAt);
+        Assert.AreEqual(7, (approved.TrialEndsAt!.Value - approved.TrialStartsAt!.Value).TotalDays, 0.01);
+    }
+
+    [TestMethod]
+    public async Task Approve_Clinic_UsesClinicTrialDays()
+    {
+        await using var fixture = await PlatformLifecycleTestFixture.CreateAsync();
+        await using var app = fixture.CreateAppContext();
+        await using var master = fixture.CreateMasterContext();
+        var pending = await app.Tenants.FirstAsync(tenant => tenant.Id == fixture.PendingTenant.Id);
+        pending.ProductType = TenantProductType.Clinic;
+        await app.SaveChangesAsync();
+
+        var approval = fixture.CreateTenantApprovalService(app, master);
+        await approval.ApproveTenantAsync(pending.Id, CancellationToken.None);
+
+        var approved = await master.Tenants.FirstAsync(tenant => tenant.Id == pending.Id);
+        Assert.AreEqual(21, (approved.TrialEndsAt!.Value - approved.TrialStartsAt!.Value).TotalDays, 0.01);
+    }
+
+    [TestMethod]
+    public async Task Approve_Business_UsesBusinessTrialDays()
+    {
+        await using var fixture = await PlatformLifecycleTestFixture.CreateAsync();
+        await using var app = fixture.CreateAppContext();
+        await using var master = fixture.CreateMasterContext();
+        var pending = await app.Tenants.FirstAsync(tenant => tenant.Id == fixture.PendingTenant.Id);
+        pending.ProductType = TenantProductType.Business;
+        await app.SaveChangesAsync();
+
+        var approval = fixture.CreateTenantApprovalService(app, master);
+        await approval.ApproveTenantAsync(pending.Id, CancellationToken.None);
+
+        var approved = await master.Tenants.FirstAsync(tenant => tenant.Id == pending.Id);
+        Assert.AreEqual(14, (approved.TrialEndsAt!.Value - approved.TrialStartsAt!.Value).TotalDays, 0.01);
+    }
+
+    [TestMethod]
+    public async Task PlatformTrialSettings_UpdateIndependentlyWithoutRewritingExistingTenantEndDate()
+    {
+        await using var fixture = await PlatformLifecycleTestFixture.CreateAsync();
+        await using var master = fixture.CreateMasterContext();
+        var tenant = await master.Tenants.FirstAsync(item => item.Id == fixture.TrialTenant.Id);
+        var originalTrialEnd = tenant.TrialEndsAt;
+        var settingsService = new PlatformSettingsService(master);
+
+        var updated = await settingsService.UpdateAsync(new Clienta.Api.DTOs.UpdatePlatformSettingsRequest(
+            SupportEmail: "support@test.local",
+            SupportPhone: null,
+            WebsiteUrl: "https://example.invalid",
+            DefaultTrialDays: 7,
+            ClinicTrialDays: 24,
+            BusinessTrialDays: 12,
+            TrialReminderDays: 3,
+            AllowRegistrations: true,
+            RequireManualApproval: true,
+            EnableBilling: true,
+            EnableHelpCenter: true,
+            WhatsAppEnabled: false,
+            ProMonthlyPrice: 46,
+            ProAnnualPrice: 460,
+            ProDescription: "Pro",
+            ProEnabled: true,
+            ProDisplayOrder: 1), CancellationToken.None);
+
+        Assert.AreEqual(7, updated.DefaultTrialDays);
+        Assert.AreEqual(24, updated.ClinicTrialDays);
+        Assert.AreEqual(12, updated.BusinessTrialDays);
+        await master.Entry(tenant).ReloadAsync();
+        Assert.AreEqual(originalTrialEnd, tenant.TrialEndsAt);
+    }
+
+    [TestMethod]
+    public void TrialDurationResolver_UnknownProductFallsBackToLegacyDefault()
+    {
+        var settings = new Clienta.Api.DTOs.PlatformSettingsDto(
+            Guid.NewGuid(), "support@test.local", null, null,
+            DefaultTrialDays: 7, ClinicTrialDays: 21, BusinessTrialDays: 14,
+            TrialReminderDays: 3, AllowRegistrations: true, RequireManualApproval: true,
+            EnableBilling: true, EnableHelpCenter: true, WhatsAppEnabled: false,
+            ProMonthlyPrice: 46, ProAnnualPrice: 460, ProDescription: "Pro",
+            ProEnabled: true, ProDisplayOrder: 1, UpdatedAt: DateTime.UtcNow);
+
+        Assert.AreEqual(7, TrialDurationResolver.ResolveDays(null, settings));
+        Assert.AreEqual(7, TrialDurationResolver.ResolveDays((TenantProductType)999, settings));
+        Assert.AreEqual(21, TrialDurationResolver.ResolveDays(TenantProductType.Clinic, settings));
+        Assert.AreEqual(14, TrialDurationResolver.ResolveDays(TenantProductType.Business, settings));
     }
 }
 
@@ -105,6 +193,7 @@ internal sealed class PlatformLifecycleTestFixture : IAsyncDisposable
 {
     private readonly string _databasePath;
     private readonly string _connectionString;
+    private readonly List<SqliteConnection> _connections = new();
 
     private PlatformLifecycleTestFixture(string databasePath)
     {
@@ -130,8 +219,12 @@ internal sealed class PlatformLifecycleTestFixture : IAsyncDisposable
 
     public AppDbContext CreateAppContext()
     {
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        connection.CreateFunction<string?, string?>("btrim", value => value?.Trim(), isDeterministic: true);
+        _connections.Add(connection);
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseSqlite(_connectionString)
+            .UseSqlite(connection)
             .Options;
 
         return new AppDbContext(options, new TestTenantContext());
@@ -139,8 +232,12 @@ internal sealed class PlatformLifecycleTestFixture : IAsyncDisposable
 
     public MasterDbContext CreateMasterContext()
     {
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        connection.CreateFunction<string?, string?>("btrim", value => value?.Trim(), isDeterministic: true);
+        _connections.Add(connection);
         var options = new DbContextOptionsBuilder<MasterDbContext>()
-            .UseSqlite(_connectionString)
+            .UseSqlite(connection)
             .Options;
 
         return new MasterDbContext(options);
@@ -181,7 +278,7 @@ internal sealed class PlatformLifecycleTestFixture : IAsyncDisposable
         return new PlatformTenantManagementService(masterDb, appDb, tenantApprovalService);
     }
 
-    public TenantApprovalService CreateTenantApprovalService(AppDbContext appDb)
+    public TenantApprovalService CreateTenantApprovalService(AppDbContext appDb, MasterDbContext masterDb)
     {
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -196,16 +293,31 @@ internal sealed class PlatformLifecycleTestFixture : IAsyncDisposable
             appDb,
             new NoOpEmailService(),
             new OnboardingLocalizationService(config),
-            config);
+            config,
+            new PlatformSettingsService(masterDb));
     }
 
     private async Task SeedAsync()
     {
         await using var app = CreateAppContext();
-        await app.Database.EnsureDeletedAsync();
         await app.Database.EnsureCreatedAsync();
 
         var now = DateTime.UtcNow;
+        app.PlatformSettings.Add(new PlatformSettings
+        {
+            Id = Guid.NewGuid(),
+            DefaultTrialDays = 7,
+            ClinicTrialDays = 21,
+            BusinessTrialDays = 14,
+        });
+
+        app.PlatformSettings.Add(new PlatformSettings
+        {
+            Id = Guid.NewGuid(),
+            DefaultTrialDays = 7,
+            ClinicTrialDays = 21,
+            BusinessTrialDays = 14,
+        });
 
         Tenant = new Tenant
         {
@@ -283,6 +395,12 @@ internal sealed class PlatformLifecycleTestFixture : IAsyncDisposable
 
     public ValueTask DisposeAsync()
     {
+        foreach (var connection in _connections)
+        {
+            connection.Dispose();
+        }
+        SqliteConnection.ClearAllPools();
+
         try
         {
             if (File.Exists(_databasePath))

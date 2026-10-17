@@ -7,12 +7,16 @@ public class Tenant
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Phone { get; set; }
+    public string? Address { get; set; }
     public string? WhatsApp { get; set; }
     public string Subdomain { get; set; } = default!;
     public string? LogoUrl { get; set; }
     public string? BusinessStampUrl { get; set; }
 
     public PlanType Plan { get; set; } = PlanType.Trial;
+
+    // NULL = Legacy CLIENTA (existing behaviour). Never backfilled or coerced to Clinic.
+    public TenantProductType? ProductType { get; set; }
     public SubscriptionStatus SubscriptionStatus { get; set; } = SubscriptionStatus.PendingApproval;
 
     public string PreferredLanguage { get; set; } = "en";

@@ -8,6 +8,7 @@ public record TenantResponse(
     string Subdomain,
     string? LogoUrl,
     string? BusinessStampUrl,
+    string? Address,
     string Plan,
     string SubscriptionStatus,
     DateTime CreatedAt,

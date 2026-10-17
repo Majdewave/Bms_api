@@ -38,6 +38,8 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
         settings.SupportPhone = NormalizeOptional(request.SupportPhone);
         settings.WebsiteUrl = NormalizeOptional(request.WebsiteUrl);
         settings.DefaultTrialDays = request.DefaultTrialDays;
+        settings.ClinicTrialDays = request.ClinicTrialDays;
+        settings.BusinessTrialDays = request.BusinessTrialDays;
         settings.TrialReminderDays = request.TrialReminderDays;
         settings.AllowRegistrations = request.AllowRegistrations;
         settings.RequireManualApproval = request.RequireManualApproval;
@@ -81,6 +83,8 @@ public sealed class PlatformSettingsService : IPlatformSettingsService
             settings.SupportPhone,
             settings.WebsiteUrl,
             settings.DefaultTrialDays,
+            settings.ClinicTrialDays,
+            settings.BusinessTrialDays,
             settings.TrialReminderDays,
             settings.AllowRegistrations,
             settings.RequireManualApproval,

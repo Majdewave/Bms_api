@@ -212,6 +212,9 @@ PublishScripts/
 *.nuget.props
 *.nuget.targets
 
+# Runtime-generated user uploads (including Development proof files)
+uploads/
+
 # Microsoft Azure Build Output
 csx/
 *.build.csdef

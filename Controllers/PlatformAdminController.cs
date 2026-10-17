@@ -1,5 +1,6 @@
 using Clienta.Api.Authorization;
 using Clienta.Api.DTOs;
+using Clienta.Api.Services;
 using Clienta.Api.Services.Platform;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,13 +14,16 @@ public sealed class PlatformAdminController : ControllerBase
 {
     private readonly IPlatformUserManagementService _platformUserManagementService;
     private readonly IPlatformSettingsService _platformSettingsService;
+    private readonly IBusinessCommercialPlanCatalog _businessCommercialPlanCatalog;
 
     public PlatformAdminController(
         IPlatformUserManagementService platformUserManagementService,
-        IPlatformSettingsService platformSettingsService)
+        IPlatformSettingsService platformSettingsService,
+        IBusinessCommercialPlanCatalog businessCommercialPlanCatalog)
     {
         _platformUserManagementService = platformUserManagementService;
         _platformSettingsService = platformSettingsService;
+        _businessCommercialPlanCatalog = businessCommercialPlanCatalog;
     }
 
     [HttpGet("users")]
@@ -152,6 +156,36 @@ public sealed class PlatformAdminController : ControllerBase
     [HttpPut("settings")]
     public async Task<IActionResult> UpdateSettings([FromBody] UpdatePlatformSettingsRequest request, CancellationToken cancellationToken)
         => Ok(await _platformSettingsService.UpdateAsync(request, cancellationToken));
+
+    [HttpGet("business-plans")]
+    public async Task<IActionResult> GetBusinessPlans(CancellationToken cancellationToken)
+    {
+        var definitions = await _businessCommercialPlanCatalog.GetAllAsync(cancellationToken);
+        return Ok(definitions.Select(BusinessCommercialPlanDtoMapper.ToDto));
+    }
+
+    [HttpPut("business-plans/{planType}")]
+    public async Task<IActionResult> UpdateBusinessPlan(
+        string planType,
+        [FromBody] UpdateBusinessPlanConfigurationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.TryParse<Models.PlanType>(planType, true, out var parsedPlan) ||
+            parsedPlan is not (Models.PlanType.Trial or Models.PlanType.Basic or Models.PlanType.Pro))
+        {
+            return BadRequest(new { message = "Only Business Trial, Basic, and Pro definitions can be configured." });
+        }
+
+        try
+        {
+            var updated = await _businessCommercialPlanCatalog.UpdateAsync(parsedPlan, request, cancellationToken);
+            return updated is null ? NotFound() : Ok(BusinessCommercialPlanDtoMapper.ToDto(updated));
+        }
+        catch (ArgumentException exception)
+        {
+            return BadRequest(new { message = exception.Message });
+        }
+    }
 
     private Guid GetCurrentUserId()
     {

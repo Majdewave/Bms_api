@@ -17,11 +17,14 @@ public class QuoteConversionService : IQuoteConversionService
             throw new InvalidOperationException("Cannot convert a quote without an existing client to an invoice.");
         }
 
+        var isBusinessTenant = tenant.ProductType == TenantProductType.Business;
+
         return new Invoice
         {
             TenantId = tenant.Id,
             InvoiceNumber = invoiceNumber,
             ClientId = quote.ClientId.Value,
+            ProjectId = quote.ProjectId,
             ClientName = quote.ClientName,
             InvoiceDate = DateTime.UtcNow,
             DueDate = quote.ValidUntil,
@@ -31,11 +34,14 @@ public class QuoteConversionService : IQuoteConversionService
             TotalAmount = quote.TotalAmount,
             Amount = quote.TotalAmount,
             Notes = quote.Notes,
-            BusinessName = quote.BusinessName,
-            BusinessAddress = quote.BusinessAddress,
-            BusinessPhone = quote.BusinessPhone,
-            BusinessEmail = quote.BusinessEmail,
-            LogoUrl = quote.LogoUrl,
+            BusinessName = isBusinessTenant ? tenant.Name : quote.BusinessName,
+            BusinessAddress = isBusinessTenant ? tenant.Address : quote.BusinessAddress,
+            LegalBusinessName = isBusinessTenant ? tenant.LegalBusinessName : null,
+            BusinessRegistrationNumber = isBusinessTenant ? tenant.BusinessRegistrationNumber : null,
+            BusinessPhone = isBusinessTenant ? tenant.Phone : quote.BusinessPhone,
+            BusinessEmail = isBusinessTenant ? tenant.OwnerUser?.Email : quote.BusinessEmail,
+            BusinessStampUrl = isBusinessTenant ? tenant.BusinessStampUrl : null,
+            LogoUrl = isBusinessTenant ? tenant.LogoUrl : quote.LogoUrl,
             LogoBase64 = quote.LogoBase64,
             Language = quote.Language,
             Status = InvoiceStatus.Pending,

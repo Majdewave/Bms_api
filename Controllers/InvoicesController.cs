@@ -23,23 +23,46 @@ public class InvoicesController : ControllerBase
 
     private readonly AppDbContext _db;
     private readonly IFeatureService _featureService;
+    private readonly IPmAccessService _pmAccessService;
     private readonly ITenantContext _tenantContext;
     private readonly IWebHostEnvironment _env;
-    public InvoicesController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService, IWebHostEnvironment env)
+    public InvoicesController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService, IPmAccessService pmAccessService, IWebHostEnvironment env)
     {
         _db = db;
         _tenantContext = tenantContext;
         _featureService = featureService;
+        _pmAccessService = pmAccessService;
         _env = env;
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] Guid? clientId = null, [FromQuery] Guid? projectId = null)
     {
         if (!await _featureService.IsEnabledAsync("invoices"))
             return Forbid();
 
-        var invoices = await _db.Invoices
+        if (projectId.HasValue)
+        {
+            var projectQuery = _db.Projects.Where(project =>
+                project.Id == projectId.Value && project.TenantId == _tenantContext.TenantId);
+            if (clientId.HasValue)
+                projectQuery = projectQuery.Where(project => project.ClientId == clientId.Value);
+            if (!await projectQuery.AnyAsync())
+                return NotFound("Project not found for the current tenant and client.");
+        }
+
+        IQueryable<Invoice> invoicesQuery = _db.Invoices;
+        if (clientId.HasValue || projectId.HasValue)
+        {
+            invoicesQuery = invoicesQuery.Where(invoice => invoice.TenantId == _tenantContext.TenantId);
+            if (clientId.HasValue)
+                invoicesQuery = invoicesQuery.Where(invoice => invoice.ClientId == clientId.Value);
+            if (projectId.HasValue)
+                invoicesQuery = invoicesQuery.Where(invoice => invoice.ProjectId == projectId.Value);
+        }
+
+        var invoices = await invoicesQuery
+            .Where(invoice => invoice.TenantId == _tenantContext.TenantId)
             .Include(invoice => invoice.LineItems)
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ToListAsync();
@@ -55,14 +78,7 @@ public class InvoicesController : ControllerBase
 
         var invoice = await _db.Invoices
             .Include(item => item.LineItems)
-            .FirstOrDefaultAsync(item => item.Id == id);
-
-        Console.WriteLine($"Invoice has {invoice.LineItems.Count} line items");
-
-        foreach (var item in invoice.LineItems)
-        {
-            Console.WriteLine($"DB LineItem: {item.Id}");
-        }
+            .FirstOrDefaultAsync(item => item.Id == id && item.TenantId == _tenantContext.TenantId);
 
         if (invoice == null)
             return NotFound();
@@ -76,9 +92,13 @@ public class InvoicesController : ControllerBase
         if (!await _featureService.IsEnabledAsync("invoices"))
             return Forbid();
 
-        var client = await _db.Clients.FindAsync(request.ClientId);
+        var client = await _db.Clients.FirstOrDefaultAsync(item =>
+            item.Id == request.ClientId && item.TenantId == _tenantContext.TenantId);
         if (client == null)
             return BadRequest("Client not found");
+
+        if (!await ValidateProjectClientAsync(request.ProjectId, client.Id, request.ProjectId.HasValue))
+            return BadRequest("Project must belong to the current tenant and the selected client.");
 
         if (!ValidateInvoiceRequestSettings(request, out var invoiceSettingsValidationError))
             return BadRequest(invoiceSettingsValidationError);
@@ -137,14 +157,20 @@ public class InvoicesController : ControllerBase
 
         var invoice = await _db.Invoices
             .Include(item => item.LineItems)
-            .FirstOrDefaultAsync(item => item.Id == id);
+            .FirstOrDefaultAsync(item => item.Id == id && item.TenantId == _tenantContext.TenantId);
 
         if (invoice == null)
             return NotFound();
 
-        var client = await _db.Clients.FindAsync(request.ClientId);
+        var client = await _db.Clients.FirstOrDefaultAsync(item =>
+            item.Id == request.ClientId && item.TenantId == _tenantContext.TenantId);
         if (client == null)
             return BadRequest("Client not found");
+
+        var projectId = request.ProjectIdSpecified ? request.ProjectId : invoice.ProjectId;
+        var isNewProjectLink = request.ProjectIdSpecified && projectId.HasValue && projectId != invoice.ProjectId;
+        if (!await ValidateProjectClientAsync(projectId, client.Id, isNewProjectLink))
+            return BadRequest("Project must belong to the current tenant and the selected client.");
 
         if (!ValidateInvoiceRequestSettings(request, out var invoiceSettingsValidationError))
             return BadRequest(invoiceSettingsValidationError);
@@ -164,9 +190,10 @@ public class InvoicesController : ControllerBase
         // טען מחדש את החשבונית לאחר המחיקה
         invoice = await _db.Invoices
             .Include(i => i.LineItems)
-            .FirstAsync(i => i.Id == id);
+            .FirstAsync(i => i.Id == id && i.TenantId == _tenantContext.TenantId);
 
         ApplyInvoiceValues(invoice, request, client, tenant, lineItems, applyTenantSnapshot: false);
+        invoice.ProjectId = projectId;
 
         // הוסף ישירות לטבלה ולא דרך ה-Navigation
         foreach (var lineItem in lineItems)
@@ -216,7 +243,7 @@ public class InvoicesController : ControllerBase
         if (!await _featureService.IsEnabledAsync("invoices"))
             return Forbid();
 
-        var invoice = await _db.Invoices.FindAsync(id);
+        var invoice = await _db.Invoices.FirstOrDefaultAsync(item => item.Id == id && item.TenantId == _tenantContext.TenantId);
         if (invoice == null)
             return NotFound();
 
@@ -239,27 +266,37 @@ public class InvoicesController : ControllerBase
 
             var invoice = await _db.Invoices
                 .Include(item => item.LineItems)
-                .FirstOrDefaultAsync(item => item.Id == id);
+                .FirstOrDefaultAsync(item => item.Id == id && item.TenantId == _tenantContext.TenantId);
 
             if (invoice == null)
                 return NotFound();
 
             var tenant = await GetTenantAsync();
-            var client = await _db.Clients.AsNoTracking().FirstOrDefaultAsync(item => item.Id == invoice.ClientId);
+            var client = await _db.Clients.AsNoTracking().FirstOrDefaultAsync(item =>
+                item.Id == invoice.ClientId && item.TenantId == _tenantContext.TenantId);
             var currencyCode = NormalizeCurrencyCode(tenant?.Currency);
             var labels = GetLabels(invoice.Language);
             var lineItems = BuildPdfLineItems(invoice, labels);
-            var businessName = invoice.BusinessName ?? tenant?.Name ?? labels.BusinessFallback;
-            var businessAddress = invoice.BusinessAddress;
-            var businessPhone = invoice.BusinessPhone ?? tenant?.Phone;
+            var isBusinessTenant = tenant?.ProductType == TenantProductType.Business;
+            var businessName = isBusinessTenant ? tenant?.Name ?? invoice.BusinessName ?? labels.BusinessFallback : invoice.BusinessName ?? tenant?.Name ?? labels.BusinessFallback;
+            var businessAddress = isBusinessTenant ? tenant?.Address ?? invoice.BusinessAddress : invoice.BusinessAddress;
+            var businessPhone = isBusinessTenant ? tenant?.Phone ?? invoice.BusinessPhone : invoice.BusinessPhone ?? tenant?.Phone;
             var businessWhatsApp = tenant?.WhatsApp;
-            var businessEmail = invoice.BusinessEmail ?? tenant?.OwnerUser?.Email;
+            var businessEmail = isBusinessTenant ? tenant?.OwnerUser?.Email ?? invoice.BusinessEmail : invoice.BusinessEmail ?? tenant?.OwnerUser?.Email;
+            var legalBusinessName = isBusinessTenant ? tenant?.LegalBusinessName ?? invoice.LegalBusinessName : invoice.LegalBusinessName;
+            var businessRegistrationNumber = isBusinessTenant ? tenant?.BusinessRegistrationNumber ?? invoice.BusinessRegistrationNumber : invoice.BusinessRegistrationNumber;
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
-            var logoBytes = await TryLoadLogoBytesAsync(invoice.LogoBase64, invoice.LogoUrl ?? tenant?.LogoUrl, baseUrl);
+            var logoBytes = await TryLoadLogoBytesAsync(
+                isBusinessTenant && !string.IsNullOrWhiteSpace(tenant?.LogoUrl) ? null : invoice.LogoBase64,
+                isBusinessTenant ? tenant?.LogoUrl ?? invoice.LogoUrl : invoice.LogoUrl ?? tenant?.LogoUrl,
+                baseUrl);
+            var businessStampUrl = isBusinessTenant
+                ? tenant?.BusinessStampUrl ?? invoice.BusinessStampUrl
+                : invoice.BusinessStampUrl ?? tenant?.BusinessStampUrl;
             var businessStampBytes =
                 await TryLoadBusinessStampBytesAsync(
-                    invoice.BusinessStampUrl,
-                    tenant?.BusinessStampUrl,
+                    businessStampUrl,
+                    null,
                     baseUrl); var generatedOn = DateTime.UtcNow;
 
             var pdf = Document.Create(container =>
@@ -277,8 +314,8 @@ public class InvoicesController : ControllerBase
                             labels.IsRtl,
                             logoBytes,
                             businessName,
-                            invoice.LegalBusinessName,
-                            invoice.BusinessRegistrationNumber,
+                            legalBusinessName,
+                            businessRegistrationNumber,
                             businessAddress,
                             businessPhone,
                             businessWhatsApp,
@@ -287,7 +324,14 @@ public class InvoicesController : ControllerBase
                     page.Content().PaddingVertical(8).Column(column =>
                     {
                         column.Spacing(10);
-                        column.Item().Element(item => ComposeDetailsSection(item, labels, labels.IsRtl, invoice, client?.Phone));
+                        column.Item().Element(item => ComposeDetailsSection(
+                            item,
+                            labels,
+                            labels.IsRtl,
+                            invoice,
+                            client?.Phone,
+                            isBusinessTenant ? client?.IdNumber : null,
+                            isBusinessTenant ? GetBusinessClientRegistrationLabel(invoice.Language) : null));
                         column.Item().Element(item => ComposeLineItemsTable(item, labels, labels.IsRtl, lineItems, currencyCode));
                         column.Item().Element(item => ComposeTotalsSection(item, labels, labels.IsRtl, invoice, currencyCode));
 
@@ -332,6 +376,7 @@ public class InvoicesController : ControllerBase
         var finalAmountToPay = RoundMoney(totalAmount - withholdingTaxAmount);
 
         invoice.ClientId = client.Id;
+        invoice.ProjectId = request.ProjectId;
         invoice.ClientName = client.FullName;
         invoice.InvoiceDate = request.InvoiceDate == default ? DateTime.UtcNow : request.InvoiceDate;
         invoice.DueDate = request.DueDate;
@@ -354,6 +399,7 @@ public class InvoicesController : ControllerBase
         if (applyTenantSnapshot)
         {
             invoice.BusinessName = tenant?.Name ?? invoice.BusinessName;
+            invoice.BusinessAddress = tenant?.Address ?? invoice.BusinessAddress;
             invoice.LegalBusinessName = tenant?.LegalBusinessName;
             invoice.BusinessRegistrationNumber = tenant?.BusinessRegistrationNumber;
             invoice.BusinessPhone = tenant?.Phone ?? invoice.BusinessPhone;
@@ -551,6 +597,7 @@ public class InvoicesController : ControllerBase
             TenantId = invoice.TenantId,
             InvoiceNumber = invoice.InvoiceNumber,
             ClientId = invoice.ClientId,
+            ProjectId = invoice.ProjectId,
             ClientName = invoice.ClientName,
             Amount = invoice.Amount,
             VatRate = invoice.VatRate,
@@ -590,6 +637,32 @@ public class InvoicesController : ControllerBase
                 })
                 .ToList(),
         };
+    }
+
+    private async Task<bool> ProjectBelongsToCurrentTenantAsync(Guid projectId)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return false;
+
+        return await _db.Projects.AnyAsync(project =>
+            project.Id == projectId && project.TenantId == _tenantContext.TenantId);
+    }
+
+    private async Task<bool> ValidateProjectClientAsync(Guid? projectId, Guid clientId, bool isNewLink)
+    {
+        if (!projectId.HasValue)
+            return true;
+
+        if (_tenantContext.TenantId == Guid.Empty)
+            return false;
+
+        if (isNewLink && !await _pmAccessService.IsPmEnabledAsync(_tenantContext.TenantId))
+            return false;
+
+        return await _db.Projects.AnyAsync(project =>
+            project.Id == projectId.Value &&
+            project.TenantId == _tenantContext.TenantId &&
+            project.ClientId == clientId);
     }
 
     private string ResolveLanguage()
@@ -636,11 +709,7 @@ public class InvoicesController : ControllerBase
                 return tenant;
         }
 
-        return await _db.Tenants
-            .AsNoTracking()
-            .Include(item => item.OwnerUser)
-            .OrderBy(item => item.CreatedAt)
-            .FirstOrDefaultAsync();
+        return null;
     }
 
     private async Task<Tenant?> GetTenantForWriteAsync()
@@ -655,10 +724,7 @@ public class InvoicesController : ControllerBase
                 return tenant;
         }
 
-        return await _db.Tenants
-            .Include(item => item.OwnerUser)
-            .OrderBy(item => item.CreatedAt)
-            .FirstOrDefaultAsync();
+        return null;
     }
 
     private async Task<bool> InvoiceNumberExistsAsync(Guid tenantId, string invoiceNumber, Guid? excludeInvoiceId = null)
@@ -911,7 +977,14 @@ public class InvoicesController : ControllerBase
             });
     }
 
-    private static void ComposeDetailsSection(IContainer container, InvoicePdfLabels labels, bool isRtl, Invoice invoice, string? clientPhone)
+    private static void ComposeDetailsSection(
+        IContainer container,
+        InvoicePdfLabels labels,
+        bool isRtl,
+        Invoice invoice,
+        string? clientPhone,
+        string? clientRegistrationNumber,
+        string? clientRegistrationNumberLabel)
     {
         container.Row(row =>
         {
@@ -920,11 +993,11 @@ public class InvoicesController : ControllerBase
             if (isRtl)
             {
                 row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeInvoiceMeta(content, labels, true, invoice)));
-                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeClientMeta(content, labels, true, invoice, clientPhone)));
+                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeClientMeta(content, labels, true, invoice, clientPhone, clientRegistrationNumber, clientRegistrationNumberLabel)));
             }
             else
             {
-                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeClientMeta(content, labels, false, invoice, clientPhone)));
+                row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeClientMeta(content, labels, false, invoice, clientPhone, clientRegistrationNumber, clientRegistrationNumberLabel)));
                 row.RelativeItem().Element(item => ComposeMetaCard(item, content => ComposeInvoiceMeta(content, labels, false, invoice)));
             }
         });
@@ -946,7 +1019,9 @@ public class InvoicesController : ControllerBase
         InvoicePdfLabels labels,
         bool isRtl,
         Invoice invoice,
-        string? clientPhone)
+        string? clientPhone,
+        string? clientRegistrationNumber,
+        string? clientRegistrationNumberLabel)
     {
         AlignForDirection(container, isRtl).Column(column =>
         {
@@ -977,7 +1052,17 @@ public class InvoicesController : ControllerBase
 
             AddField(labels.ClientNameLabel, invoice.ClientName);
             AddField(labels.PhoneLabel, clientPhone);
+            if (clientRegistrationNumberLabel != null)
+                AddField(clientRegistrationNumberLabel, clientRegistrationNumber);
         });
+    }
+
+    private static string GetBusinessClientRegistrationLabel(string? language)
+    {
+        var normalizedLanguage = (language ?? "en").Trim().ToLowerInvariant();
+        if (normalizedLanguage.StartsWith("he", StringComparison.Ordinal)) return "ח.פ.";
+        if (normalizedLanguage.StartsWith("ar", StringComparison.Ordinal)) return "رقم تسجيل الشركة";
+        return "Company Registration No.";
     }
 
     private static void ComposeInvoiceMeta(

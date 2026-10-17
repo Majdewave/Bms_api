@@ -1,14 +1,16 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.Services;
 using Clienta.Api.Entities;
 using Clienta.Api.DTOs;
+using Clienta.Api.Models;
 
 namespace Clienta.Api.Controllers;
 
-[Authorize(Policy = "manage_staff")]
+[Authorize]
 [ApiController]
 [Route("api/staff")]
 public class StaffController : ControllerBase
@@ -18,19 +20,39 @@ public class StaffController : ControllerBase
     private readonly IWebHostEnvironment _env;
     private readonly IFileStorage _fileStorage;
     private readonly IAuthService _authService;
+    private readonly IAuthorizationService _authorization;
 
     public StaffController(
         AppDbContext context,
         ITenantContext tenant,
         IWebHostEnvironment env,
         IFileStorage fileStorage,
-        IAuthService authService)
+        IAuthService authService,
+        IAuthorizationService authorization)
     {
         _context = context;
         _tenant = tenant;
         _env = env;
         _fileStorage = fileStorage;
         _authService = authService;
+        _authorization = authorization;
+    }
+
+    private Task<bool> IsBusinessTenantAsync() => _context.Tenants.AsNoTracking()
+        .AnyAsync(tenant => tenant.Id == _tenant.TenantId && tenant.ProductType == TenantProductType.Business);
+
+    private async Task<bool> CanReadDirectoryAsync()
+    {
+        var isBusiness = await IsBusinessTenantAsync();
+        var hasManagePermission = (await _authorization.AuthorizeAsync(User, resource: null, policyName: "manage_staff")).Succeeded;
+        return StaffManagementAccessRules.CanReadDirectory(isBusiness, User.IsInRole("Staff"), hasManagePermission);
+    }
+
+    private async Task<bool> CanManageStaffAsync()
+    {
+        var isBusiness = await IsBusinessTenantAsync();
+        var hasManagePermission = (await _authorization.AuthorizeAsync(User, resource: null, policyName: "manage_staff")).Succeeded;
+        return StaffManagementAccessRules.CanManage(isBusiness, User.IsInRole("Admin"), hasManagePermission);
     }
 
     private async Task<List<Guid>> GetDepartmentIdsAsync(Guid staffId)
@@ -124,6 +146,18 @@ public class StaffController : ControllerBase
     private Task<bool> IsOwnerAsync(Guid userId) => _context.Tenants
         .AnyAsync(tenant => tenant.Id == _tenant.TenantId && tenant.OwnerUserId == userId);
 
+    private async Task<bool> HasCurrentBusinessCapabilitiesAsync()
+    {
+        var tenant = await _context.Tenants
+            .AsNoTracking()
+            .Where(item => item.Id == _tenant.TenantId)
+            .Select(item => new { item.ProductType, item.Plan })
+            .FirstOrDefaultAsync();
+
+        return tenant is not null &&
+            BusinessPlanEntitlement.HasCurrentBusinessCapabilities(tenant.ProductType, tenant.Plan);
+    }
+
     private static StaffResponse BuildResponse(User user, Guid id, IReadOnlyList<string> permissions, IReadOnlyList<Guid> departmentIds, bool isOwner) => new(
         id,
         user.Id,
@@ -143,6 +177,8 @@ public class StaffController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
+        if (!await CanReadDirectoryAsync()) return Forbid();
+        var businessStaffReadOnly = await IsBusinessTenantAsync() && User.IsInRole("Staff");
         var ownerUserId = await _context.Tenants
             .Where(tenant => tenant.Id == _tenant.TenantId)
             .Select(tenant => tenant.OwnerUserId)
@@ -189,6 +225,18 @@ public class StaffController : ControllerBase
             }
         }
 
+        if (businessStaffReadOnly)
+        {
+            return Ok(staffResponse.Select(member => new
+            {
+                member.Id,
+                member.FullName,
+                member.RoleLabel,
+                member.Role,
+                member.IsOwner,
+            }));
+        }
+
         return Ok(staffResponse);
     }
 
@@ -196,6 +244,7 @@ public class StaffController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(Guid id)
     {
+        if (!await CanManageStaffAsync()) return Forbid();
         // Find BusinessUser by Id and TenantId
         var businessUser = await _context.BusinessUsers
             //.IgnoreQueryFilters()
@@ -221,6 +270,7 @@ public class StaffController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateStaffRequest request)
     {
+        if (!await CanManageStaffAsync()) return Forbid();
         if (await _context.Users.AnyAsync(u => u.Email == request.Email))
             return BadRequest("Email already exists.");
 
@@ -287,7 +337,10 @@ public class StaffController : ControllerBase
 
         try
         {
-            await SyncDepartmentsAsync(businessUser.Id, departmentIds, role == "Staff");
+            await SyncDepartmentsAsync(
+                businessUser.Id,
+                departmentIds,
+                role == "Staff" && !(await HasCurrentBusinessCapabilitiesAsync()));
         }
         catch (InvalidOperationException ex)
         {
@@ -315,6 +368,7 @@ public class StaffController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(Guid id, UpdateStaffRequest request)
     {
+        if (!await CanManageStaffAsync()) return Forbid();
         var ownerUserId = await _context.Tenants
             .Where(tenant => tenant.Id == _tenant.TenantId)
             .Select(tenant => tenant.OwnerUserId)
@@ -397,7 +451,7 @@ public class StaffController : ControllerBase
                 await SyncDepartmentsAsync(
                     businessUser.Id,
                     departmentIds,
-                    user.Role == "Staff");
+                    user.Role == "Staff" && !(await HasCurrentBusinessCapabilitiesAsync()));
             }
             catch (InvalidOperationException ex)
             {
@@ -416,6 +470,7 @@ public class StaffController : ControllerBase
     [HttpPost("{id}/stamp")]
     public async Task<IActionResult> UploadStamp(Guid id, IFormFile file)
     {
+        if (!await CanManageStaffAsync()) return Forbid();
         if (file == null || file.Length == 0)
             return BadRequest("No file uploaded");
 
@@ -465,6 +520,7 @@ public class StaffController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!await CanManageStaffAsync()) return Forbid();
         var ownerUserId = await _context.Tenants
             .Where(tenant => tenant.Id == _tenant.TenantId)
             .Select(tenant => tenant.OwnerUserId)

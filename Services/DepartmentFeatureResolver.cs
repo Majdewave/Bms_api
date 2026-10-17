@@ -41,6 +41,12 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
         if (string.IsNullOrWhiteSpace(normalizedKey))
             return true;
 
+        if (string.Equals(normalizedKey, "quotesEnabled", StringComparison.OrdinalIgnoreCase) &&
+            await HasCurrentBusinessCapabilitiesAsync(tenantId, cancellationToken))
+        {
+            return true;
+        }
+
         var tenantFeatures = await GetTenantFeaturesAsync(tenantId, cancellationToken);
         var tenantEnabled = IsTenantFeatureEnabled(tenantFeatures, normalizedKey);
         if (!tenantEnabled)
@@ -65,6 +71,7 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
     public async Task<List<DepartmentFeatureItemResponse>> GetDepartmentFeaturesAsync(Guid tenantId, Guid departmentId, CancellationToken cancellationToken = default)
     {
         var tenantFeatures = await GetTenantFeaturesAsync(tenantId, cancellationToken);
+        var businessCapabilitiesEnabled = await HasCurrentBusinessCapabilitiesAsync(tenantId, cancellationToken);
 
         var existing = await _context.DepartmentFeatures
             .AsNoTracking()
@@ -76,10 +83,15 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
         return SupportedFeatureKeys
             .Select(key =>
             {
-                var tenantEnabled = IsTenantFeatureEnabled(tenantFeatures, key);
-                var departmentEnabled = hasAnyOverrides
-                    ? (existing.TryGetValue(key, out var value) ? value : true)
-                    : true;
+                var tenantEnabled = (businessCapabilitiesEnabled && string.Equals(key, "quotesEnabled", StringComparison.OrdinalIgnoreCase))
+                    || IsTenantFeatureEnabled(tenantFeatures, key);
+                var businessQuotesEntitled = businessCapabilitiesEnabled &&
+                    string.Equals(key, "quotesEnabled", StringComparison.OrdinalIgnoreCase);
+                var departmentEnabled = businessQuotesEntitled
+                    ? true
+                    : hasAnyOverrides
+                        ? (existing.TryGetValue(key, out var value) ? value : true)
+                        : true;
 
                 return new DepartmentFeatureItemResponse(
                     key,
@@ -167,6 +179,13 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
             MedicalImagingEnabled = false,
         };
     }
+
+    private Task<bool> HasCurrentBusinessCapabilitiesAsync(Guid tenantId, CancellationToken cancellationToken) =>
+        _context.Tenants
+            .AsNoTracking()
+            .Where(tenant => tenant.Id == tenantId)
+            .Select(tenant => BusinessPlanEntitlement.HasCurrentBusinessCapabilities(tenant.ProductType, tenant.Plan))
+            .FirstOrDefaultAsync(cancellationToken);
 
     private static string NormalizeFeatureKey(string? featureKey)
     {

@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
     public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
+    public DbSet<CommercialPlanConfiguration> CommercialPlanConfigurations => Set<CommercialPlanConfiguration>();
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<UserPermission> UserPermissions => Set<UserPermission>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
@@ -75,6 +76,14 @@ public class AppDbContext : DbContext
     public DbSet<InterpretationRequest> InterpretationRequests { get; set; } = null!;
     public DbSet<InterpretationReport> InterpretationReports { get; set; } = null!;
     public DbSet<InterpretationReportDocument> InterpretationReportDocuments { get; set; } = null!;
+
+    // PM (Project Management) foundation - Phase 1A.
+    public DbSet<Project> Projects => Set<Project>();
+    public DbSet<ClientContact> ClientContacts => Set<ClientContact>();
+    public DbSet<BillingMilestone> BillingMilestones => Set<BillingMilestone>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentConfirmationRequest> PaymentConfirmationRequests => Set<PaymentConfirmationRequest>();
+    public DbSet<PaymentConfirmationProof> PaymentConfirmationProofs => Set<PaymentConfirmationProof>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -142,6 +151,8 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<PlatformSettings>()
             .HasKey(settings => settings.Id);
+
+        modelBuilder.ApplyConfiguration(new CommercialPlanConfigurationEntityConfiguration());
 
         // Global Tenant Filters (CRITICAL for shared database multi-tenancy)
         modelBuilder.Entity<User>()
@@ -240,6 +251,180 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<ClientFile>()
             .HasQueryFilter(f => _tenantContext.TenantId == Guid.Empty || f.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ClientFile>()
+            .HasOne(f => f.Project)
+            .WithMany()
+            .HasForeignKey(f => f.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Explicit so EF keeps the pre-existing single-column index alongside the composite one.
+        modelBuilder.Entity<ClientFile>()
+            .HasIndex(f => f.TenantId);
+
+        modelBuilder.Entity<ClientFile>()
+            .HasIndex(f => new { f.TenantId, f.ProjectId });
+
+        // PM (Project Management) foundation - Phase 1A.
+        modelBuilder.Entity<Project>()
+            .HasQueryFilter(p => _tenantContext.TenantId == Guid.Empty || p.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Project>()
+            .HasOne(p => p.Client)
+            .WithMany()
+            .HasForeignKey(p => p.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Project>()
+            .HasIndex(p => new { p.TenantId, p.ClientId });
+
+        modelBuilder.Entity<Project>()
+            .HasIndex(p => new { p.TenantId, p.Status });
+
+        modelBuilder.Entity<ClientContact>()
+            .HasQueryFilter(cc => _tenantContext.TenantId == Guid.Empty || cc.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<ClientContact>()
+            .HasOne(cc => cc.Client)
+            .WithMany()
+            .HasForeignKey(cc => cc.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ClientContact>()
+            .HasIndex(cc => new { cc.TenantId, cc.ClientId });
+
+        modelBuilder.Entity<BillingMilestone>()
+            .HasQueryFilter(m => _tenantContext.TenantId == Guid.Empty || m.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<BillingMilestone>()
+            .HasOne(m => m.Project)
+            .WithMany()
+            .HasForeignKey(m => m.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<BillingMilestone>()
+            .HasOne(m => m.Invoice)
+            .WithMany()
+            .HasForeignKey(m => m.InvoiceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<BillingMilestone>()
+            .HasIndex(m => new { m.TenantId, m.ProjectId, m.SortOrder });
+
+        modelBuilder.Entity<BillingMilestone>()
+            .HasIndex(m => new { m.TenantId, m.InvoiceId });
+
+        modelBuilder.Entity<Payment>()
+            .HasQueryFilter(payment => _tenantContext.TenantId == Guid.Empty || payment.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Payment>()
+            .HasOne(payment => payment.Invoice)
+            .WithMany()
+            .HasForeignKey(payment => payment.InvoiceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Payment>()
+            .HasIndex(payment => new { payment.TenantId, payment.InvoiceId, payment.Status });
+
+        modelBuilder.Entity<Payment>()
+            .HasIndex(payment => new { payment.TenantId, payment.ClientId });
+
+        modelBuilder.Entity<Payment>()
+            .HasIndex(payment => new { payment.TenantId, payment.ProjectId });
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasQueryFilter(request => _tenantContext.TenantId == Guid.Empty || request.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<PaymentConfirmationProof>()
+            .HasQueryFilter(proof => _tenantContext.TenantId == Guid.Empty || proof.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasOne(request => request.Tenant)
+            .WithMany()
+            .HasForeignKey(request => request.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasOne(request => request.Invoice)
+            .WithMany()
+            .HasForeignKey(request => request.InvoiceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasOne(request => request.Client)
+            .WithMany()
+            .HasForeignKey(request => request.ClientId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasOne(request => request.Project)
+            .WithMany()
+            .HasForeignKey(request => request.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasOne(request => request.SubmittedPayment)
+            .WithMany()
+            .HasForeignKey(request => request.SubmittedPaymentId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasIndex(request => request.TokenHash)
+            .IsUnique();
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasIndex(request => new { request.TenantId, request.InvoiceId });
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasIndex(request => new { request.TenantId, request.Status, request.ExpiresAt });
+
+        modelBuilder.Entity<PaymentConfirmationRequest>()
+            .HasIndex(request => request.SubmittedPaymentId)
+            .HasFilter("\"SubmittedPaymentId\" IS NOT NULL")
+            .IsUnique();
+
+        modelBuilder.Entity<PaymentConfirmationProof>()
+            .HasOne(proof => proof.Tenant)
+            .WithMany()
+            .HasForeignKey(proof => proof.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationProof>()
+            .HasOne(proof => proof.PaymentConfirmationRequest)
+            .WithOne(request => request.Proof)
+            .HasForeignKey<PaymentConfirmationProof>(proof => proof.PaymentConfirmationRequestId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<PaymentConfirmationProof>()
+            .HasIndex(proof => proof.PaymentConfirmationRequestId)
+            .IsUnique();
+
+        modelBuilder.Entity<PaymentConfirmationProof>()
+            .HasIndex(proof => proof.TenantId);
+
+        modelBuilder.Entity<Quote>()
+            .HasQueryFilter(quote => _tenantContext.TenantId == Guid.Empty || quote.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Quote>()
+            .HasOne<Project>()
+            .WithMany()
+            .HasForeignKey(q => q.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Quote>()
+            .HasIndex(q => new { q.TenantId, q.ProjectId });
+
+        modelBuilder.Entity<Invoice>()
+            .HasQueryFilter(invoice => _tenantContext.TenantId == Guid.Empty || invoice.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<Invoice>()
+            .HasOne<Project>()
+            .WithMany()
+            .HasForeignKey(i => i.ProjectId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Invoice>()
+            .HasIndex(i => new { i.TenantId, i.ProjectId });
 
         modelBuilder.Entity<TenantFeatures>()
             .HasQueryFilter(tf => _tenantContext.TenantId == Guid.Empty || tf.TenantId == _tenantContext.TenantId);

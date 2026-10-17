@@ -1,8 +1,24 @@
+using System.Text.Json.Serialization;
+
 namespace Clienta.Api.DTOs;
 
 public sealed class CreateInvoiceRequest
 {
+    private Guid? _projectId;
+
     public Guid ClientId { get; set; }
+    public Guid? ProjectId
+    {
+        get => _projectId;
+        set
+        {
+            _projectId = value;
+            ProjectIdSpecified = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool ProjectIdSpecified { get; private set; }
     public DateTime InvoiceDate { get; set; }
     public DateTime? DueDate { get; set; }
     public string? AllocationNumber { get; set; }
@@ -28,6 +44,7 @@ public sealed class InvoiceResponse
     public Guid TenantId { get; set; }
     public string InvoiceNumber { get; set; } = string.Empty;
     public Guid ClientId { get; set; }
+    public Guid? ProjectId { get; set; }
     public string ClientName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public decimal VatRate { get; set; }

@@ -9,6 +9,7 @@ public class Quote
     public string QuoteNumber { get; set; } = string.Empty;
     public Guid? DepartmentId { get; set; }
     public Guid? ClientId { get; set; }
+    public Guid? ProjectId { get; set; }
     public string ClientName { get; set; } = string.Empty;
     public string? CustomerPhone { get; set; }
     public string? CustomerEmail { get; set; }

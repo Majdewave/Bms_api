@@ -11,4 +11,5 @@ public record RegisterRequest(
 	string? BusinessType,
 	string? Language,
 	string? TimeZoneId,
-	bool AcceptedTerms);
+	bool AcceptedTerms,
+	string? ProductType = null);

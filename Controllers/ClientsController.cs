@@ -267,6 +267,14 @@ public class ClientsController : ControllerBase
         if (client == null)
             return NotFound();
 
+        // PM data (Projects/ClientContacts) must block client deletion regardless of PmEnabled state.
+        var hasPmData = await _context.Projects.AnyAsync(p => p.TenantId == _tenantContext.TenantId && p.ClientId == id)
+            || await _context.ClientContacts.AnyAsync(cc => cc.TenantId == _tenantContext.TenantId && cc.ClientId == id);
+        if (hasPmData)
+        {
+            return Conflict("Cannot delete this client because project management data exists for the client.");
+        }
+
         var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
 
         User? currentUser = null;
@@ -293,7 +301,16 @@ public class ClientsController : ControllerBase
         });
 
         _context.Clients.Remove(client);
-        await _context.SaveChangesAsync();
+
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.ForeignKeyViolation })
+        {
+            return Conflict("Cannot delete this client because project management data exists for the client.");
+        }
+
         return NoContent();
     }
 }

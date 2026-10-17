@@ -16,6 +16,58 @@
 			"type": "shell",
 			"command": "dotnet build",
 			"group": "build"
+		},
+		{
+			"label": "Focused Business PM entitlement tests",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"tests/Clienta.Api.IntegrationTests/Clienta.Api.IntegrationTests.csproj",
+				"--configuration",
+				"Release",
+				"--filter",
+				"FullyQualifiedName~PmAccessServiceTests",
+				"--no-restore"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Scaffold tenant address migration",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"ef",
+				"migrations",
+				"add",
+				"AddTenantBusinessAddress",
+				"--project",
+				"Clienta.Api.csproj",
+				"--no-build",
+				"--configuration",
+				"Release"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Business entitlement focused tests",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"test",
+				"tests/Clienta.Api.IntegrationTests/Clienta.Api.IntegrationTests.csproj",
+				"--filter",
+				"Name~BusinessCapabilityEntitlementTests|Name~PmAccessServiceTests",
+				"--logger",
+				"console;verbosity=minimal"
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
 		}
 	]
 }

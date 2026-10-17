@@ -22,6 +22,7 @@ public class MasterDbContext : DbContext
     public DbSet<BusinessUser> BusinessUsers => Set<BusinessUser>();
     public DbSet<PlatformUser> PlatformUsers => Set<PlatformUser>();
     public DbSet<PlatformSettings> PlatformSettings => Set<PlatformSettings>();
+    public DbSet<CommercialPlanConfiguration> CommercialPlanConfigurations => Set<CommercialPlanConfiguration>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -66,6 +67,8 @@ public class MasterDbContext : DbContext
 
         modelBuilder.Entity<PlatformSettings>()
             .HasKey(settings => settings.Id);
+
+        modelBuilder.ApplyConfiguration(new CommercialPlanConfigurationEntityConfiguration());
 
         // No global query filters - this is master data accessible to all tenants
     }

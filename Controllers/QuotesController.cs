@@ -25,23 +25,29 @@ public class QuotesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IFeatureService _featureService;
+    private readonly IPmAccessService _pmAccessService;
     private readonly IQuoteConversionService _quoteConversionService;
     private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
+    private readonly IAuthorizationService _authorizationService;
     private readonly IWebHostEnvironment _env;
 
     public QuotesController(
         AppDbContext db,
         ITenantContext tenantContext,
         IFeatureService featureService,
+        IPmAccessService pmAccessService,
         IQuoteConversionService quoteConversionService,
         IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
+        IAuthorizationService authorizationService,
         IWebHostEnvironment env)
     {
         _db = db;
         _tenantContext = tenantContext;
         _featureService = featureService;
+        _pmAccessService = pmAccessService;
         _quoteConversionService = quoteConversionService;
         _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
+        _authorizationService = authorizationService;
         _env = env;
     }
 
@@ -74,14 +80,19 @@ public class QuotesController : ControllerBase
         [FromQuery] string? search = null,
         [FromQuery] string? status = null,
         [FromQuery] string? clientId = null,
+        [FromQuery] Guid? projectId = null,
         [FromQuery] string? sortBy = "newest",
         [FromQuery] string? sortDirection = "desc")
     {
         if (!await _featureService.IsEnabledAsync("quotes"))
             return Forbid();
 
+        if (projectId.HasValue && !await ProjectBelongsToCurrentTenantAsync(projectId.Value))
+            return NotFound("Project not found for the current tenant.");
+
         var accessibleDepartmentIds = await GetAccessibleQuoteDepartmentIdsAsync();
-        if (accessibleDepartmentIds.Count == 0)
+        var businessAdminWithoutDepartment = await IsCurrentBusinessAdminAsync();
+        if (accessibleDepartmentIds.Count == 0 && !businessAdminWithoutDepartment)
             return Ok(new QuoteListResponse(
                 Array.Empty<QuoteListItemResponse>(),
                 0,
@@ -96,9 +107,10 @@ public class QuotesController : ControllerBase
         var normalizedSortBy = NormalizeSortBy(sortBy);
         var isDescending = !string.Equals(sortDirection, "asc", StringComparison.OrdinalIgnoreCase);
 
-        IQueryable<Quote> query = _db.Quotes
-            .AsNoTracking()
-            .Where(q => q.DepartmentId.HasValue && accessibleDepartmentIds.Contains(q.DepartmentId.Value));
+        IQueryable<Quote> query = _db.Quotes.AsNoTracking();
+        query = businessAdminWithoutDepartment
+            ? query.Where(q => !q.DepartmentId.HasValue || accessibleDepartmentIds.Contains(q.DepartmentId.Value))
+            : query.Where(q => q.DepartmentId.HasValue && accessibleDepartmentIds.Contains(q.DepartmentId.Value));
 
         var dateFrom = ResolveDateFrom(normalizedDateRange);
         if (dateFrom.HasValue)
@@ -125,6 +137,9 @@ public class QuotesController : ControllerBase
         if (!string.IsNullOrWhiteSpace(clientId) && Guid.TryParse(clientId, out var parsedClientId))
             query = query.Where(q => q.ClientId == parsedClientId);
 
+        if (projectId.HasValue)
+            query = query.Where(q => q.ProjectId == projectId.Value);
+
         query = ApplySorting(query, normalizedSortBy, isDescending);
 
         var totalCount = await query.CountAsync();
@@ -136,6 +151,7 @@ public class QuotesController : ControllerBase
                 q.QuoteNumber,
                 q.DepartmentId,
                 q.ClientId,
+                q.ProjectId,
                 q.ClientName,
                 q.QuoteDate,
                 q.ValidUntil,
@@ -162,12 +178,12 @@ public class QuotesController : ControllerBase
 
         var quote = await _db.Quotes
             .Include(q => q.LineItems)
-            .FirstOrDefaultAsync(q => q.Id == id);
+            .FirstOrDefaultAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
 
         if (quote == null)
             return NotFound();
 
-        if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(quote.DepartmentId, "quotesEnabled"))
+        if (!await CanAccessQuoteDepartmentAsync(quote.DepartmentId))
             return Forbid();
 
         return Ok(MapQuoteResponse(quote));
@@ -179,10 +195,11 @@ public class QuotesController : ControllerBase
         if (!await _featureService.IsEnabledAsync("quotes"))
             return Forbid();
 
-        if (!request.DepartmentId.HasValue)
+        var businessAdminWithoutDepartment = !request.DepartmentId.HasValue && await IsCurrentBusinessAdminAsync();
+        if (!request.DepartmentId.HasValue && !businessAdminWithoutDepartment)
             return BadRequest("Department is required.");
 
-        if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(request.DepartmentId, "quotesEnabled"))
+        if (request.DepartmentId.HasValue && !await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(request.DepartmentId, "quotesEnabled"))
             return Forbid();
 
         var customerResult = await ResolveCustomerAsync(request);
@@ -190,6 +207,9 @@ public class QuotesController : ControllerBase
             return BadRequest(customerResult.ErrorMessage);
 
         var customer = customerResult.Customer!;
+
+        if (!await ValidateProjectClientAsync(request.ProjectId, customer.ClientId, request.ProjectId.HasValue))
+            return BadRequest("Project must belong to the current tenant and the selected client.");
 
         if (!TryBuildLineItems(request.LineItems, out var lineItems, out var lineError))
             return BadRequest(lineError);
@@ -207,6 +227,7 @@ public class QuotesController : ControllerBase
             TenantId = tenant.Id,
             QuoteNumber = quoteNumber,
             DepartmentId = request.DepartmentId,
+            ProjectId = request.ProjectId,
         };
 
         ApplyQuoteValues(quote, request, customer, tenant, lineItems, applyTenantSnapshot: true);
@@ -225,20 +246,21 @@ public class QuotesController : ControllerBase
         if (!await _featureService.IsEnabledAsync("quotes"))
             return Forbid();
 
-        if (!request.DepartmentId.HasValue)
+        var businessAdminWithoutDepartment = !request.DepartmentId.HasValue && await IsCurrentBusinessAdminAsync();
+        if (!request.DepartmentId.HasValue && !businessAdminWithoutDepartment)
             return BadRequest("Department is required.");
 
-        if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(request.DepartmentId, "quotesEnabled"))
+        if (!await CanAccessQuoteDepartmentAsync(request.DepartmentId))
             return Forbid();
 
         var quote = await _db.Quotes
             .Include(q => q.LineItems)
-            .FirstOrDefaultAsync(q => q.Id == id);
+            .FirstOrDefaultAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
 
         if (quote == null)
             return NotFound();
 
-        if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(quote.DepartmentId, "quotesEnabled"))
+        if (!await CanAccessQuoteDepartmentAsync(quote.DepartmentId))
             return Forbid();
 
         var customerResult = await ResolveCustomerAsync(request);
@@ -246,6 +268,11 @@ public class QuotesController : ControllerBase
             return BadRequest(customerResult.ErrorMessage);
 
         var customer = customerResult.Customer!;
+        var projectId = request.ProjectIdSpecified ? request.ProjectId : quote.ProjectId;
+
+        var isNewProjectLink = request.ProjectIdSpecified && projectId.HasValue && projectId != quote.ProjectId;
+        if (!await ValidateProjectClientAsync(projectId, customer.ClientId, isNewProjectLink))
+            return BadRequest("Project must belong to the current tenant and the selected client.");
 
         if (!TryBuildLineItems(request.LineItems, out var lineItems, out var lineError))
             return BadRequest(lineError);
@@ -259,9 +286,10 @@ public class QuotesController : ControllerBase
 
         quote = await _db.Quotes
             .Include(q => q.LineItems)
-            .FirstAsync(q => q.Id == id);
+            .FirstAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
 
         ApplyQuoteValues(quote, request, customer, tenant, lineItems, applyTenantSnapshot: false);
+        quote.ProjectId = projectId;
 
         foreach (var lineItem in lineItems)
         {
@@ -282,11 +310,11 @@ public class QuotesController : ControllerBase
             return Forbid();
 
             var quote = await _db.Quotes
-                .FirstOrDefaultAsync(q => q.Id == id);
+                .FirstOrDefaultAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
         if (quote == null)
             return NotFound();
 
-            if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(quote.DepartmentId, "quotesEnabled"))
+            if (!await CanAccessQuoteDepartmentAsync(quote.DepartmentId))
                 return Forbid();
 
         _db.Quotes.Remove(quote);
@@ -303,12 +331,12 @@ public class QuotesController : ControllerBase
 
         var source = await _db.Quotes
             .Include(q => q.LineItems)
-            .FirstOrDefaultAsync(q => q.Id == id);
+            .FirstOrDefaultAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
 
         if (source == null)
             return NotFound();
 
-        if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(source.DepartmentId, "quotesEnabled"))
+        if (!await CanAccessQuoteDepartmentAsync(source.DepartmentId))
             return Forbid();
 
         var tenant = await GetTenantForWriteAsync();
@@ -325,6 +353,7 @@ public class QuotesController : ControllerBase
             QuoteNumber = quoteNumber,
             DepartmentId = source.DepartmentId,
             ClientId = source.ClientId,
+            ProjectId = source.ProjectId,
             ClientName = source.ClientName,
             QuoteDate = DateTime.UtcNow,
             ValidUntil = source.ValidUntil,
@@ -365,14 +394,20 @@ public class QuotesController : ControllerBase
         if (!await _featureService.IsEnabledAsync("quotes"))
             return Forbid();
 
+        if (!await _featureService.IsEnabledAsync("invoices") ||
+            !(await _authorizationService.AuthorizeAsync(User, "manage_invoices")).Succeeded)
+        {
+            return Forbid();
+        }
+
         var quote = await _db.Quotes
             .Include(q => q.LineItems)
-            .FirstOrDefaultAsync(q => q.Id == id);
+            .FirstOrDefaultAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
 
         if (quote == null)
             return NotFound();
 
-        if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(quote.DepartmentId, "quotesEnabled"))
+        if (!await CanAccessQuoteDepartmentAsync(quote.DepartmentId))
             return Forbid();
 
         var tenant = await GetTenantForWriteAsync();
@@ -416,25 +451,30 @@ public class QuotesController : ControllerBase
 
             var quote = await _db.Quotes
                 .Include(q => q.LineItems)
-                .FirstOrDefaultAsync(q => q.Id == id);
+                .FirstOrDefaultAsync(q => q.Id == id && q.TenantId == _tenantContext.TenantId);
 
             if (quote == null)
                 return NotFound();
 
-            if (!await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(quote.DepartmentId, "quotesEnabled"))
+            if (!await CanAccessQuoteDepartmentAsync(quote.DepartmentId))
                 return Forbid();
 
             var tenant = await GetTenantAsync();
+            var isBusinessTenant = tenant?.ProductType == TenantProductType.Business;
             var currencyCode = NormalizeCurrencyCode(tenant?.Currency);
             var labels = GetLabels(quote.Language);
             var lineItems = BuildPdfLineItems(quote, labels);
-            var businessName = quote.BusinessName ?? tenant?.Name ?? labels.BusinessFallback;
-            var businessAddress = quote.BusinessAddress;
-            var businessPhone = quote.BusinessPhone ?? tenant?.Phone;
+            var businessName = isBusinessTenant ? tenant?.Name ?? quote.BusinessName ?? labels.BusinessFallback : quote.BusinessName ?? tenant?.Name ?? labels.BusinessFallback;
+            var businessAddress = isBusinessTenant ? tenant?.Address ?? quote.BusinessAddress : quote.BusinessAddress;
+            var businessPhone = isBusinessTenant ? tenant?.Phone ?? quote.BusinessPhone : quote.BusinessPhone ?? tenant?.Phone;
+            var businessEmail = isBusinessTenant ? tenant?.OwnerUser?.Email ?? quote.BusinessEmail : quote.BusinessEmail ?? tenant?.OwnerUser?.Email;
             var businessWhatsApp = tenant?.WhatsApp;
             var (notesText, termsText) = SplitQuoteNotes(quote.Notes);
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
-            var logoBytes = await TryLoadLogoBytesAsync(quote.LogoBase64, quote.LogoUrl ?? tenant?.LogoUrl, baseUrl);
+            var logoBytes = await TryLoadLogoBytesAsync(
+                isBusinessTenant && !string.IsNullOrWhiteSpace(tenant?.LogoUrl) ? null : quote.LogoBase64,
+                isBusinessTenant ? tenant?.LogoUrl ?? quote.LogoUrl : quote.LogoUrl ?? tenant?.LogoUrl,
+                baseUrl);
             var generatedOn = DateTime.UtcNow;
 
             var pdf = Document.Create(container =>
@@ -454,6 +494,7 @@ public class QuotesController : ControllerBase
                             businessName,
                             businessAddress,
                             businessPhone,
+                            businessEmail,
                             businessWhatsApp));
 
                     page.Content().PaddingVertical(8).Column(column =>
@@ -497,6 +538,7 @@ public class QuotesController : ControllerBase
         var totalAmount = RoundMoney(subtotal + vatAmount);
 
         quote.ClientId = customer.ClientId;
+        quote.ProjectId = request.ProjectId;
         quote.DepartmentId = request.DepartmentId;
         quote.ClientName = customer.DisplayName;
         quote.CustomerPhone = customer.Phone;
@@ -517,6 +559,7 @@ public class QuotesController : ControllerBase
         if (applyTenantSnapshot)
         {
             quote.BusinessName = tenant.Name;
+            quote.BusinessAddress = tenant.Address;
             quote.BusinessPhone = tenant.Phone;
             quote.BusinessEmail = tenant.OwnerUser?.Email;
             quote.LogoUrl = tenant.LogoUrl;
@@ -609,6 +652,7 @@ public class QuotesController : ControllerBase
             QuoteNumber = quote.QuoteNumber,
             DepartmentId = quote.DepartmentId,
             ClientId = quote.ClientId,
+            ProjectId = quote.ProjectId,
             ClientName = quote.ClientName,
             QuoteDate = quote.QuoteDate,
             ValidUntil = quote.ValidUntil,
@@ -742,6 +786,7 @@ public class QuotesController : ControllerBase
         string businessName,
         string? businessAddress,
         string? businessPhone,
+        string? businessEmail,
         string? businessWhatsApp)
     {
         var phoneLabel = isRtl ? "טלפון:" : labels.PhoneLabel + ":";
@@ -782,6 +827,19 @@ public class QuotesController : ControllerBase
 
                                 if (isRtl)
                                     phone.Style(HebrewStyle());
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(businessEmail))
+                            {
+                                var email = leftColumn.Item()
+                                    .PaddingTop(2)
+                                    .AlignLeft()
+                                    .Text($"{labels.EmailLabel}: {businessEmail.Trim()}")
+                                    .FontSize(9)
+                                    .FontColor(Colors.Grey.Darken1);
+
+                                if (isRtl)
+                                    email.Style(HebrewStyle());
                             }
 
                             var whatsappLabelText = leftColumn.Item()
@@ -1442,6 +1500,7 @@ public class QuotesController : ControllerBase
         string QuoteNumber,
         Guid? DepartmentId,
         Guid? ClientId,
+        Guid? ProjectId,
         string ClientName,
         DateTime QuoteDate,
         DateTime? ValidUntil,
@@ -1456,6 +1515,32 @@ public class QuotesController : ControllerBase
         int PageSize,
         bool HasNextPage);
 
+    private Task<bool> ProjectBelongsToCurrentTenantAsync(Guid projectId)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Task.FromResult(false);
+
+        return _db.Projects.AnyAsync(project =>
+            project.Id == projectId && project.TenantId == _tenantContext.TenantId);
+    }
+
+    private async Task<bool> ValidateProjectClientAsync(Guid? projectId, Guid? clientId, bool isNewLink)
+    {
+        if (!projectId.HasValue)
+            return true;
+
+        if (!clientId.HasValue || _tenantContext.TenantId == Guid.Empty)
+            return false;
+
+        if (isNewLink && !await _pmAccessService.IsPmEnabledAsync(_tenantContext.TenantId))
+            return false;
+
+        return await _db.Projects.AnyAsync(project =>
+            project.Id == projectId.Value &&
+            project.TenantId == _tenantContext.TenantId &&
+            project.ClientId == clientId.Value);
+    }
+
     private async Task<Tenant?> GetTenantAsync()
     {
         if (_tenantContext.TenantId != Guid.Empty)
@@ -1469,11 +1554,7 @@ public class QuotesController : ControllerBase
                 return tenant;
         }
 
-        return await _db.Tenants
-            .AsNoTracking()
-            .Include(t => t.OwnerUser)
-            .OrderBy(t => t.CreatedAt)
-            .FirstOrDefaultAsync();
+        return null;
     }
 
     private async Task<Tenant?> GetTenantForWriteAsync()
@@ -1488,10 +1569,7 @@ public class QuotesController : ControllerBase
                 return tenant;
         }
 
-        return await _db.Tenants
-            .Include(t => t.OwnerUser)
-            .OrderBy(t => t.CreatedAt)
-            .FirstOrDefaultAsync();
+        return null;
     }
 
     private async Task<bool> QuoteNumberExistsAsync(Guid tenantId, string quoteNumber)
@@ -1542,6 +1620,9 @@ public class QuotesController : ControllerBase
         if (departmentIds.Count == 0)
             return new HashSet<Guid>();
 
+        if (await HasCurrentBusinessCapabilitiesAsync(tenantId))
+            return departmentIds.ToHashSet();
+
         var departmentFeatureRows = await _db.DepartmentFeatures
             .AsNoTracking()
             .Where(df => departmentIds.Contains(df.DepartmentId))
@@ -1572,6 +1653,48 @@ public class QuotesController : ControllerBase
         }
 
         return allowed;
+    }
+
+    private async Task<bool> IsCurrentBusinessAdminAsync()
+    {
+        var tenantId = _tenantContext.TenantId;
+        var userId = _tenantContext.UserId;
+        if (tenantId == Guid.Empty || userId is null || userId.Value == Guid.Empty)
+            return false;
+
+        var tenant = await _db.Tenants
+            .AsNoTracking()
+            .Where(item => item.Id == tenantId)
+            .Select(item => new { item.ProductType, item.Plan })
+            .FirstOrDefaultAsync();
+        if (tenant is null || !BusinessPlanEntitlement.HasCurrentBusinessCapabilities(tenant.ProductType, tenant.Plan))
+            return false;
+
+        return await _db.Users.AsNoTracking().AnyAsync(user =>
+            user.Id == userId.Value && user.TenantId == tenantId && user.Role == "Admin");
+    }
+
+    private async Task<bool> CanAccessQuoteDepartmentAsync(Guid? departmentId)
+    {
+        if (departmentId.HasValue)
+            return await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(departmentId, "quotesEnabled");
+
+        if (await HasCurrentBusinessCapabilitiesAsync(_tenantContext.TenantId))
+            return await IsCurrentBusinessAdminAsync();
+
+        return await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(null, "quotesEnabled");
+    }
+
+    private async Task<bool> HasCurrentBusinessCapabilitiesAsync(Guid tenantId)
+    {
+        var tenant = await _db.Tenants
+            .AsNoTracking()
+            .Where(item => item.Id == tenantId)
+            .Select(item => new { item.ProductType, item.Plan })
+            .FirstOrDefaultAsync();
+
+        return tenant is not null &&
+            BusinessPlanEntitlement.HasCurrentBusinessCapabilities(tenant.ProductType, tenant.Plan);
     }
 
     private static string NormalizeQuoteNumber(Tenant tenant)
@@ -1621,7 +1744,8 @@ public class QuotesController : ControllerBase
                 return QuoteCustomerInfoResult.Fail("Client is required for an existing customer quote.");
             }
 
-            var client = await _db.Clients.FindAsync(request.ClientId.Value);
+            var client = await _db.Clients.FirstOrDefaultAsync(item =>
+                item.Id == request.ClientId.Value && item.TenantId == _tenantContext.TenantId);
             if (client == null)
             {
                 return QuoteCustomerInfoResult.Fail("Client not found");
@@ -1654,5 +1778,4 @@ public class QuotesController : ControllerBase
         public static QuoteCustomerInfoResult Ok(QuoteCustomerInfo customer) => new(true, null, customer);
         public static QuoteCustomerInfoResult Fail(string errorMessage) => new(false, errorMessage, null);
     }
-
 }

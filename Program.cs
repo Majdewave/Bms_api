@@ -46,6 +46,13 @@ builder.Services.AddScoped<TrialService>();
 builder.Services.AddHostedService<TrialBackgroundService>();
 builder.Services.AddAWSService<IAmazonS3>(); 
 
+// PM (Project Management) foundation - Phase 1A.
+builder.Services.AddScoped<IPmAccessService, PmAccessService>();
+builder.Services.AddScoped<ITenantProductService, TenantProductService>();
+builder.Services.AddScoped<IBusinessDashboardService, BusinessDashboardService>();
+builder.Services.AddScoped<IBusinessCommercialPlanCatalog, BusinessCommercialPlanCatalog>();
+builder.Services.AddScoped<ICommercialPlanResolver, CommercialPlanResolver>();
+
 FontManager.RegisterFont(
     System.IO.File.OpenRead(Path.Combine("wwwroot", "fonts", "NotoSansHebrew-Regular.ttf"))
 );
@@ -91,6 +98,23 @@ builder.Services.AddScoped<IPlatformDashboardService, PlatformDashboardService>(
 builder.Services.AddScoped<IPlatformUserManagementService, PlatformUserManagementService>();
 builder.Services.AddScoped<IPlatformSettingsService, PlatformSettingsService>();
 builder.Services.AddScoped<IQueueDisplayService, QueueDisplayService>();
+builder.Services.AddScoped<IPaymentConfirmationAccessService, PaymentConfirmationAccessService>();
+builder.Services.AddScoped<IPaymentConfirmationTokenService, PaymentConfirmationTokenService>();
+builder.Services.AddScoped<IPaymentConfirmationProofStorage>(services =>
+{
+    var environment = services.GetRequiredService<IHostEnvironment>();
+    var configuration = services.GetRequiredService<IConfiguration>();
+    if (environment.IsDevelopment())
+    {
+        var localProofPath = configuration["PaymentConfirmation:DevelopmentProofStoragePath"];
+        return string.IsNullOrWhiteSpace(localProofPath)
+            ? new UnavailableDevelopmentPaymentConfirmationProofStorage()
+            : new LocalPaymentConfirmationProofStorage(localProofPath);
+    }
+
+    return ActivatorUtilities.CreateInstance<PaymentConfirmationProofStorage>(services);
+});
+builder.Services.AddScoped<PaymentConfirmationService>();
 
 builder.Services.AddScoped<DashboardService>();
 builder.Services.Configure<MetaWhatsAppOptions>(builder.Configuration.GetSection("WhatsApp"));
@@ -246,6 +270,9 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("manage_whatsapp",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_whatsapp")));
 
+    options.AddPolicy("manage_projects",
+        policy => policy.Requirements.Add(new PermissionRequirement("manage_projects")));
+
     options.AddPolicy(PlatformAuthConstants.PolicyOwner, policy =>
     {
         policy.AddAuthenticationSchemes(PlatformAuthConstants.PlatformScheme);
@@ -350,6 +377,7 @@ builder.Services.AddCors(options =>
 // S3 and IFileStorage services
 builder.Services.AddAWSService<Amazon.S3.IAmazonS3>();
 builder.Services.AddScoped<IFileStorage, S3FileStorage>();
+builder.Services.AddScoped<IClientFileService, ClientFileService>();
 builder.Services.AddScoped<InterpretationPdfService>();
 builder.Services.AddSingleton<ITeamChatOnlineUsersStore, InMemoryTeamChatOnlineUsersStore>();
 

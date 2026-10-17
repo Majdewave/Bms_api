@@ -15,17 +15,32 @@ public class FeaturesController : ControllerBase
     private readonly IFeatureService _featureService;
     private readonly ITenantContext _tenantContext;
     private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
+    private readonly IPmAccessService _pmAccessService;
 
     public FeaturesController(
         AppDbContext context,
         IFeatureService featureService,
         ITenantContext tenantContext,
-        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService)
+        IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
+        IPmAccessService pmAccessService)
     {
         _context = context;
         _featureService = featureService;
         _tenantContext = tenantContext;
         _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
+        _pmAccessService = pmAccessService;
+    }
+
+    // Read-only PM flag check for Phase 2 frontend routing. Deliberately separate from
+    // Get()/Update() so the existing tenant feature save contract is never touched.
+    [HttpGet("pm-status")]
+    public async Task<IActionResult> GetPmStatus()
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Ok(new { pmEnabled = false });
+
+        var pmEnabled = await _pmAccessService.IsPmEnabledAsync(_tenantContext.TenantId);
+        return Ok(new { pmEnabled });
     }
 
     [HttpGet]
@@ -50,6 +65,28 @@ public class FeaturesController : ControllerBase
             features.MedicalImagingEnabled
         );
         return Ok(dto);
+    }
+
+    [HttpGet("commercial-capabilities")]
+    public async Task<IActionResult> GetCommercialCapabilities()
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var features = await _featureService.GetEffectiveAsync();
+        return Ok(new UpdateTenantFeaturesRequest(
+            features.ReportsEnabled,
+            features.InvoicesEnabled,
+            features.QuotesEnabled,
+            features.PrescriptionsEnabled,
+            features.DrugsEnabled,
+            features.BeforeAfterPhotosEnabled,
+            features.VisitSummariesEnabled,
+            features.TeamChatEnabled,
+            features.QueueDisplayEnabled,
+            features.WhatsAppEnabled,
+            features.NotDocumentedEnabled,
+            features.MedicalImagingEnabled));
     }
 
     [HttpGet("effective")]

@@ -1,9 +1,25 @@
+using System.Text.Json.Serialization;
+
 namespace Clienta.Api.DTOs;
 
 public sealed class CreateQuoteRequest
 {
+    private Guid? _projectId;
+
     public bool IsExistingClient { get; set; } = true;
     public Guid? ClientId { get; set; }
+    public Guid? ProjectId
+    {
+        get => _projectId;
+        set
+        {
+            _projectId = value;
+            ProjectIdSpecified = true;
+        }
+    }
+
+    [JsonIgnore]
+    public bool ProjectIdSpecified { get; private set; }
     public Guid? DepartmentId { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerPhone { get; set; }
@@ -30,6 +46,7 @@ public sealed class QuoteResponse
     public string QuoteNumber { get; set; } = string.Empty;
     public Guid? DepartmentId { get; set; }
     public Guid? ClientId { get; set; }
+    public Guid? ProjectId { get; set; }
     public string ClientName { get; set; } = string.Empty;
     public string? CustomerPhone { get; set; }
     public string? CustomerEmail { get; set; }

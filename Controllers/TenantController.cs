@@ -17,16 +17,19 @@ public class TenantController : ControllerBase
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenantContext;
     private readonly IFileStorage _fileStorage;
+    private readonly ITenantProductService _tenantProductService;
 
     public TenantController(
         AppDbContext context,
         ITenantContext tenantContext,
-        IFileStorage fileStorage)
+        IFileStorage fileStorage,
+        ITenantProductService tenantProductService)
         
     {
         _context = context;
         _tenantContext = tenantContext;
         _fileStorage = fileStorage;
+        _tenantProductService = tenantProductService;
     }
 
     // GET api/tenant/me
@@ -37,6 +40,7 @@ public class TenantController : ControllerBase
         var tenantId = _tenantContext.TenantId;
 
         var tenant = await _context.Tenants
+            .Include(item => item.OwnerUser)
             .FirstOrDefaultAsync(t => t.Id == tenantId);
 
         var features = await _context.TenantFeatures
@@ -52,6 +56,8 @@ public class TenantController : ControllerBase
             tenant.LegalBusinessName,
             tenant.BusinessRegistrationNumber,
             tenant.Phone,
+            tenant.Address,
+            email = tenant.OwnerUser == null ? null : tenant.OwnerUser.Email,
             tenant.WhatsApp,
             tenant.LogoUrl,
             tenant.BusinessStampUrl,
@@ -72,7 +78,8 @@ public class TenantController : ControllerBase
             subscriptionStatus = tenant.SubscriptionStatus.ToString(),
             trialEndsAt = tenant.TrialEndsAt,
             SubscriptionEndsAt = tenant.SubscriptionEndsAt,
-            isSuspended = tenant.IsSuspended
+            isSuspended = tenant.IsSuspended,
+            productType = _tenantProductService.ToApiValue(_tenantProductService.Resolve(tenant.ProductType))
         });
     }
 
@@ -98,6 +105,8 @@ public class TenantController : ControllerBase
             tenant.BusinessRegistrationNumber = NormalizeNullableText(request.BusinessRegistrationNumber);
 
         tenant.Phone = request.Phone;
+        if (request.Address != null)
+            tenant.Address = NormalizeNullableText(request.Address);
         tenant.WhatsApp = request.WhatsApp;
 
         if (request.DefaultVatRate.HasValue)
@@ -181,6 +190,8 @@ public class TenantController : ControllerBase
             tenant.BusinessStampUrl = request.BusinessStampUrl;
 
         tenant.Phone = request.Phone;
+        if (request.Address != null)
+            tenant.Address = NormalizeNullableText(request.Address);
         tenant.WhatsApp = request.WhatsApp;
 
         if (request.DefaultVatRate.HasValue)
@@ -559,6 +570,7 @@ public class TenantController : ControllerBase
             tenant.Subdomain,
             tenant.LogoUrl,
             tenant.BusinessStampUrl,
+            tenant.Address,
             tenant.Plan.ToString(),
             tenant.SubscriptionStatus.ToString(),
             tenant.CreatedAt,

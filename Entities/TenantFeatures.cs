@@ -20,5 +20,8 @@ public class TenantFeatures : ITenantEntity
     public bool NotDocumentedEnabled { get; set; } = true;
     public bool MedicalImagingEnabled { get; set; } = false;
 
+    // PM (Project Management) foundation - Phase 1A. Tenant-wide, defaults to false for all tenants.
+    public bool PmEnabled { get; set; } = false;
+
     public virtual Tenant Tenant { get; set; } = default!;
 }

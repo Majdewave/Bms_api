@@ -8,6 +8,7 @@ public class UpdateTenantRequest
     public string? LogoUrl { get; set; }
     public string? BusinessStampUrl { get; set; }
     public string? Phone { get; set; }
+    public string? Address { get; set; }
     public string? WhatsApp { get; set; }
     public decimal? DefaultVatRate { get; set; }
     public decimal? DefaultWithholdingTaxRate { get; set; }

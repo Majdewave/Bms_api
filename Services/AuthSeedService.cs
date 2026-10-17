@@ -7,26 +7,23 @@ namespace Clienta.Api.Services;
 public class AuthSeedService
 {
     private readonly AppDbContext _db;
+    private readonly IHostEnvironment _environment;
 
-    public AuthSeedService(AppDbContext db)
+    public AuthSeedService(AppDbContext db, IHostEnvironment environment)
     {
         _db = db;
+        _environment = environment;
     }
 
     public async Task SeedAsync()
     {
-        // ===============================
-        // REMOVE DUPLICATE DEFAULT TENANTS
-        // ===============================
-        var defaultTenants = await _db.Tenants.Where(t => t.Subdomain == "default").ToListAsync();
-        if (defaultTenants.Count > 1)
+#if DEBUG
+        if (_environment.IsDevelopment())
         {
-            // Keep the first, remove the rest
-            var keepTenant = defaultTenants.First();
-            var removeTenants = defaultTenants.Skip(1).ToList();
-            _db.Tenants.RemoveRange(removeTenants);
-            await _db.SaveChangesAsync();
+            await SeedDevelopmentDemoAccountsAsync();
         }
+#endif
+
         // ===============================
         // CREATE PERMISSIONS IF MISSING
         // ===============================
@@ -40,7 +37,8 @@ public class AuthSeedService
             "manage_staff",
             "manage_invoices",
             "manage_quotes",
-            "manage_whatsapp"
+            "manage_whatsapp",
+            "manage_projects"
         };
 
         // Remove legacy manage_admins permission if it exists
@@ -69,89 +67,6 @@ public class AuthSeedService
         await _db.SaveChangesAsync();
 
         var allPermissions = await _db.Permissions.ToListAsync();
-
-        // ===============================
-        // CREATE DEFAULT TENANT IF NONE
-        // ===============================
-
-        var tenant = await _db.Tenants.FirstOrDefaultAsync();
-
-        tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Subdomain == "default");
-        if (tenant == null)
-        {
-            tenant = new Tenant
-            {
-                Id = Guid.NewGuid(),
-                Name = "Default Tenant",
-                Subdomain = "default",
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _db.Tenants.Add(tenant);
-            await _db.SaveChangesAsync();
-        }
-
-        // ===============================
-        // CREATE ADMIN IF NOT EXISTS
-        // ===============================
-
-        var admin = await _db.Users.FirstOrDefaultAsync(u => u.Email == "admin@clienta.local");
-
-        if (admin == null)
-        {
-            admin = new User
-            {
-                Id = Guid.NewGuid(),
-                Email = "admin@clienta.local",
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
-                Role = "Admin",
-                FullName = "System Admin",
-                IsActive = true,
-                TenantId = tenant.Id,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _db.Users.Add(admin);
-
-            _db.BusinessUsers.Add(new BusinessUser
-            {
-                TenantId = tenant.Id,
-                UserId = admin.Id
-            });
-
-            await _db.SaveChangesAsync();
-        }
-
-        // ===============================
-        // CREATE STAFF IF NOT EXISTS
-        // ===============================
-
-        var staff = await _db.Users.FirstOrDefaultAsync(u => u.Email == "staff@clienta.local");
-
-        if (staff == null)
-        {
-            staff = new User
-            {
-                Id = Guid.NewGuid(),
-                Email = "staff@clienta.local",
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Staff123!"),
-                Role = "Staff",
-                FullName = "Staff User",
-                IsActive = true,
-                TenantId = tenant.Id,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _db.Users.Add(staff);
-
-            _db.BusinessUsers.Add(new BusinessUser
-            {
-                TenantId = tenant.Id,
-                UserId = staff.Id
-            });
-
-            await _db.SaveChangesAsync();
-        }
 
         // Admin users have full access via Role = "Admin" — no DB permissions needed.
 
@@ -192,4 +107,71 @@ public class AuthSeedService
 
         await _db.SaveChangesAsync();
     }
+
+#if DEBUG
+    private async Task SeedDevelopmentDemoAccountsAsync()
+    {
+        var defaultTenants = await _db.Tenants.Where(t => t.Subdomain == "default").ToListAsync();
+        if (defaultTenants.Count > 1)
+        {
+            _db.Tenants.RemoveRange(defaultTenants.Skip(1));
+            await _db.SaveChangesAsync();
+        }
+
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(t => t.Subdomain == "default");
+        if (tenant == null)
+        {
+            tenant = new Tenant
+            {
+                Id = Guid.NewGuid(),
+                Name = "Default Tenant",
+                Subdomain = "default",
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Tenants.Add(tenant);
+            await _db.SaveChangesAsync();
+        }
+
+        var admin = await _db.Users.FirstOrDefaultAsync(u => u.Email == "admin@clienta.local");
+        if (admin == null)
+        {
+            admin = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = "admin@clienta.local",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
+                Role = "Admin",
+                FullName = "System Admin",
+                IsActive = true,
+                TenantId = tenant.Id,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Users.Add(admin);
+            _db.BusinessUsers.Add(new BusinessUser { TenantId = tenant.Id, UserId = admin.Id });
+            await _db.SaveChangesAsync();
+        }
+
+        var staff = await _db.Users.FirstOrDefaultAsync(u => u.Email == "staff@clienta.local");
+        if (staff == null)
+        {
+            staff = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = "staff@clienta.local",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("Staff123!"),
+                Role = "Staff",
+                FullName = "Staff User",
+                IsActive = true,
+                TenantId = tenant.Id,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.Users.Add(staff);
+            _db.BusinessUsers.Add(new BusinessUser { TenantId = tenant.Id, UserId = staff.Id });
+            await _db.SaveChangesAsync();
+        }
+    }
+#endif
 }

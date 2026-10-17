@@ -55,6 +55,16 @@ public class AuthController : ControllerBase
         {
             var language = _onboardingLocalization.ResolveLanguage(request.Language, Request.Headers["Accept-Language"].ToString());
 
+            if (!TenantProductService.TryParseRegistrationProduct(request.ProductType, out var productType))
+            {
+                return BadRequest(new
+                {
+                    code = "PRODUCT_TYPE_REQUIRED",
+                    message = "Select CLIENTA Clinic or CLIENTA Business.",
+                    field = "productType"
+                });
+            }
+
             if (!request.AcceptedTerms)
             {
                 return BadRequest(new
@@ -203,6 +213,7 @@ public class AuthController : ControllerBase
                 Phone = normalizedPhone,
                 Subdomain = subdomain,
                 Plan = PlanType.Trial,
+                ProductType = productType,
                 SubscriptionStatus = SubscriptionStatus.PendingApproval,
                 PreferredLanguage = language,
                 TrialStartsAt = null,
@@ -614,6 +625,7 @@ public class AuthController : ControllerBase
             <p><strong>Phone:</strong> {(string.IsNullOrWhiteSpace(tenant.Phone) ? "N/A" : tenant.Phone)}</p>
             <p><strong>Email:</strong> {user.Email}</p>
             <p><strong>Preferred Language:</strong> {preferredLanguage}</p>
+            <p><strong>CLIENTA Product:</strong> {tenant.ProductType}</p>
             <p><strong>Business Type:</strong> {(string.IsNullOrWhiteSpace(request.BusinessType) ? "N/A" : request.BusinessType)}</p>
             <p><strong>Registration Date & Time (UTC):</strong> {registrationUtc:yyyy-MM-dd HH:mm:ss} UTC</p>
             {localSection}

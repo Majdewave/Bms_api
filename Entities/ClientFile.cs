@@ -28,4 +28,11 @@ public class ClientFile : ITenantEntity
     public User UploadedByUser { get; set; } = null!;
 
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
+
+    // PM Phase 7: null = general client file.
+    public Guid? ProjectId { get; set; }
+    public Project? Project { get; set; }
+
+    [MaxLength(200)]
+    public string? Title { get; set; }
 }
