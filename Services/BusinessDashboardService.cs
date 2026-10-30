@@ -12,7 +12,8 @@ public interface IBusinessDashboardService
 }
 
 // Read-only aggregates for the Business dashboard. Every query is scoped by the supplied tenant id.
-// Included projects: Active, OnHold, Completed (Draft and Cancelled are excluded from every metric).
+// Financial aggregates include Active, OnHold, Completed projects (Draft and Cancelled are excluded).
+// Project-ending alerts include only Active and OnHold projects with an end date in or before the two-month window.
 public class BusinessDashboardService : IBusinessDashboardService
 {
     private readonly AppDbContext _db;
@@ -42,6 +43,31 @@ public class BusinessDashboardService : IBusinessDashboardService
             .Where(t => t.Id == tenantId)
             .Select(t => t.Currency)
             .FirstOrDefaultAsync(cancellationToken) ?? "ILS";
+
+        var projectEndingRows = await _db.Projects.AsNoTracking()
+            .Where(project =>
+                project.TenantId == tenantId &&
+                (project.Status == ProjectStatus.Active || project.Status == ProjectStatus.OnHold) &&
+                project.EndDate.HasValue &&
+                project.EndDate.Value <= today.AddMonths(2))
+            .OrderBy(project => project.EndDate)
+            .Select(project => new
+            {
+                project.Id,
+                project.Name,
+                EndDate = DateOnly.FromDateTime(project.EndDate!.Value),
+                project.Status,
+            })
+            .ToListAsync(cancellationToken);
+
+        var projectsEndingSoon = projectEndingRows
+            .Select(project => new BusinessProjectEndingDto(
+                project.Id,
+                project.Name,
+                project.EndDate,
+                (project.EndDate.ToDateTime(TimeOnly.MinValue) - today).Days,
+                project.Status))
+            .ToArray();
 
         var projects = _db.Projects.AsNoTracking().Where(p =>
             p.TenantId == tenantId &&
@@ -113,7 +139,7 @@ public class BusinessDashboardService : IBusinessDashboardService
 
         return new BusinessDashboardResponse(
             currency, projectCount, Round(projectValue), includeInvoiceFinancials,
-            invoiced, paid, outstanding, Round(notYetInvoiced), nextBilling);
+            invoiced, paid, outstanding, Round(notYetInvoiced), nextBilling, projectsEndingSoon);
     }
 
     private static decimal Round(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);

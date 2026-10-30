@@ -35,6 +35,8 @@ public class Appointment : ITenantEntity
 
     public int? QueueNumber { get; set; }
 
+    public string? RoomNumber { get; set; }
+
     public string? Notes { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

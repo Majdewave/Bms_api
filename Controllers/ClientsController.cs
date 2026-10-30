@@ -245,7 +245,10 @@ public class ClientsController : ControllerBase
         }
 
         client.FullName = request.FullName;
-        client.IdNumber = normalizedIdNumber;
+        // Preserve an existing identifier on a normal update: an omitted/null/empty idNumber must not
+        // silently erase a stored value (e.g. a business customer's ח.פ.). Only a supplied value updates it.
+        if (normalizedIdNumber is not null)
+            client.IdNumber = normalizedIdNumber;
         client.BirthDate = request.BirthDate.HasValue
                             ? DateTime.SpecifyKind(request.BirthDate.Value, DateTimeKind.Utc)
                             : null;

@@ -21,6 +21,11 @@ public class ClientFile : ITenantEntity
 
     [Required]
     public string FilePath { get; set; } = string.Empty;
+    [MaxLength(20)]
+    public string? StorageProvider { get; set; }
+
+    [MaxLength(2048)]
+    public string? StorageKey { get; set; }
 
     public long FileSize { get; set; }
 
@@ -32,6 +37,9 @@ public class ClientFile : ITenantEntity
     // PM Phase 7: null = general client file.
     public Guid? ProjectId { get; set; }
     public Project? Project { get; set; }
+
+    // Rivhit Phase 3E.2: set when this file is the archived official copy of a provider document.
+    public Guid? ExternalAccountingDocumentId { get; set; }
 
     [MaxLength(200)]
     public string? Title { get; set; }

@@ -6,7 +6,8 @@ public record QueueDisplayPatientDto(
     Guid AppointmentId,
     int? QueueNumber,
     string DisplayName,
-    string Status
+    string Status,
+    string? RoomNumber = null
 );
 
 public record QueueDisplayDto(

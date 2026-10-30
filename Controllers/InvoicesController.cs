@@ -11,6 +11,8 @@ using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 
 namespace Clienta.Api.Controllers;
 
@@ -67,7 +69,21 @@ public class InvoicesController : ControllerBase
             .OrderByDescending(invoice => invoice.CreatedAt)
             .ToListAsync();
 
-        return Ok(invoices.Select(MapInvoiceResponse));
+        var projectIds = invoices
+            .Select(invoice => invoice.ProjectId)
+            .OfType<Guid>()
+            .Distinct()
+            .ToArray();
+        var projectsById = projectIds.Length == 0
+            ? new Dictionary<Guid, Project>()
+            : await _db.Projects
+                .AsNoTracking()
+                .Where(project => project.TenantId == _tenantContext.TenantId && projectIds.Contains(project.Id))
+                .ToDictionaryAsync(project => project.Id);
+
+        return Ok(invoices.Select(invoice => MapInvoiceResponse(
+            invoice,
+            invoice.ProjectId.HasValue && projectsById.TryGetValue(invoice.ProjectId.Value, out var project) ? project : null)));
     }
 
     [HttpGet("{id}")]
@@ -243,14 +259,123 @@ public class InvoicesController : ControllerBase
         if (!await _featureService.IsEnabledAsync("invoices"))
             return Forbid();
 
-        var invoice = await _db.Invoices.FirstOrDefaultAsync(item => item.Id == id && item.TenantId == _tenantContext.TenantId);
-        if (invoice == null)
-            return NotFound();
+        IActionResult? result = null;
+        var strategy = _db.Database.CreateExecutionStrategy();
+        try
+        {
+            await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _db.Database.BeginTransactionAsync();
+                if (!await LockInvoiceRowAsync(id))
+                {
+                    result = NotFound();
+                    return;
+                }
 
-        _db.Invoices.Remove(invoice);
-        await _db.SaveChangesAsync();
+                var invoice = await _db.Invoices.FirstOrDefaultAsync(item =>
+                    item.Id == id && item.TenantId == _tenantContext.TenantId);
+                if (invoice == null)
+                {
+                    result = NotFound();
+                    return;
+                }
 
-        return Ok();
+                var hasConfirmedOrUnresolvedDocument = await _db.ExternalAccountingDocuments.AnyAsync(document =>
+                    document.TenantId == _tenantContext.TenantId && document.InvoiceId == id &&
+                    document.Provider == IntegrationProvider.Rivhit &&
+                    (document.Status == ExternalAccountingDocumentStatus.Issued ||
+                     document.Status == ExternalAccountingDocumentStatus.Issuing ||
+                     document.Status == ExternalAccountingDocumentStatus.ReconciliationRequired ||
+                     document.ExternalDocumentType.HasValue || document.ExternalDocumentId != null ||
+                     document.ExternalDocumentNumber.HasValue || document.ExternalCustomerId.HasValue ||
+                     document.ExternalAmount.HasValue || document.IssuedAt.HasValue));
+                if (hasConfirmedOrUnresolvedDocument)
+                {
+                    result = Conflict(new { code = "AccountingDocumentDeleteBlocked" });
+                    return;
+                }
+
+                var hasUnresolvedOrCompletedOperation = await _db.ExternalAccountingOperations.AnyAsync(operation =>
+                    operation.TenantId == _tenantContext.TenantId && operation.InvoiceId == id &&
+                    operation.Provider == IntegrationProvider.Rivhit &&
+                    (operation.Status == ExternalAccountingOperationStatus.Issuing ||
+                     operation.Status == ExternalAccountingOperationStatus.Finalizing ||
+                     operation.Status == ExternalAccountingOperationStatus.ReconciliationRequired ||
+                     operation.Status == ExternalAccountingOperationStatus.Completed ||
+                     operation.ExternalDocumentType.HasValue || operation.ExternalDocumentId != null ||
+                     operation.ExternalDocumentNumber.HasValue || operation.ExternalCustomerId.HasValue ||
+                     operation.ExternalAmount.HasValue));
+                if (hasUnresolvedOrCompletedOperation)
+                {
+                    result = Conflict(new { code = "AccountingReconciliationRequired" });
+                    return;
+                }
+
+                var hasNonCancelledPayments = await _db.Payments.AnyAsync(payment =>
+                    payment.TenantId == _tenantContext.TenantId && payment.InvoiceId == id &&
+                    payment.Status != PaymentStatus.Cancelled);
+                if (hasNonCancelledPayments)
+                {
+                    result = Conflict(new { code = "InvoiceHasPayments" });
+                    return;
+                }
+
+                var cancelledPayments = await _db.Payments.Where(payment =>
+                    payment.TenantId == _tenantContext.TenantId && payment.InvoiceId == id &&
+                    payment.Status == PaymentStatus.Cancelled).ToListAsync();
+                var cancelledPaymentIds = cancelledPayments.Select(payment => payment.Id).ToArray();
+                if (cancelledPaymentIds.Length > 0)
+                {
+                    // Keep historical accounting rows intact; their restrictive payment FK means
+                    // a cancelled payment with a linked accounting record must remain undeleted.
+                    var hasLinkedAccountingRecord = await _db.ExternalAccountingDocuments.AnyAsync(document =>
+                        document.TenantId == _tenantContext.TenantId && document.InvoiceId == id &&
+                        document.PaymentId.HasValue && cancelledPaymentIds.Contains(document.PaymentId.Value)) ||
+                        await _db.ExternalAccountingOperations.AnyAsync(operation =>
+                            operation.TenantId == _tenantContext.TenantId && operation.InvoiceId == id &&
+                            operation.PaymentId.HasValue && cancelledPaymentIds.Contains(operation.PaymentId.Value));
+                    if (hasLinkedAccountingRecord)
+                    {
+                        result = Conflict(new { code = "AccountingDocumentDeleteBlocked" });
+                        return;
+                    }
+                }
+
+                _db.Payments.RemoveRange(cancelledPayments);
+                _db.Invoices.Remove(invoice);
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+                result = Ok();
+            });
+        }
+        catch (DbUpdateException exception) when
+            (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            // A concurrently-added dependent row can still win the race; surface it as a conflict,
+            // not an unhandled database 500. The transaction is rolled back on disposal.
+            _db.ChangeTracker.Clear();
+            return Conflict(new { code = "InvoiceDeletionBlocked" });
+        }
+
+        return result ?? StatusCode(StatusCodes.Status500InternalServerError);
+    }
+
+    private async Task<bool> LockInvoiceRowAsync(Guid invoiceId)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return false;
+
+        if (!_db.Database.IsNpgsql())
+            return await _db.Invoices.AnyAsync(invoice =>
+                invoice.Id == invoiceId && invoice.TenantId == _tenantContext.TenantId);
+
+        var connection = (NpgsqlConnection)_db.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.Transaction = (NpgsqlTransaction?)_db.Database.CurrentTransaction?.GetDbTransaction();
+        command.CommandText = "SELECT \"Id\" FROM \"Invoices\" WHERE \"Id\" = @invoiceId AND \"TenantId\" = @tenantId FOR UPDATE";
+        command.Parameters.AddWithValue("invoiceId", invoiceId);
+        command.Parameters.AddWithValue("tenantId", _tenantContext.TenantId);
+        return await command.ExecuteScalarAsync() != null;
     }
 
     [HttpGet("{id}/pdf")]
@@ -378,8 +503,11 @@ public class InvoicesController : ControllerBase
         invoice.ClientId = client.Id;
         invoice.ProjectId = request.ProjectId;
         invoice.ClientName = client.FullName;
-        invoice.InvoiceDate = request.InvoiceDate == default ? DateTime.UtcNow : request.InvoiceDate;
-        invoice.DueDate = request.DueDate;
+        invoice.InvoiceDate = InvoiceCalendarDate.ToStorageDateTime(
+            request.InvoiceDate == default ? DateOnly.FromDateTime(DateTime.UtcNow) : request.InvoiceDate);
+        invoice.DueDate = request.DueDate.HasValue
+            ? InvoiceCalendarDate.ToStorageDateTime(request.DueDate.Value)
+            : null;
         invoice.AllocationNumber = string.IsNullOrWhiteSpace(request.AllocationNumber)
             ? null
             : request.AllocationNumber.Trim();
@@ -589,7 +717,7 @@ public class InvoicesController : ControllerBase
         };
     }
 
-    private static InvoiceResponse MapInvoiceResponse(Invoice invoice)
+    private static InvoiceResponse MapInvoiceResponse(Invoice invoice, Project? project = null)
     {
         return new InvoiceResponse
         {
@@ -598,6 +726,10 @@ public class InvoicesController : ControllerBase
             InvoiceNumber = invoice.InvoiceNumber,
             ClientId = invoice.ClientId,
             ProjectId = invoice.ProjectId,
+            ProjectName = project?.Name,
+            ProjectEndDate = project?.EndDate is DateTime endDate ? DateOnly.FromDateTime(endDate) : null,
+            ProjectStatus = project?.Status,
+            ProjectPaymentType = project?.PaymentType,
             ClientName = invoice.ClientName,
             Amount = invoice.Amount,
             VatRate = invoice.VatRate,
@@ -610,8 +742,10 @@ public class InvoicesController : ControllerBase
             PaymentMethod = ToApiPaymentMethod(invoice.PaymentMethod),
             Installments = invoice.Installments,
             Status = ToApiInvoiceStatus(invoice.Status),
-            InvoiceDate = invoice.InvoiceDate,
-            DueDate = invoice.DueDate,
+            InvoiceDate = InvoiceCalendarDate.FromStorageDateTime(invoice.InvoiceDate),
+            DueDate = invoice.DueDate.HasValue
+                ? InvoiceCalendarDate.FromStorageDateTime(invoice.DueDate.Value)
+                : null,
             AllocationNumber = invoice.AllocationNumber,
             Notes = invoice.Notes,
             BusinessName = invoice.BusinessName,

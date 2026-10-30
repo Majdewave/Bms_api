@@ -1,3 +1,5 @@
+using Clienta.Api.Models;
+
 namespace Clienta.Api.DTOs;
 
 public sealed record BusinessBillingContactDto(
@@ -19,6 +21,13 @@ public sealed record BusinessNextBillingDto(
     bool IsOverdue,
     BusinessBillingContactDto? BillingContact);
 
+public sealed record BusinessProjectEndingDto(
+    Guid ProjectId,
+    string ProjectName,
+    DateOnly EndDate,
+    int DaysRemaining,
+    ProjectStatus Status);
+
 // ProjectValue and NotYetInvoiced are before-VAT plan figures; Invoiced/Paid/Outstanding use invoice payable amounts (existing payment semantics).
 // Invoiced/Paid/Outstanding are null when the caller lacks invoice access.
 public sealed record BusinessDashboardResponse(
@@ -30,4 +39,5 @@ public sealed record BusinessDashboardResponse(
     decimal? Paid,
     decimal? Outstanding,
     decimal NotYetInvoiced,
-    BusinessNextBillingDto? NextBilling);
+    BusinessNextBillingDto? NextBilling,
+    IReadOnlyList<BusinessProjectEndingDto> ProjectsEndingSoon);

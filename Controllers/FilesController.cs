@@ -93,12 +93,11 @@ public class FilesController : ControllerBase
         if (file == null)
             return NotFound("File not found.");
 
-        var filePath = file.FilePath;
+        var fileStream = await _files.OpenReadAsync(file, HttpContext.RequestAborted);
 
-        if (!System.IO.File.Exists(filePath))
-            return NotFound("File not found on disk.");
+        if (fileStream == null)
+            return NotFound("File not found.");
 
-        var fileStream = System.IO.File.OpenRead(filePath);
         var contentType = _files.GetContentType(file.FileName);
 
         return File(fileStream, contentType, file.FileName);
@@ -118,6 +117,23 @@ public class FilesController : ControllerBase
         try
         {
             await _files.DeleteAsync(file);
+
+            // If this was an archived Rivhit PDF, reset the document's archive state so it can be
+            // archived again. The ExternalAccountingDocument (and its audit history) is preserved.
+            if (file.ExternalAccountingDocumentId.HasValue)
+            {
+                var document = await _context.ExternalAccountingDocuments
+                    .FirstOrDefaultAsync(d => d.Id == file.ExternalAccountingDocumentId.Value && d.TenantId == _tenant.TenantId);
+                if (document != null)
+                {
+                    document.ArchiveStatus = AccountingArchiveStatus.Pending;
+                    document.ArchiveErrorCode = null;
+                    document.ArchiveAttemptedAt = null;
+                    document.UpdatedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                }
+            }
+
             return NoContent();
         }
         catch (Exception ex)
@@ -127,3 +143,4 @@ public class FilesController : ControllerBase
         }
     }
 }
+

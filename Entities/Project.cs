@@ -11,6 +11,7 @@ public class Project : ITenantEntity
     public virtual Client Client { get; set; } = default!;
     public string Name { get; set; } = string.Empty;
     public ProjectStatus Status { get; set; } = ProjectStatus.Draft;
+    public ProjectPaymentType? PaymentType { get; set; }
     public decimal Value { get; set; }
     public DateTime? StartDate { get; set; }
     public DateTime? EndDate { get; set; }

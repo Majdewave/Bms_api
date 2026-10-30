@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Models;
 using Clienta.Api.Services;
 
 namespace Clienta.Api.Controllers;
@@ -54,8 +55,12 @@ public class ProjectsController : ControllerBase
         project.EndDate,
         project.Description,
         project.CreatedAt,
-        project.UpdatedAt
+        project.UpdatedAt,
+        project.PaymentType
     );
+
+    private static bool HasValidPaymentType(ProjectPaymentType? paymentType) =>
+        !paymentType.HasValue || Enum.IsDefined(paymentType.Value);
 
     // GET /api/projects
     [HttpGet]
@@ -69,7 +74,7 @@ public class ProjectsController : ControllerBase
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new ProjectResponse(
                 p.Id, p.ClientId, p.Client.FullName, p.Name, p.Status, p.Value,
-                p.StartDate, p.EndDate, p.Description, p.CreatedAt, p.UpdatedAt))
+                p.StartDate, p.EndDate, p.Description, p.CreatedAt, p.UpdatedAt, p.PaymentType))
             .ToListAsync();
 
         return Ok(projects);
@@ -86,7 +91,7 @@ public class ProjectsController : ControllerBase
             .Where(p => p.Id == id && p.TenantId == _tenantContext.TenantId)
             .Select(p => new ProjectResponse(
                 p.Id, p.ClientId, p.Client.FullName, p.Name, p.Status, p.Value,
-                p.StartDate, p.EndDate, p.Description, p.CreatedAt, p.UpdatedAt))
+                p.StartDate, p.EndDate, p.Description, p.CreatedAt, p.UpdatedAt, p.PaymentType))
             .FirstOrDefaultAsync();
 
         if (project == null)
@@ -112,7 +117,7 @@ public class ProjectsController : ControllerBase
             .OrderByDescending(p => p.CreatedAt)
             .Select(p => new ProjectResponse(
                 p.Id, p.ClientId, p.Client.FullName, p.Name, p.Status, p.Value,
-                p.StartDate, p.EndDate, p.Description, p.CreatedAt, p.UpdatedAt))
+                p.StartDate, p.EndDate, p.Description, p.CreatedAt, p.UpdatedAt, p.PaymentType))
             .ToListAsync();
 
         return Ok(projects);
@@ -124,6 +129,9 @@ public class ProjectsController : ControllerBase
     {
         var gate = await EnsurePmEnabledAsync();
         if (gate != null) return gate;
+
+        if (!HasValidPaymentType(request.PaymentType))
+            return BadRequest("Invalid project payment type.");
 
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest("Name is required.");
@@ -138,6 +146,7 @@ public class ProjectsController : ControllerBase
             ClientId = request.ClientId,
             Name = request.Name.Trim(),
             Status = request.Status,
+            PaymentType = request.PaymentType,
             Value = request.Value,
             StartDate = NormalizeToUtc(request.StartDate),
             EndDate = NormalizeToUtc(request.EndDate),
@@ -157,6 +166,9 @@ public class ProjectsController : ControllerBase
         var gate = await EnsurePmEnabledAsync();
         if (gate != null) return gate;
 
+        if (!HasValidPaymentType(request.PaymentType))
+            return BadRequest("Invalid project payment type.");
+
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest("Name is required.");
 
@@ -168,6 +180,7 @@ public class ProjectsController : ControllerBase
 
         project.Name = request.Name.Trim();
         project.Status = request.Status;
+        project.PaymentType = request.PaymentType;
         project.Value = request.Value;
         project.StartDate = NormalizeToUtc(request.StartDate);
         project.EndDate = NormalizeToUtc(request.EndDate);

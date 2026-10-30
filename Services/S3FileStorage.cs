@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -28,6 +29,31 @@ public class S3FileStorage : IFileStorage
         await _s3.PutObjectAsync(request);
 
         return $"https://{_bucket}.s3.amazonaws.com/{key}";
+    }
+
+    public async Task<Stream> OpenReadAsync(
+        string fileKey,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _s3.GetObjectAsync(
+            new GetObjectRequest
+            {
+                BucketName = _bucket,
+                Key = fileKey
+            },
+            cancellationToken);
+
+        try
+        {
+            var stream = new MemoryStream();
+            await response.ResponseStream.CopyToAsync(stream, cancellationToken);
+            stream.Position = 0;
+            return stream;
+        }
+        finally
+        {
+            response.Dispose();
+        }
     }
 
     public async Task DeleteAsync(string key)

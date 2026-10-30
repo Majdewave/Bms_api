@@ -1,0 +1,37 @@
+﻿using Clienta.Api.Data;
+using Clienta.Api.Entities;
+using Clienta.Api.Services;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Npgsql;
+
+namespace Clienta.Api.IntegrationTests;
+
+[TestClass]
+public sealed class ClientFileArchiveConcurrencyTests
+{
+    private static string GetLocalConnectionString()
+    {
+        var connectionString =
+            Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
+
+        Assert.IsFalse(
+            string.IsNullOrWhiteSpace(connectionString),
+            "Local PostgreSQL connection must be explicitly configured.");
+
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+
+        Assert.AreEqual("localhost", builder.Host);
+        Assert.AreEqual(5433, builder.Port);
+        Assert.AreEqual("clienta_local", builder.Database);
+
+        return connectionString!;
+    }
+
+    [TestMethod]
+    public void LocalPostgresArchiveConcurrency_RequiresLocalDatabase()
+    {
+        var connectionString = GetLocalConnectionString();
+        Assert.IsFalse(string.IsNullOrWhiteSpace(connectionString));
+    }
+}

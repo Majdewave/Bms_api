@@ -55,6 +55,9 @@ namespace Clienta.Api.Migrations
                     b.Property<int?>("QueueNumber")
                         .HasColumnType("integer");
 
+                    b.Property<string>("RoomNumber")
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("ServiceId")
                         .HasColumnType("uuid");
 
@@ -401,6 +404,9 @@ namespace Clienta.Api.Migrations
                     b.Property<Guid>("ClientId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("ExternalAccountingDocumentId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("FileName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -414,6 +420,14 @@ namespace Clienta.Api.Migrations
 
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("StorageKey")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("StorageProvider")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("StoredFileName")
                         .IsRequired()
@@ -436,11 +450,18 @@ namespace Clienta.Api.Migrations
 
                     b.HasIndex("ClientId");
 
+                    b.HasIndex("ExternalAccountingDocumentId");
+
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("TenantId");
 
                     b.HasIndex("UploadedByUserId");
+
+                    b.HasIndex("TenantId", "ExternalAccountingDocumentId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ClientFiles_Tenant_ExternalAccountingDocument")
+                        .HasFilter("\"ExternalAccountingDocumentId\" IS NOT NULL");
 
                     b.HasIndex("TenantId", "ProjectId");
 
@@ -680,6 +701,239 @@ namespace Clienta.Api.Migrations
                             Name = "Paracetamol",
                             TenantId = new Guid("40aff269-58db-4d97-b391-ccbb701cd458")
                         });
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.ExternalAccountingDocument", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime?>("ArchiveAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ArchiveErrorCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ArchiveStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTime?>("DeliveryAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeliveryChannel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("DeliveryErrorCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("DeliveryStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<decimal?>("ExternalAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<int?>("ExternalCustomerId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExternalDocumentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ExternalDocumentNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ExternalDocumentType")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("IssuedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ProviderResponseCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("RequestReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "InvoiceId", "PaymentId")
+                        .HasDatabaseName("IX_ExternalAccountingDocuments_TenantId_InvoiceId_PaymentId");
+
+                    b.HasIndex("TenantId", "Provider", "ExternalDocumentId")
+                        .IsUnique()
+                        .HasFilter("\"ExternalDocumentId\" IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Provider", "InvoiceId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ExternalAccountingDocuments_InvoicePurpose")
+                        .HasFilter("\"DocumentType\" IN ('Invoice', 'CombinedInvoiceReceipt')");
+
+                    b.HasIndex("TenantId", "Provider", "RequestReference")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Provider", "PaymentId", "DocumentType")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ExternalAccountingDocuments_PaymentPurpose")
+                        .HasFilter("\"PaymentId\" IS NOT NULL AND \"DocumentType\" = 'Receipt'");
+
+                    b.ToTable("ExternalAccountingDocuments", t =>
+                        {
+                            t.HasCheckConstraint("CK_ExternalAccountingDocuments_PurposePayment", "(\"DocumentType\" = 'Invoice' AND \"PaymentId\" IS NULL) OR (\"DocumentType\" IN ('Receipt', 'CombinedInvoiceReceipt') AND \"PaymentId\" IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.ExternalAccountingOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<string>("DeliveryChannel")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<decimal?>("ExternalAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<int?>("ExternalCustomerId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExternalDocumentId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ExternalDocumentNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ExternalDocumentType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("InvoiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OperationType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("PaymentDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("PaymentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("ProviderResponseCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("RequestReference")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "InvoiceId", "PaymentId");
+
+                    b.HasIndex("TenantId", "InvoiceId", "Status");
+
+                    b.HasIndex("TenantId", "Provider", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ExternalAccountingOperations_Tenant_Provider_IdempotencyKey");
+
+                    b.HasIndex("TenantId", "Provider", "RequestReference")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ExternalAccountingOperations_Tenant_Provider_RequestReference");
+
+                    b.ToTable("ExternalAccountingOperations");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.ImagingAnnotation", b =>
@@ -1507,6 +1761,9 @@ namespace Clienta.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasAlternateKey("TenantId", "InvoiceId", "Id")
+                        .HasName("AK_Payments_TenantId_InvoiceId_Id");
+
                     b.HasIndex("InvoiceId");
 
                     b.HasIndex("TenantId", "ClientId");
@@ -1890,6 +2147,9 @@ namespace Clienta.Api.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
+
+                    b.Property<int?>("PaymentType")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("StartDate")
                         .HasColumnType("timestamp with time zone");
@@ -2420,6 +2680,62 @@ namespace Clienta.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("TenantFeatures");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.TenantIntegration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AccountingEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ConnectionStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EncryptedCredential")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastConnectionErrorCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("LastConnectionSucceededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LastConnectionTestAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("PaymentsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Provider")
+                        .IsUnique();
+
+                    b.ToTable("TenantIntegrations");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.User", b =>
@@ -2988,6 +3304,11 @@ namespace Clienta.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Clienta.Api.Entities.ExternalAccountingDocument", null)
+                        .WithMany()
+                        .HasForeignKey("ExternalAccountingDocumentId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Clienta.Api.Entities.Project", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
@@ -3056,6 +3377,24 @@ namespace Clienta.Api.Migrations
                         .IsRequired();
 
                     b.Navigation("Department");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.ExternalAccountingDocument", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.Payment", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "InvoiceId", "PaymentId")
+                        .HasPrincipalKey("TenantId", "InvoiceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.ExternalAccountingOperation", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.Payment", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId", "InvoiceId", "PaymentId")
+                        .HasPrincipalKey("TenantId", "InvoiceId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.ImagingAnnotation", b =>

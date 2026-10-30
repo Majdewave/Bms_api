@@ -39,6 +39,8 @@ builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddScoped<IQuoteConversionService, QuoteConversionService>();
 builder.Services.AddScoped<TenantResolver>();
 builder.Services.AddScoped<IFeatureService, FeatureService>();
+builder.Services.AddScoped<Clienta.Api.Services.IInvoicePaymentService, Clienta.Api.Services.InvoicePaymentService>();
+builder.Services.AddScoped<Clienta.Api.Services.IInvoiceBalanceService, Clienta.Api.Services.InvoiceBalanceService>();
 builder.Services.AddScoped<IDepartmentFeatureResolver, DepartmentFeatureResolver>();
 builder.Services.AddScoped<IUserDepartmentFeatureAccessService, UserDepartmentFeatureAccessService>();
 builder.Services.AddScoped<IDepartmentAccessService, DepartmentAccessService>();
@@ -49,6 +51,29 @@ builder.Services.AddAWSService<IAmazonS3>();
 // PM (Project Management) foundation - Phase 1A.
 builder.Services.AddScoped<IPmAccessService, PmAccessService>();
 builder.Services.AddScoped<ITenantProductService, TenantProductService>();
+
+// External accounting integrations (Rivhit Phase 1: configuration + connection test only).
+builder.Services.Configure<Clienta.Api.Services.Integrations.RivhitOptions>(builder.Configuration.GetSection("Integrations:Rivhit"));
+builder.Services.AddSingleton<Clienta.Api.Services.Integrations.IIntegrationSecretProtector, Clienta.Api.Services.Integrations.IntegrationSecretProtector>();
+builder.Services.AddHttpClient<Clienta.Api.Services.Integrations.RivhitAccountingProvider>((sp, client) =>
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Clienta.Api.Services.Integrations.RivhitOptions>>().Value;
+    client.BaseAddress = options.ResolveBaseUri();
+    client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.TimeoutSeconds, 3, 60));
+});
+builder.Services.AddScoped<Clienta.Api.Services.Integrations.IAccountingDocumentProvider>(sp => sp.GetRequiredService<Clienta.Api.Services.Integrations.RivhitAccountingProvider>());
+builder.Services.AddScoped<Clienta.Api.Services.Integrations.IAccountingIntegrationProvider>(sp => sp.GetRequiredService<Clienta.Api.Services.Integrations.RivhitAccountingProvider>());
+builder.Services.AddScoped<Clienta.Api.Services.Integrations.ITenantIntegrationService, Clienta.Api.Services.Integrations.TenantIntegrationService>();
+builder.Services.AddScoped<Clienta.Api.Services.Integrations.IExternalAccountingDocumentService, Clienta.Api.Services.Integrations.ExternalAccountingDocumentService>();
+builder.Services.AddScoped<Clienta.Api.Services.Integrations.IExternalAccountingReceiptService, Clienta.Api.Services.Integrations.ExternalAccountingReceiptService>();
+builder.Services.AddHttpClient<Clienta.Api.Services.Integrations.IExternalAccountingArchiveService,Clienta.Api.Services.Integrations.ExternalAccountingArchiveService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+AllowAutoRedirect = false
+});
 builder.Services.AddScoped<IBusinessDashboardService, BusinessDashboardService>();
 builder.Services.AddScoped<IBusinessCommercialPlanCatalog, BusinessCommercialPlanCatalog>();
 builder.Services.AddScoped<ICommercialPlanResolver, CommercialPlanResolver>();
@@ -61,7 +86,8 @@ FontManager.RegisterFont(
 );
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+var bindHost = Environment.GetEnvironmentVariable("CLIENTA_API_BIND_HOST") ?? "0.0.0.0";
+builder.WebHost.UseUrls($"http://{bindHost}:{port}");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(
@@ -240,6 +266,8 @@ builder.Services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 // Authorization policies (DB-based permissions)
 builder.Services.AddAuthorization(options =>
 {
+    Clienta.Api.Authorization.IntegrationAuthorization.AddPolicies(options);
+
     options.AddPolicy("manage_clients",
         policy => policy.Requirements.Add(new PermissionRequirement("manage_clients")));
 

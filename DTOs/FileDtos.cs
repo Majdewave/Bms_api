@@ -8,7 +8,9 @@ public record FileResponse(
     string? Title = null,
     Guid? ProjectId = null,
     string? ProjectName = null,
-    string? UploadedByName = null
+    string? UploadedByName = null,
+    // Links an archived Rivhit PDF back to its external accounting document (null for normal uploads).
+    Guid? ExternalAccountingDocumentId = null
 );
 
 public record UpdateFileTitleRequest(string? Title);

@@ -846,6 +846,183 @@ public class InterpreterPortalController : ControllerBase
             null)));
     }
 
+    [HttpPost("{requestId:guid}/instances/{instanceId:guid}/annotations")]
+    public async Task<IActionResult> CreateInstanceMarker(
+        Guid requestId,
+        Guid instanceId,
+        CreateImagingAnnotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        if (request.ImagingInstanceId != instanceId ||
+            request.FrameNumber < 1 ||
+            request.Geometry.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null ||
+            !TryGetSideMarkerLabel(request.ToolName, out var markerLabel) ||
+            !string.Equals(request.Label, markerLabel, StringComparison.Ordinal))
+            return BadRequest(new { error = "invalid_side_marker", message = "A valid L, R, AP, PA or LAT marker is required." });
+
+        var assignedStudyId = await AssignedRequests(userId)
+            .Where(assigned => assigned.Id == requestId)
+            .Select(assigned => (Guid?)assigned.ImagingStudyId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (!assignedStudyId.HasValue)
+            return NotFound();
+
+        var instanceExists = await _context.ImagingInstances
+            .AsNoTracking()
+            .AnyAsync(instance =>
+                instance.TenantId == _tenant.TenantId &&
+                instance.Id == instanceId &&
+                instance.ImagingStudyId == assignedStudyId.Value,
+                cancellationToken);
+
+        if (!instanceExists)
+            return NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.AnnotationUid))
+            return BadRequest(new { error = "validation_failed", message = "AnnotationUid is required." });
+
+        var uidExists = await _context.ImagingAnnotations.AnyAsync(annotation =>
+            annotation.TenantId == _tenant.TenantId && annotation.AnnotationUid == request.AnnotationUid,
+            cancellationToken);
+        if (uidExists)
+            return Conflict(new { error = "annotation_uid_exists" });
+
+        var marker = new ImagingAnnotation
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            ImagingInstanceId = instanceId,
+            FrameNumber = request.FrameNumber,
+            AnnotationUid = request.AnnotationUid,
+            ToolName = request.ToolName,
+            Geometry = request.Geometry.GetRawText(),
+            Label = markerLabel,
+            CreatedAt = DateTime.UtcNow,
+            CreatedByUserId = userId,
+        };
+
+        _context.ImagingAnnotations.Add(marker);
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(ToImagingAnnotationDto(marker));
+    }
+
+    [HttpPut("{requestId:guid}/annotations/{annotationId:guid}")]
+    public async Task<IActionResult> UpdateInstanceMarker(
+        Guid requestId,
+        Guid annotationId,
+        UpdateImagingAnnotationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        if (request.Geometry.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            return BadRequest(new { error = "validation_failed", message = "Geometry is required." });
+
+        var assignedStudyId = await AssignedRequests(userId)
+            .Where(assigned => assigned.Id == requestId)
+            .Select(assigned => (Guid?)assigned.ImagingStudyId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!assignedStudyId.HasValue)
+            return NotFound();
+
+        var marker = await _context.ImagingAnnotations.FirstOrDefaultAsync(annotation =>
+            annotation.TenantId == _tenant.TenantId && annotation.Id == annotationId,
+            cancellationToken);
+        if (marker == null || !TryGetSideMarkerLabel(marker.ToolName, out var markerLabel) ||
+            !string.Equals(marker.Label, markerLabel, StringComparison.Ordinal))
+            return NotFound();
+
+        var inAssignedStudy = await _context.ImagingInstances.AnyAsync(instance =>
+            instance.TenantId == _tenant.TenantId &&
+            instance.Id == marker.ImagingInstanceId &&
+            instance.ImagingStudyId == assignedStudyId.Value,
+            cancellationToken);
+        if (!inAssignedStudy)
+            return NotFound();
+
+        if (request.Label != null && !string.Equals(request.Label, markerLabel, StringComparison.Ordinal))
+            return BadRequest(new { error = "invalid_side_marker" });
+
+        marker.Geometry = request.Geometry.GetRawText();
+        marker.Label = markerLabel;
+        marker.UpdatedAt = DateTime.UtcNow;
+        marker.UpdatedByUserId = userId;
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(ToImagingAnnotationDto(marker));
+    }
+
+    [HttpDelete("{requestId:guid}/annotations/{annotationId:guid}")]
+    public async Task<IActionResult> DeleteInstanceMarker(
+        Guid requestId,
+        Guid annotationId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        var assignedStudyId = await AssignedRequests(userId)
+            .Where(assigned => assigned.Id == requestId)
+            .Select(assigned => (Guid?)assigned.ImagingStudyId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (!assignedStudyId.HasValue)
+            return NotFound();
+
+        var marker = await _context.ImagingAnnotations.FirstOrDefaultAsync(annotation =>
+            annotation.TenantId == _tenant.TenantId && annotation.Id == annotationId,
+            cancellationToken);
+        if (marker == null || !TryGetSideMarkerLabel(marker.ToolName, out var markerLabel) ||
+            !string.Equals(marker.Label, markerLabel, StringComparison.Ordinal))
+            return NotFound();
+
+        var inAssignedStudy = await _context.ImagingInstances.AnyAsync(instance =>
+            instance.TenantId == _tenant.TenantId &&
+            instance.Id == marker.ImagingInstanceId &&
+            instance.ImagingStudyId == assignedStudyId.Value,
+            cancellationToken);
+        if (!inAssignedStudy)
+            return NotFound();
+
+        _context.ImagingAnnotations.Remove(marker);
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    private static bool TryGetSideMarkerLabel(string toolName, out string label)
+    {
+        label = toolName switch
+        {
+            "LMarker" => "L",
+            "RMarker" => "R",
+            "APMarker" => "AP",
+            "PAMarker" => "PA",
+            "LATMarker" => "LAT",
+            _ => string.Empty,
+        };
+        return label.Length > 0;
+    }
+
+    private static ImagingAnnotationDto ToImagingAnnotationDto(ImagingAnnotation annotation)
+    {
+        using var geometry = JsonDocument.Parse(annotation.Geometry);
+        return new ImagingAnnotationDto(
+            annotation.Id,
+            annotation.ImagingInstanceId,
+            annotation.FrameNumber,
+            annotation.AnnotationUid,
+            annotation.ToolName,
+            geometry.RootElement.Clone(),
+            annotation.Label,
+            annotation.CreatedAt,
+            annotation.UpdatedAt,
+            annotation.CreatedByUserId,
+            annotation.UpdatedByUserId);
+    }
+
     private IQueryable<InterpretationRequest> AssignedRequests(Guid userId)
     {
         return _context.InterpretationRequests

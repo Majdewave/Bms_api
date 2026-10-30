@@ -21,7 +21,8 @@ public class QueueDisplayService : IQueueDisplayService
         int? QueueNumber,
         string Status,
         string ClientName,
-        DateTime StartTime
+        DateTime StartTime,
+        string? RoomNumber
     );
 
     private readonly AppDbContext _db;
@@ -123,7 +124,8 @@ public class QueueDisplayService : IQueueDisplayService
                 a.QueueNumber,
                 a.Status,
                 a.Client.FullName,
-                a.StartTime))
+                a.StartTime,
+                a.RoomNumber))
             .ToListAsync(cancellationToken);
 
         var inProgress = queueRows
@@ -184,7 +186,8 @@ public class QueueDisplayService : IQueueDisplayService
             appointment.Id,
             appointment.QueueNumber,
             displayName,
-            appointment.Status
+            appointment.Status,
+            appointment.RoomNumber
         );
     }
 

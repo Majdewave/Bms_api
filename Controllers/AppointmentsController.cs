@@ -132,7 +132,8 @@ public class AppointmentsController : ControllerBase
                 inProgress.CreatedAt,
                 inProgress.IsDocumented,
                 await _context.ClientConsents.AnyAsync(c => c.AppointmentId == inProgress.Id),
-                await GetImagingOrderIdAsync(inProgress.Id)
+                await GetImagingOrderIdAsync(inProgress.Id),
+                inProgress.RoomNumber
             ),
             next = nextWaiting == null ? null : new AppointmentDto(
                 nextWaiting.Id,
@@ -153,7 +154,8 @@ public class AppointmentsController : ControllerBase
                 nextWaiting.CreatedAt,
                 nextWaiting.IsDocumented,
                 await _context.ClientConsents.AnyAsync(c => c.AppointmentId == nextWaiting.Id),
-                await GetImagingOrderIdAsync(nextWaiting.Id)
+                await GetImagingOrderIdAsync(nextWaiting.Id),
+                nextWaiting.RoomNumber
             ),
             waitingCount
         });
@@ -211,7 +213,8 @@ public class AppointmentsController : ControllerBase
                 _context.ImagingOrders
                     .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
                     .Select(order => (Guid?)order.Id)
-                    .FirstOrDefault()
+                    .FirstOrDefault(),
+                a.RoomNumber
             ))
             .ToListAsync();
 
@@ -254,7 +257,8 @@ public class AppointmentsController : ControllerBase
                 _context.ImagingOrders
                     .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
                     .Select(order => (Guid?)order.Id)
-                    .FirstOrDefault()
+                    .FirstOrDefault(),
+                a.RoomNumber
             ))
             .FirstOrDefaultAsync();
 
@@ -268,6 +272,9 @@ public class AppointmentsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Create(CreateAppointmentRequest request)
     {
+        if (!TryNormalizeRoomNumber(request.RoomNumber, out var roomNumber))
+            return BadRequest("RoomNumber must be between 1 and 10.");
+
         var client = await _context.Clients
             .FirstOrDefaultAsync(c => c.Id == request.ClientId && c.TenantId == _tenant.TenantId);
 
@@ -337,6 +344,7 @@ public class AppointmentsController : ControllerBase
             AppointmentDate = appointmentDate,
             Status = AppointmentStatuses.Scheduled,
             QueueNumber = nextQueueNumber,
+            RoomNumber = roomNumber,
             Notes = request.Notes,
             CreatedAt = DateTime.UtcNow
         };
@@ -412,6 +420,9 @@ public class AppointmentsController : ControllerBase
         var appointment = await scopedAppointments.FirstOrDefaultAsync();
         if (appointment == null)
             return NotFound();
+
+        if (request.RoomNumber != null && !TryNormalizeRoomNumber(request.RoomNumber, out _))
+            return BadRequest("RoomNumber must be between 1 and 10.");
 
         if (request.StartTime != default && request.EndTime != default &&
             request.EndTime <= request.StartTime)
@@ -503,6 +514,11 @@ public class AppointmentsController : ControllerBase
         var newIsActive = IsActiveQueueStatus(newStatus);
 
         appointment.Status = newStatus;
+        if (request.RoomNumber != null)
+        {
+            TryNormalizeRoomNumber(request.RoomNumber, out var roomNumber);
+            appointment.RoomNumber = roomNumber;
+        }
         if (request.Notes != null)
             appointment.Notes = request.Notes;
 
@@ -833,7 +849,8 @@ public class AppointmentsController : ControllerBase
             appointment.CreatedAt,
             appointment.IsDocumented,
             await _context.ClientConsents.AnyAsync(c => c.AppointmentId == appointment.Id),
-            await GetImagingOrderIdAsync(appointment.Id)
+            await GetImagingOrderIdAsync(appointment.Id),
+            appointment.RoomNumber
         );
     }
 
@@ -857,6 +874,20 @@ public class AppointmentsController : ControllerBase
     {
         var normalized = value?.Trim();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static bool TryNormalizeRoomNumber(string? value, out string? roomNumber)
+    {
+        roomNumber = null;
+        var normalized = value?.Trim();
+        if (string.IsNullOrEmpty(normalized))
+            return true;
+
+        if (!int.TryParse(normalized, out var parsed) || parsed < 1 || parsed > 10)
+            return false;
+
+        roomNumber = parsed.ToString();
+        return true;
     }
 
     // Derived persistence key for indexing/uniqueness/queue grouping only.

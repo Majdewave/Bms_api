@@ -20,12 +20,16 @@ public class PaymentsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IFeatureService _featureService;
+    private readonly IInvoicePaymentService _invoicePaymentService;
+    private readonly IInvoiceBalanceService _invoiceBalanceService;
 
-    public PaymentsController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService)
+    public PaymentsController(AppDbContext db, ITenantContext tenantContext, IFeatureService featureService, IInvoicePaymentService invoicePaymentService, IInvoiceBalanceService? invoiceBalanceService = null)
     {
         _db = db;
         _tenantContext = tenantContext;
         _featureService = featureService;
+        _invoicePaymentService = invoicePaymentService;
+        _invoiceBalanceService = invoiceBalanceService ?? new InvoiceBalanceService(db);
     }
 
     [HttpGet("invoices/{invoiceId:guid}/payments")]
@@ -87,47 +91,18 @@ public class PaymentsController : ControllerBase
     public async Task<IActionResult> CreatePayment(Guid invoiceId, [FromBody] CreatePaymentRequest request)
     {
         if (!await InvoicesEnabledAsync()) return Forbid();
-        var strategy = _db.Database.CreateExecutionStrategy();
-        IActionResult? result = null;
-        await strategy.ExecuteAsync(async () =>
+
+        var result = await _invoicePaymentService.CreateAsync(invoiceId, request, GetCurrentUserId());
+        return result.Outcome switch
         {
-            await using var transaction = await _db.Database.BeginTransactionAsync();
-            if (!await LockInvoiceRowAsync(invoiceId)) { result = NotFound("Invoice not found."); return; }
-            var invoice = await GetInvoiceAsync(invoiceId);
-            if (invoice == null) { result = NotFound("Invoice not found."); return; }
-            if (invoice.Status == InvoiceStatus.Cancelled) { result = BadRequest("Cancelled invoices cannot receive payments."); return; }
-            if (!TryParsePaymentMethod(request.PaymentMethod, out var paymentMethod)) { result = BadRequest("Unsupported payment method."); return; }
-            if (request.Amount <= 0) { result = BadRequest("Payment amount must be greater than zero."); return; }
-
-            var verifiedPaid = await GetVerifiedPaidAsync(invoice.Id);
-            var remaining = RoundMoney(invoice.FinalAmountToPay - verifiedPaid);
-            if (request.Amount > remaining) { result = BadRequest($"Payment exceeds the remaining balance of {remaining:0.00}."); return; }
-
-            var userId = GetCurrentUserId();
-            _db.Payments.Add(new Payment
-            {
-                TenantId = invoice.TenantId,
-                ClientId = invoice.ClientId,
-                ProjectId = invoice.ProjectId,
-                InvoiceId = invoice.Id,
-                Amount = RoundMoney(request.Amount),
-                PaymentDate = NormalizeToUtc(request.PaymentDate) ?? DateTime.UtcNow,
-                PaymentMethod = paymentMethod,
-                Reference = Normalize(request.Reference),
-                Notes = Normalize(request.Notes),
-                Status = PaymentStatus.Verified,
-                CreatedByUserId = userId,
-                VerifiedByUserId = userId,
-                VerifiedAt = DateTime.UtcNow,
-            });
-
-            await _db.SaveChangesAsync();
-            await SynchronizeInvoiceStatusAsync(invoice);
-            await _db.SaveChangesAsync();
-            result = Ok(await BuildSummaryAsync(invoice));
-            await transaction.CommitAsync();
-        });
-        return result ?? StatusCode(StatusCodes.Status500InternalServerError);
+            CreateInvoicePaymentOutcome.Created => Ok(result.Summary),
+            CreateInvoicePaymentOutcome.InvoiceNotFound => NotFound("Invoice not found."),
+            CreateInvoicePaymentOutcome.CancelledInvoice => BadRequest("Cancelled invoices cannot receive payments."),
+            CreateInvoicePaymentOutcome.UnsupportedPaymentMethod => BadRequest("Unsupported payment method."),
+            CreateInvoicePaymentOutcome.InvalidAmount => BadRequest("Payment amount must be greater than zero."),
+            CreateInvoicePaymentOutcome.ExceedsRemainingBalance => BadRequest($"Payment exceeds the remaining balance of {result.RemainingBalance:0.00}."),
+            _ => StatusCode(StatusCodes.Status500InternalServerError),
+        };
     }
 
     [HttpPut("payments/{id:guid}")]
@@ -152,10 +127,8 @@ public class PaymentsController : ControllerBase
             if (invoice == null) { result = NotFound("Invoice not found."); return; }
             if (invoice.Status == InvoiceStatus.Cancelled) { result = BadRequest("Cancelled invoices cannot receive payments."); return; }
 
-            var otherVerified = await _db.Payments
-                .Where(item => item.InvoiceId == invoice.Id && item.Id != id && item.Status == PaymentStatus.Verified)
-                .SumAsync(item => (decimal?)item.Amount) ?? 0m;
-            var remainingForEdit = RoundMoney(invoice.FinalAmountToPay - otherVerified);
+            var remainingForEdit = await _invoiceBalanceService.GetAvailableAsync(invoice.TenantId, invoice.Id,
+                cancellationToken: default, excludePaymentId: id);
             if (request.Amount > remainingForEdit) { result = BadRequest($"Payment exceeds the remaining balance of {remainingForEdit:0.00}."); return; }
 
             payment.Amount = RoundMoney(request.Amount);
@@ -191,6 +164,7 @@ public class PaymentsController : ControllerBase
 
             payment.Status = PaymentStatus.Cancelled;
             payment.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
             await SynchronizeInvoiceStatusAsync(invoice);
             await _db.SaveChangesAsync();
             result = Ok(await BuildSummaryAsync(invoice));
@@ -206,6 +180,8 @@ public class PaymentsController : ControllerBase
     private async Task<bool> LockInvoiceRowAsync(Guid invoiceId)
     {
         if (_tenantContext.TenantId == Guid.Empty) return false;
+        if (!_db.Database.IsNpgsql())
+            return await _db.Invoices.AnyAsync(invoice => invoice.Id == invoiceId && invoice.TenantId == _tenantContext.TenantId);
         var connection = (NpgsqlConnection)_db.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
         command.Transaction = (NpgsqlTransaction?)_db.Database.CurrentTransaction?.GetDbTransaction();
@@ -244,8 +220,14 @@ public class PaymentsController : ControllerBase
         return new InvoicePaymentSummaryResponse(invoice.FinalAmountToPay, paid, remaining, GetPaymentState(paid, remaining), paymentResponses);
     }
 
-    private async Task<decimal> GetVerifiedPaidAsync(Guid invoiceId) =>
-        RoundMoney(await _db.Payments.Where(item => item.InvoiceId == invoiceId && item.Status == PaymentStatus.Verified).SumAsync(item => (decimal?)item.Amount) ?? 0m);
+    private async Task<decimal> GetVerifiedPaidAsync(Guid invoiceId)
+    {
+        var payments = _db.Payments.Where(item => item.InvoiceId == invoiceId && item.Status == PaymentStatus.Verified);
+        var paid = _db.Database.IsSqlite()
+            ? (await payments.Select(item => item.Amount).ToListAsync()).Sum()
+            : await payments.SumAsync(item => (decimal?)item.Amount) ?? 0m;
+        return RoundMoney(paid);
+    }
 
     private async Task<PaymentTotalsResponse> BuildTotalsAsync(IReadOnlyList<Guid> invoiceIds, decimal invoiceAmountDue)
     {

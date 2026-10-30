@@ -62,6 +62,9 @@ public class AppDbContext : DbContext
     public DbSet<Business> Businesses { get; set; } = null!;
     // Removed Staffs DbSet
     public DbSet<VisitSummary> VisitSummaries { get; set; } = null!;
+    public DbSet<TenantIntegration> TenantIntegrations { get; set; } = null!;
+    public DbSet<ExternalAccountingDocument> ExternalAccountingDocuments { get; set; } = null!;
+    public DbSet<ExternalAccountingOperation> ExternalAccountingOperations => Set<ExternalAccountingOperation>();
     public DbSet<WhatsAppSettings> WhatsAppSettings { get; set; } = null!;
     public DbSet<WhatsAppTemplate> WhatsAppTemplates { get; set; } = null!;
     public DbSet<WhatsAppMessage> WhatsAppMessages { get; set; } = null!;
@@ -265,6 +268,18 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ClientFile>()
             .HasIndex(f => new { f.TenantId, f.ProjectId });
 
+        modelBuilder.Entity<ClientFile>(e =>
+        {
+            e.HasOne<ExternalAccountingDocument>()
+                .WithMany()
+                .HasForeignKey(f => f.ExternalAccountingDocumentId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(f => new { f.TenantId, f.ExternalAccountingDocumentId })
+                .IsUnique()
+                .HasFilter("\"ExternalAccountingDocumentId\" IS NOT NULL")
+                .HasDatabaseName("IX_ClientFiles_Tenant_ExternalAccountingDocument");
+        });
+
         // PM (Project Management) foundation - Phase 1A.
         modelBuilder.Entity<Project>()
             .HasQueryFilter(p => _tenantContext.TenantId == Guid.Empty || p.TenantId == _tenantContext.TenantId);
@@ -322,6 +337,10 @@ public class AppDbContext : DbContext
             .WithMany()
             .HasForeignKey(payment => payment.InvoiceId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<Payment>()
+            .HasAlternateKey(payment => new { payment.TenantId, payment.InvoiceId, payment.Id })
+            .HasName("AK_Payments_TenantId_InvoiceId_Id");
 
         modelBuilder.Entity<Payment>()
             .HasIndex(payment => new { payment.TenantId, payment.InvoiceId, payment.Status });
@@ -481,10 +500,14 @@ public class AppDbContext : DbContext
             .HasForeignKey(document => document.DeletedByUserId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        var clientIdNumberIndexFilter = Database.IsSqlite()
+            ? "\"IdNumber\" IS NOT NULL AND trim(\"IdNumber\") <> ''"
+            : "\"IdNumber\" IS NOT NULL AND btrim(\"IdNumber\") <> ''";
+
         modelBuilder.Entity<Client>()
             .HasIndex(c => new { c.TenantId, c.IdNumber })
             .IsUnique()
-            .HasFilter("\"IdNumber\" IS NOT NULL AND btrim(\"IdNumber\") <> ''");
+            .HasFilter(clientIdNumberIndexFilter);
 
         modelBuilder.Entity<Department>()
             .HasOne(d => d.Tenant)
@@ -999,6 +1022,67 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<WhatsAppOAuthState>()
             .HasIndex(s => new { s.TenantId, s.UsedAt });
 
+        modelBuilder.Entity<TenantIntegration>(e =>
+        {
+            e.Property(i => i.Provider).HasConversion<string>().HasMaxLength(30);
+            e.Property(i => i.ConnectionStatus).HasConversion<string>().HasMaxLength(20);
+            e.HasIndex(i => new { i.TenantId, i.Provider }).IsUnique();
+            e.HasQueryFilter(i => _tenantContext.TenantId == Guid.Empty || i.TenantId == _tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<ExternalAccountingDocument>(e =>
+        {
+            e.Property(x => x.Provider).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.DocumentType).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
+            e.Property(x => x.DeliveryChannel).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.DeliveryStatus).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.ArchiveStatus).HasConversion<string>().HasMaxLength(20);
+            e.ToTable(table => table.HasCheckConstraint(
+                "CK_ExternalAccountingDocuments_PurposePayment",
+                "(\"DocumentType\" = 'Invoice' AND \"PaymentId\" IS NULL) OR (\"DocumentType\" IN ('Receipt', 'CombinedInvoiceReceipt') AND \"PaymentId\" IS NOT NULL)"));
+            e.HasOne<Payment>()
+                .WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.InvoiceId, x.PaymentId })
+                .HasPrincipalKey(payment => new { payment.TenantId, payment.InvoiceId, payment.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.InvoiceId, x.PaymentId })
+                .HasDatabaseName("IX_ExternalAccountingDocuments_TenantId_InvoiceId_PaymentId");
+            e.HasIndex(x => new { x.TenantId, x.Provider, x.InvoiceId })
+                .IsUnique()
+                .HasFilter("\"DocumentType\" IN ('Invoice', 'CombinedInvoiceReceipt')")
+                .HasDatabaseName("IX_ExternalAccountingDocuments_InvoicePurpose");
+            e.HasIndex(x => new { x.TenantId, x.Provider, x.PaymentId, x.DocumentType })
+                .IsUnique()
+                .HasFilter("\"PaymentId\" IS NOT NULL AND \"DocumentType\" = 'Receipt'")
+                .HasDatabaseName("IX_ExternalAccountingDocuments_PaymentPurpose");
+            e.HasIndex(x => new { x.TenantId, x.Provider, x.RequestReference }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.Provider, x.ExternalDocumentId })
+                .IsUnique()
+                .HasFilter("\"ExternalDocumentId\" IS NOT NULL");
+            e.HasQueryFilter(x => _tenantContext.TenantId == Guid.Empty || x.TenantId == _tenantContext.TenantId);
+        });
+
+        modelBuilder.Entity<ExternalAccountingOperation>(e =>
+        {
+            e.Property(x => x.Provider).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.OperationType).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
+            e.Property(x => x.PaymentMethod).HasConversion<string>().HasMaxLength(30);
+            e.Property(x => x.DeliveryChannel).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.ExternalDocumentId).HasMaxLength(100);
+            e.HasOne<Payment>().WithMany()
+                .HasForeignKey(x => new { x.TenantId, x.InvoiceId, x.PaymentId })
+                .HasPrincipalKey(payment => new { payment.TenantId, payment.InvoiceId, payment.Id })
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Provider, x.IdempotencyKey }).IsUnique()
+                .HasDatabaseName("IX_ExternalAccountingOperations_Tenant_Provider_IdempotencyKey");
+            e.HasIndex(x => new { x.TenantId, x.Provider, x.RequestReference }).IsUnique()
+                .HasDatabaseName("IX_ExternalAccountingOperations_Tenant_Provider_RequestReference");
+            e.HasIndex(x => new { x.TenantId, x.InvoiceId, x.Status });
+            e.HasQueryFilter(x => _tenantContext.TenantId == Guid.Empty || x.TenantId == _tenantContext.TenantId);
+        });
+
         modelBuilder.Entity<WhatsAppSettings>()
             .HasQueryFilter(s => _tenantContext.TenantId == Guid.Empty || s.TenantId == _tenantContext.TenantId);
 
@@ -1057,31 +1141,45 @@ public class AppDbContext : DbContext
             .IsUnique();
     }
 
-    public override async Task<int> SaveChangesAsync(
-        CancellationToken cancellationToken = default)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        SaveChangesAsyncWithPaymentLinkValidationAsync(true, cancellationToken);
+
+    public override int SaveChanges()
+    {
+        ValidateExternalAccountingPaymentLinks();
+        return base.SaveChanges();
+    }
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        ValidateExternalAccountingPaymentLinks();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        return SaveChangesAsyncWithPaymentLinkValidationAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private async Task<int> SaveChangesAsyncWithPaymentLinkValidationAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken)
     {
         ApplyTenantId();
         SynchronizeDerivedAppointmentDate();
+        await ValidateExternalAccountingPaymentLinksAsync(cancellationToken);
         var auditEntries = new List<AuditLog>();
 
         foreach (var entry in ChangeTracker.Entries())
         {
-            if (entry.Entity is AuditLog ||
-                entry.State == EntityState.Detached ||
-                entry.State == EntityState.Unchanged)
+            if (entry.Entity is AuditLog || entry.State is EntityState.Detached or EntityState.Unchanged)
                 continue;
 
             var audit = new AuditLog
             {
                 Id = Guid.NewGuid(),
                 TenantId = _tenantContext.TenantId,
-                UserId = _tenantContext.UserId == Guid.Empty 
-                    ? null 
-                    : _tenantContext.UserId,
+                UserId = _tenantContext.UserId == Guid.Empty ? null : _tenantContext.UserId,
                 EntityName = entry.Entity.GetType().Name,
-                EntityId = entry.Properties
-                    .FirstOrDefault(p => p.Metadata.IsPrimaryKey())?
-                    .CurrentValue?.ToString() ?? "",
+                EntityId = entry.Properties.FirstOrDefault(property => property.Metadata.IsPrimaryKey())?.CurrentValue?.ToString() ?? "",
                 ActionType = entry.State.ToString(),
                 CreatedAt = DateTime.UtcNow
             };
@@ -1090,46 +1188,69 @@ public class AppDbContext : DbContext
             {
                 var oldValues = new Dictionary<string, object?>();
                 var newValues = new Dictionary<string, object?>();
-
-                foreach (var property in entry.Properties)
+                foreach (var property in entry.Properties.Where(property => property.IsModified))
                 {
-                    if (property.IsModified)
-                    {
-                        oldValues[property.Metadata.Name] =
-                            property.OriginalValue;
-
-                        newValues[property.Metadata.Name] =
-                            property.CurrentValue;
-                    }
+                    oldValues[property.Metadata.Name] = property.OriginalValue;
+                    newValues[property.Metadata.Name] = property.CurrentValue;
                 }
-
-                audit.OldValues =
-                    System.Text.Json.JsonSerializer.Serialize(oldValues);
-
-                audit.NewValues =
-                    System.Text.Json.JsonSerializer.Serialize(newValues);
+                audit.OldValues = JsonSerializer.Serialize(oldValues);
+                audit.NewValues = JsonSerializer.Serialize(newValues);
             }
-
-            if (entry.State == EntityState.Added)
+            else if (entry.State == EntityState.Added)
             {
-                audit.NewValues =
-                    System.Text.Json.JsonSerializer.Serialize(
-                        entry.CurrentValues.ToObject());
+                audit.NewValues = JsonSerializer.Serialize(entry.CurrentValues.ToObject());
             }
-
-            if (entry.State == EntityState.Deleted)
+            else if (entry.State == EntityState.Deleted)
             {
-                audit.OldValues =
-                    System.Text.Json.JsonSerializer.Serialize(
-                        entry.OriginalValues.ToObject());
+                audit.OldValues = JsonSerializer.Serialize(entry.OriginalValues.ToObject());
             }
-
             auditEntries.Add(audit);
         }
 
-        var result = await base.SaveChangesAsync(cancellationToken);
-
+        var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         return result;
+    }
+
+    private void ValidateExternalAccountingPaymentLinks()
+    {
+        foreach (var entry in ChangeTracker.Entries<ExternalAccountingDocument>()
+                     .Where(entry => entry.State is EntityState.Added or EntityState.Modified && entry.Entity.PaymentId.HasValue))
+        {
+            var document = entry.Entity;
+            var paymentId = document.PaymentId!.Value;
+            var trackedPayment = ChangeTracker.Entries<Payment>().FirstOrDefault(payment => payment.Entity.Id == paymentId);
+            var isValid = trackedPayment is not null
+                ? trackedPayment.State != EntityState.Deleted
+                    && trackedPayment.Entity.TenantId == document.TenantId
+                    && trackedPayment.Entity.InvoiceId == document.InvoiceId
+                : Payments.IgnoreQueryFilters().Any(payment => payment.Id == paymentId
+                    && payment.TenantId == document.TenantId
+                    && payment.InvoiceId == document.InvoiceId);
+
+            if (!isValid)
+                throw new InvalidOperationException("An external accounting document payment must belong to the same tenant and invoice.");
+        }
+    }
+
+    private async Task ValidateExternalAccountingPaymentLinksAsync(CancellationToken cancellationToken)
+    {
+        foreach (var entry in ChangeTracker.Entries<ExternalAccountingDocument>()
+                     .Where(entry => entry.State is EntityState.Added or EntityState.Modified && entry.Entity.PaymentId.HasValue))
+        {
+            var document = entry.Entity;
+            var paymentId = document.PaymentId!.Value;
+            var trackedPayment = ChangeTracker.Entries<Payment>().FirstOrDefault(payment => payment.Entity.Id == paymentId);
+            var isValid = trackedPayment is not null
+                ? trackedPayment.State != EntityState.Deleted
+                    && trackedPayment.Entity.TenantId == document.TenantId
+                    && trackedPayment.Entity.InvoiceId == document.InvoiceId
+                : await Payments.IgnoreQueryFilters().AnyAsync(payment => payment.Id == paymentId
+                    && payment.TenantId == document.TenantId
+                    && payment.InvoiceId == document.InvoiceId, cancellationToken);
+
+            if (!isValid)
+                throw new InvalidOperationException("An external accounting document payment must belong to the same tenant and invoice.");
+        }
     }
 
     private void ApplyTenantId()

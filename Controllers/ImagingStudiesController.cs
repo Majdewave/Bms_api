@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.IO.Compression;
 using System.Text.Json;
 
 namespace Clienta.Api.Controllers;
@@ -206,6 +207,126 @@ public class ImagingStudiesController : ControllerBase
 
         return Ok(response);
     }
+
+    [HttpGet("{studyId:guid}/download")]
+    [Authorize(Policy = "view_clients")]
+    public async Task<IActionResult> DownloadStudy(Guid studyId, CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            return Unauthorized(new { error = "tenant_not_resolved", message = "Tenant not resolved." });
+        }
+
+        var study = await _db.ImagingStudies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Id == studyId, cancellationToken);
+        if (study == null)
+        {
+            return NotFound(new { error = "imaging_study_not_found", message = "Imaging study not found for the current tenant." });
+        }
+
+        var series = await _db.ImagingSeries
+            .AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ImagingStudyId == studyId)
+            .ToListAsync(cancellationToken);
+        var seriesById = series.ToDictionary(item => item.Id);
+        var instances = await _db.ImagingInstances
+            .AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ImagingStudyId == studyId)
+            .OrderBy(item => item.ImagingSeriesId)
+            .ThenBy(item => item.InstanceNumber ?? int.MaxValue)
+            .ThenBy(item => item.Id)
+            .ToListAsync(cancellationToken);
+
+        if (instances.Count == 0)
+        {
+            return Conflict(new { error = "imaging_study_incomplete", message = "The complete study cannot currently be downloaded because it has no registered instances." });
+        }
+
+        var configuredImagingBucket = _configuration["AWS:ImagingBucketName"]?.Trim();
+        var validatedObjects = new List<(ImagingInstance Instance, string Bucket, string Key, string EntryPath)>();
+        foreach (var instance in instances)
+        {
+            if (!string.Equals(instance.StorageStatus, ImagingStudyStorageStatuses.LocalAndS3, StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(instance.S3Bucket) ||
+                string.IsNullOrWhiteSpace(instance.S3Key) ||
+                !seriesById.TryGetValue(instance.ImagingSeriesId, out var instanceSeries))
+            {
+                return StudyDownloadUnavailable();
+            }
+
+            var bucket = instance.S3Bucket.Trim();
+            var key = instance.S3Key.Trim();
+            if (string.IsNullOrWhiteSpace(configuredImagingBucket) ||
+                !string.Equals(bucket, configuredImagingBucket, StringComparison.Ordinal) ||
+                key.StartsWith('/') || key.Contains('\\') || key.Split('/').Any(segment => segment is "." or ".."))
+            {
+                return StudyDownloadUnavailable();
+            }
+
+            try
+            {
+                await _s3Client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+                {
+                    BucketName = bucket,
+                    Key = key,
+                }, cancellationToken);
+            }
+            catch (AmazonS3Exception ex)
+            {
+                _logger.LogWarning(ex, "Study download preflight failed for tenant {TenantId}, study {StudyId}, instance {InstanceId}.", tenantId, studyId, instance.Id);
+                return StudyDownloadUnavailable();
+            }
+
+            var duplicateSeriesNumber = instanceSeries.SeriesNumber.HasValue &&
+                series.Count(candidate => candidate.SeriesNumber == instanceSeries.SeriesNumber) > 1;
+            var seriesFolder = instanceSeries.SeriesNumber.HasValue
+                ? duplicateSeriesNumber
+                    ? $"Series-{instanceSeries.SeriesNumber.Value}-{instanceSeries.Id:N}"
+                    : $"Series-{instanceSeries.SeriesNumber.Value}"
+                : $"Series-{instanceSeries.Id:N}";
+            var safeSopUid = string.Concat(instance.SOPInstanceUID.Select(character => char.IsLetterOrDigit(character) || character is '.' or '-' or '_' ? character : '_'));
+            if (string.IsNullOrWhiteSpace(safeSopUid)) safeSopUid = instance.Id.ToString("N");
+            var fileName = $"{safeSopUid}-{instance.Id:N}.dcm";
+            validatedObjects.Add((instance, bucket, key, $"{seriesFolder}/{fileName}"));
+        }
+
+        var archivePath = Path.Combine(Path.GetTempPath(), $"clienta-imaging-study-{Guid.NewGuid():N}.zip");
+        FileStream? archiveFile = null;
+        try
+        {
+            archiveFile = new FileStream(archivePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+            using (var archive = new ZipArchive(archiveFile, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var item in validatedObjects)
+                {
+                    using var objectResponse = await _s3Client.GetObjectAsync(new GetObjectRequest
+                    {
+                        BucketName = item.Bucket,
+                        Key = item.Key,
+                    }, cancellationToken);
+                    var entry = archive.CreateEntry(item.EntryPath, CompressionLevel.NoCompression);
+                    await using var entryStream = entry.Open();
+                    await objectResponse.ResponseStream.CopyToAsync(entryStream, 81920, cancellationToken);
+                }
+            }
+            archiveFile.Position = 0;
+            return File(archiveFile, "application/zip", $"imaging-study-{study.Id:N}.zip");
+        }
+        catch (Exception ex) when (ex is AmazonS3Exception or IOException)
+        {
+            _logger.LogError(ex, "Study ZIP streaming failed after preflight for tenant {TenantId}, study {StudyId}.", tenantId, studyId);
+            archiveFile?.Dispose();
+            return StudyDownloadUnavailable();
+        }
+    }
+
+    private ConflictObjectResult StudyDownloadUnavailable() => Conflict(new
+    {
+        error = "imaging_study_incomplete",
+        message = "The complete study cannot currently be downloaded because one or more DICOM instances are unavailable.",
+    });
 
     [HttpGet("/api/imaging/instances/{instanceId:guid}/file")]
     [Authorize(Policy = "view_clients")]

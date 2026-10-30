@@ -9,7 +9,8 @@ public record CreateProjectRequest(
     decimal Value,
     DateTime? StartDate,
     DateTime? EndDate,
-    string? Description
+    string? Description,
+    ProjectPaymentType? PaymentType = null
 );
 
 public record UpdateProjectRequest(
@@ -18,7 +19,8 @@ public record UpdateProjectRequest(
     decimal Value,
     DateTime? StartDate,
     DateTime? EndDate,
-    string? Description
+    string? Description,
+    ProjectPaymentType? PaymentType = null
 );
 
 public record ProjectResponse(
@@ -32,5 +34,6 @@ public record ProjectResponse(
     DateTime? EndDate,
     string? Description,
     DateTime CreatedAt,
-    DateTime UpdatedAt
+    DateTime UpdatedAt,
+    ProjectPaymentType? PaymentType = null
 );

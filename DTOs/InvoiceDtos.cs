@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Clienta.Api.Models;
 
 namespace Clienta.Api.DTOs;
 
@@ -19,8 +20,8 @@ public sealed class CreateInvoiceRequest
 
     [JsonIgnore]
     public bool ProjectIdSpecified { get; private set; }
-    public DateTime InvoiceDate { get; set; }
-    public DateTime? DueDate { get; set; }
+    public DateOnly InvoiceDate { get; set; }
+    public DateOnly? DueDate { get; set; }
     public string? AllocationNumber { get; set; }
     public string? Notes { get; set; }
     public decimal? VatRate { get; set; }
@@ -45,6 +46,10 @@ public sealed class InvoiceResponse
     public string InvoiceNumber { get; set; } = string.Empty;
     public Guid ClientId { get; set; }
     public Guid? ProjectId { get; set; }
+    public string? ProjectName { get; set; }
+    public DateOnly? ProjectEndDate { get; set; }
+    public ProjectStatus? ProjectStatus { get; set; }
+    public ProjectPaymentType? ProjectPaymentType { get; set; }
     public string ClientName { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public decimal VatRate { get; set; }
@@ -57,8 +62,8 @@ public sealed class InvoiceResponse
     public string PaymentMethod { get; set; } = "cash";
     public int? Installments { get; set; }
     public string Status { get; set; } = "pending";
-    public DateTime InvoiceDate { get; set; }
-    public DateTime? DueDate { get; set; }
+    public DateOnly InvoiceDate { get; set; }
+    public DateOnly? DueDate { get; set; }
     public string? AllocationNumber { get; set; }
     public string? Notes { get; set; }
     public string? BusinessName { get; set; }

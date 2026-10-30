@@ -75,7 +75,22 @@ public class BusinessDashboardServiceTests
         var p3 = NewProject(tenantId, c3.Id, "P3 completed", ProjectStatus.Completed, 2000m);
         var p4 = NewProject(tenantId, c1.Id, "P4 draft", ProjectStatus.Draft, 9000m);
         var p5 = NewProject(tenantId, c1.Id, "P5 cancelled", ProjectStatus.Cancelled, 7000m);
-        db.Projects.AddRange(p1, p2, p3, p4, p5);
+        var p6 = NewProject(tenantId, c1.Id, "P6 ends today", ProjectStatus.OnHold, 0m);
+        var p7 = NewProject(tenantId, c1.Id, "P7 ends in 60 days", ProjectStatus.Active, 0m);
+        var p8 = NewProject(tenantId, c1.Id, "P8 calendar two-month boundary", ProjectStatus.OnHold, 0m);
+        var p9 = NewProject(tenantId, c1.Id, "P9 outside calendar window", ProjectStatus.Active, 0m);
+        var p10 = NewProject(tenantId, c1.Id, "P10 overdue active", ProjectStatus.Active, 0m);
+        p1.EndDate = D(11, 4); // 30 days
+        p2.EndDate = D(11, 5); // 31 days
+        p3.EndDate = D(10, 5); // completed projects are excluded
+        p4.EndDate = D(9, 30); // overdue projects remain visible
+        p5.EndDate = D(10, 6); // cancelled projects are excluded
+        p6.EndDate = D(10, 5); // today
+        p7.EndDate = D(12, 4); // within two calendar months
+        p8.EndDate = D(12, 5); // inclusive two-calendar-month boundary (61 days)
+        p9.EndDate = D(12, 6); // outside the calendar window
+        p10.EndDate = D(9, 29); // overdue active project remains visible
+        db.Projects.AddRange(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10);
         await db.SaveChangesAsync();
 
         var a1 = NewInvoice(tenantId, c1, p1.Id, 1180m, InvoiceStatus.Pending);
@@ -107,7 +122,7 @@ public class BusinessDashboardServiceTests
             new ClientContact { TenantId = tenantId, ClientId = c3.Id, Name = "Primary non-billing", IsPrimary = true },
             new ClientContact { TenantId = tenantId, ClientId = c3.Id, Name = "Billing person", Email = "bill@example.com", IsBillingContact = true });
         await db.SaveChangesAsync();
-        return new Seeded { TenantId = tenantId, CompletedProjectClientId = c3.Id, ProjectIds = new[] { p1.Id, p2.Id, p3.Id, p4.Id, p5.Id } };
+        return new Seeded { TenantId = tenantId, CompletedProjectClientId = c3.Id, ProjectIds = new[] { p1.Id, p2.Id, p3.Id, p4.Id, p5.Id, p6.Id, p7.Id, p8.Id, p9.Id, p10.Id } };
     }
 
     private static async Task CleanupAsync(AppDbContext db, params Guid[] tenantIds)
@@ -143,7 +158,7 @@ public class BusinessDashboardServiceTests
             // Tenant B: its numbers must never appear in tenant A's dashboard.
             otherId = await NewTenant(db);
             var ob = NewClient(otherId, "Other client"); db.Clients.Add(ob);
-            var op = NewProject(otherId, ob.Id, "Other project", ProjectStatus.Active, 777m); db.Projects.Add(op);
+            var op = NewProject(otherId, ob.Id, "Other project", ProjectStatus.Active, 777m); op.EndDate = D(10, 9); db.Projects.Add(op);
             await db.SaveChangesAsync();
             var oi = NewInvoice(otherId, ob, op.Id, 123m, InvoiceStatus.PartiallyPaid); db.Invoices.Add(oi);
             await db.SaveChangesAsync();
@@ -157,7 +172,7 @@ public class BusinessDashboardServiceTests
 
             var a = await service.GetAsync(main.TenantId, true, Today);
             Assert.AreEqual("USD", a.Currency);
-            Assert.AreEqual(3, a.ProjectCount);                 // Active + OnHold + Completed only
+            Assert.AreEqual(8, a.ProjectCount);                 // Active + OnHold + Completed only (including alert fixtures)
             Assert.AreEqual(16000m, a.ProjectValue);            // draft/cancelled excluded
             Assert.AreEqual(5950m, a.Invoiced);                 // cancelled, draft/cancelled-project and project-less invoices excluded
             Assert.AreEqual(3090m, a.Paid);                     // 500 + 590 + 2000; pending/rejected and cancelled-invoice payments excluded
@@ -169,6 +184,12 @@ public class BusinessDashboardServiceTests
             Assert.AreEqual(400m, a.NextBilling.Amount);
             Assert.AreEqual(main.CompletedProjectClientId, a.NextBilling.ClientId);
             Assert.AreEqual("Billing person", a.NextBilling.BillingContact!.Name);
+
+            CollectionAssert.AreEqual(
+                new[] { "P10 overdue active", "P6 ends today", "P1 active", "P2 on hold", "P7 ends in 60 days", "P8 calendar two-month boundary" },
+                a.ProjectsEndingSoon.Select(project => project.ProjectName).ToArray());
+            CollectionAssert.AreEqual(new[] { -6, 0, 30, 31, 60, 61 }, a.ProjectsEndingSoon.Select(project => project.DaysRemaining).ToArray());
+            Assert.IsTrue(a.ProjectsEndingSoon.All(project => project.Status == ProjectStatus.Active || project.Status == ProjectStatus.OnHold));
 
             // Full payment: the paid-in-full invoices leave no outstanding balance.
             var onlyPaid = a.Invoiced - a.Outstanding;
@@ -186,9 +207,13 @@ public class BusinessDashboardServiceTests
             Assert.AreEqual(777m, b.ProjectValue);
             Assert.AreEqual(123m, b.Invoiced); Assert.AreEqual(23m, b.Paid); Assert.AreEqual(100m, b.Outstanding);
             Assert.AreEqual(55m, b.NotYetInvoiced);
+            Assert.AreEqual(0, a.ProjectsEndingSoon.Count(project => project.ProjectName == "Other project"));
             Assert.AreEqual("Other milestone", b.NextBilling!.MilestoneTitle);
             Assert.IsFalse(b.NextBilling.IsOverdue);
             Assert.IsNull(b.NextBilling.BillingContact);
+            Assert.AreEqual(1, b.ProjectsEndingSoon.Count);
+            Assert.AreEqual("Other project", b.ProjectsEndingSoon[0].ProjectName);
+            Assert.AreEqual(4, b.ProjectsEndingSoon[0].DaysRemaining);
 
             // Empty tenant: zeros, no next billing, no exception.
             var e = await service.GetAsync(emptyId, true, Today);
@@ -196,10 +221,12 @@ public class BusinessDashboardServiceTests
             Assert.AreEqual(0m, e.ProjectValue); Assert.AreEqual(0m, e.Invoiced); Assert.AreEqual(0m, e.Paid);
             Assert.AreEqual(0m, e.Outstanding); Assert.AreEqual(0m, e.NotYetInvoiced);
             Assert.IsNull(e.NextBilling);
+            Assert.AreEqual(0, e.ProjectsEndingSoon.Count);
 
             // Unknown tenant id behaves like an empty tenant.
             var unknown = await service.GetAsync(Guid.NewGuid(), true, Today);
             Assert.AreEqual(0m, unknown.ProjectValue); Assert.IsNull(unknown.NextBilling);
+            Assert.AreEqual(0, unknown.ProjectsEndingSoon.Count);
         }
         finally
         {
