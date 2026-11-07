@@ -42,7 +42,10 @@ namespace Clienta.Api.Services
                     clientName = a.Client != null ? a.Client.FullName : null,
                     staffName = a.Staff != null && a.Staff.User != null ? a.Staff.User.FullName : null,
                     serviceName = a.Service != null ? a.Service.Name : null,
-                    performedBy = a.Staff != null && a.Staff.User != null ? a.Staff.User.FullName : "Admin",
+                    performedBy = _db.Users
+                        .Where(user => user.Id == a.CreatedByUserId)
+                        .Select(user => user.FullName)
+                        .FirstOrDefault(),
                     timestamp = a.CreatedAt
                 })
                 .ToListAsync();
@@ -60,10 +63,44 @@ namespace Clienta.Api.Services
                     clientName = a.Client != null ? a.Client.FullName : null,
                     staffName = a.Staff != null && a.Staff.User != null ? a.Staff.User.FullName : null,
                     serviceName = a.Service != null ? a.Service.Name : null,
-                    performedBy = a.Staff != null && a.Staff.User != null ? a.Staff.User.FullName : "Admin",
+                    performedBy = null,
                     timestamp = a.EndTime
                 })
                 .ToListAsync();
+
+            var completedAppointmentEntityIds = appointmentCompletedEvents
+                .Select(activity => activity.id.ToString())
+                .ToList();
+            if (completedAppointmentEntityIds.Count > 0)
+            {
+                var completionAuditLogs = await _db.AuditLogs
+                    .Where(log => log.TenantId == tenantId &&
+                                  log.EntityName == nameof(Appointment) &&
+                                  log.ActionType == "appointment_completed" &&
+                                  completedAppointmentEntityIds.Contains(log.EntityId))
+                    .OrderByDescending(log => log.CreatedAt)
+                    .Select(log => new
+                    {
+                        log.EntityId,
+                        log.PerformedBy,
+                        UserFullName = log.User != null ? log.User.FullName : null,
+                        log.CreatedAt
+                    })
+                    .ToListAsync();
+
+                var latestCompletionByAppointment = completionAuditLogs
+                    .GroupBy(log => log.EntityId)
+                    .ToDictionary(group => group.Key, group => group.First());
+
+                foreach (var activity in appointmentCompletedEvents)
+                {
+                    if (!latestCompletionByAppointment.TryGetValue(activity.id.ToString(), out var completion))
+                        continue;
+
+                    activity.performedBy = completion.PerformedBy ?? completion.UserFullName;
+                    activity.timestamp = completion.CreatedAt;
+                }
+            }
 
             var scopedVisitSummaries = _departmentAccessService.ApplyVisitSummaryVisibility(
                 _db.VisitSummaries.Where(v => v.TenantId == tenantId),
@@ -91,7 +128,7 @@ namespace Clienta.Api.Services
                             .Where(u => u.Id == v.StaffId.Value)
                             .Select(u => u.FullName)
                             .FirstOrDefault()
-                        : "Admin",
+                        : null,
                     timestamp = v.CreatedAt
                 })
                 .ToListAsync();
@@ -114,7 +151,7 @@ namespace Clienta.Api.Services
                         clientName = c.FullName,
                         staffName = null,
                         serviceName = null,
-                        performedBy = "Admin",
+                        performedBy = null,
                         timestamp = c.CreatedAt
                     })
                     .ToListAsync();
@@ -130,7 +167,7 @@ namespace Clienta.Api.Services
                         clientName = null,
                         staffName = s.User != null ? s.User.FullName : null,
                         serviceName = null,
-                        performedBy = s.User != null ? s.User.FullName : "Admin",
+                        performedBy = null,
                         timestamp = s.User != null ? s.User.CreatedAt : DateTime.MinValue
                     })
                     .ToListAsync();
@@ -146,7 +183,7 @@ namespace Clienta.Api.Services
                         clientName = null,
                         staffName = a.NewValues,
                         serviceName = null,
-                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : null),
                         timestamp = a.CreatedAt
                     })
                     .ToListAsync();
@@ -162,7 +199,7 @@ namespace Clienta.Api.Services
                         clientName = null,
                         staffName = a.NewValues,
                         serviceName = null,
-                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : null),
                         timestamp = a.CreatedAt
                     })
                     .ToListAsync();
@@ -178,7 +215,7 @@ namespace Clienta.Api.Services
                         clientName = a.NewValues,
                         staffName = null,
                         serviceName = null,
-                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : "Admin"),
+                        performedBy = a.PerformedBy ?? (a.User != null ? a.User.FullName : null),
                         timestamp = a.CreatedAt
                     })
                     .ToListAsync();

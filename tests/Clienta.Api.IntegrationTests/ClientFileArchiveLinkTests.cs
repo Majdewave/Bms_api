@@ -32,9 +32,10 @@ public sealed class ClientFileArchiveLinkTests
     private sealed class StubStorage : IFileStorage
     {
         public int DeleteCalls;
+        public List<string> DeletedKeys { get; } = [];
         public Task<string> UploadAsync(Stream s, string f, string c) => Task.FromResult(f);
         public Task<Stream> OpenReadAsync(string k, CancellationToken ct = default) => Task.FromResult<Stream>(new MemoryStream(new byte[] { 0x25, 0x50, 0x44, 0x46, 0x2D }));
-        public Task DeleteAsync(string k) { DeleteCalls++; return Task.CompletedTask; }
+        public Task DeleteAsync(string k) { DeleteCalls++; DeletedKeys.Add(k); return Task.CompletedTask; }
     }
 
     private static async Task<(SqliteConnection, AppDbContext, Ctx, Guid tenantId, Guid clientId, Guid documentId, Guid fileId)> NewFixtureAsync()
@@ -64,6 +65,7 @@ public sealed class ClientFileArchiveLinkTests
             DocumentType = ExternalAccountingPurpose.Invoice, Status = ExternalAccountingDocumentStatus.Issued,
             ExternalDocumentType = 1, ExternalDocumentNumber = 2543, ExternalDocumentId = "id-2543",
             RequestReference = "REF-2543", Currency = "ILS", Amount = 118m, ArchiveStatus = AccountingArchiveStatus.Archived,
+            ArchiveErrorCode = "PreviousArchiveFailure", ArchiveAttemptedAt = DateTime.UtcNow.AddMinutes(-1),
             CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
         });
         db.ClientFiles.Add(new ClientFile
@@ -71,6 +73,13 @@ public sealed class ClientFileArchiveLinkTests
             Id = fileId, TenantId = tenantId, ClientId = clientId, FileName = "rivhit-2543.pdf", StoredFileName = "s.pdf",
             FilePath = "k", FileSize = 5, UploadedByUserId = userId, ExternalAccountingDocumentId = documentId,
             StorageProvider = "S3", StorageKey = "accounting/t/c/d/s.pdf"
+        });
+        db.ExternalAccountingOperations.Add(new ExternalAccountingOperation
+        {
+            Id = Guid.NewGuid(), TenantId = tenantId, Provider = IntegrationProvider.Rivhit, InvoiceId = invoiceId,
+            OperationType = ExternalAccountingOperationType.Receipt, Status = ExternalAccountingOperationStatus.Completed,
+            Amount = 118m, Currency = "ILS", PaymentMethod = PaymentMethod.Cash, PaymentDate = DateTime.UtcNow,
+            IdempotencyKey = "TEST-IDEMPOTENCY", RequestReference = "TEST-RECEIPT-OP", ExternalDocumentNumber = 894
         });
         await db.SaveChangesAsync();
         return (connection, db, ctx, tenantId, clientId, documentId, fileId);
@@ -105,12 +114,40 @@ public sealed class ClientFileArchiveLinkTests
 
         Assert.IsInstanceOfType(result, typeof(NoContentResult));
         Assert.AreEqual(1, storage.DeleteCalls);                 // S3 object removed
+        CollectionAssert.AreEqual(new[] { "accounting/t/c/d/s.pdf" }, storage.DeletedKeys);
         Assert.AreEqual(0, await db.ClientFiles.CountAsync());   // ClientFile row removed
         var document = await db.ExternalAccountingDocuments.SingleAsync();
         Assert.AreEqual(AccountingArchiveStatus.Pending, document.ArchiveStatus);   // re-archivable
+        Assert.IsNull(document.ArchiveErrorCode);
+        Assert.IsNull(document.ArchiveAttemptedAt);
         Assert.AreEqual(ExternalAccountingDocumentStatus.Issued, document.Status);  // audit/issuance preserved
+        Assert.AreEqual("id-2543", document.ExternalDocumentId);
         Assert.AreEqual(2543, document.ExternalDocumentNumber);
+        Assert.AreEqual(1, await db.Invoices.CountAsync());       // invoice is untouched
         Assert.AreEqual(0, await db.Payments.CountAsync());      // no financial records touched
+        Assert.AreEqual(1, await db.ExternalAccountingOperations.CountAsync()); // receipt operation is untouched
+        Assert.AreEqual(894, (await db.ExternalAccountingOperations.SingleAsync()).ExternalDocumentNumber);
+    }
+
+    [TestMethod]
+    public async Task DeleteFile_DoesNotDeleteFileOutsideCurrentTenantScope()
+    {
+        var (connection, db, ctx, tenantId, clientId, documentId, fileId) = await NewFixtureAsync();
+        await using var _ = connection;
+        var storage = new StubStorage();
+        ctx.TenantId = Guid.NewGuid();
+        var controller = new FilesController(db, ctx, new ClientFileService(db, new FakeWebHost(), storage), NullLogger<FilesController>.Instance)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var result = await controller.DeleteFile(clientId, fileId);
+
+        Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+        Assert.AreEqual(0, storage.DeleteCalls);
+        Assert.AreEqual(1, await db.ClientFiles.IgnoreQueryFilters().CountAsync(file => file.Id == fileId && file.TenantId == tenantId));
+        var document = await db.ExternalAccountingDocuments.IgnoreQueryFilters().SingleAsync(item => item.Id == documentId);
+        Assert.AreEqual(AccountingArchiveStatus.Archived, document.ArchiveStatus);
     }
 
     private sealed class FakeWebHost : Microsoft.AspNetCore.Hosting.IWebHostEnvironment

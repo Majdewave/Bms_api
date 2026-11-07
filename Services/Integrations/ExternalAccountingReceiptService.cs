@@ -18,6 +18,7 @@ public enum AccountingReceiptOutcome
 {
     Issued, AlreadyCompleted, ReconciliationRequired, InvoiceNotFound, UnsupportedTenant, IntegrationUnavailable,
     UnsupportedPaymentMethod, InvoiceIneligible, InvalidAmount, AmountUnavailable, IdempotencyConflict, ProviderRejected,
+    ExistingPaymentRequired,
     CustomerIdentifierInvalid, PaymentNotFound, InvalidPaymentMethod
 }
 
@@ -49,9 +50,12 @@ public sealed class ExternalAccountingReceiptService(
 
     public async Task<AccountingReceiptResult> IssueAsync(Guid tenantId, Guid invoiceId, IssueAccountingReceiptRequest request, Guid? userId, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty || tenantId != tenantContext.TenantId
-            || await products.GetAsync(tenantId, ct) != ResolvedTenantProduct.Business)
+        var product = tenantId == Guid.Empty ? ResolvedTenantProduct.Legacy : await products.GetAsync(tenantId, ct);
+        if (tenantId != tenantContext.TenantId || product is not (ResolvedTenantProduct.Business or ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy)
+            || !await db.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == tenantId, ct))
             return new(AccountingReceiptOutcome.UnsupportedTenant);
+        if (product is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy) && !request.PaymentId.HasValue)
+            return new(AccountingReceiptOutcome.ExistingPaymentRequired);
         var method = request.PaymentId.HasValue ? null : ParseV1Method(request.PaymentMethod);
         if (!request.PaymentId.HasValue && method is null) return new(AccountingReceiptOutcome.UnsupportedPaymentMethod);
         if (request.Amount <= 0m) return new(AccountingReceiptOutcome.InvalidAmount);
@@ -89,12 +93,19 @@ public sealed class ExternalAccountingReceiptService(
 
     public async Task<AccountingReceiptResult> ReconcileAsync(Guid tenantId, Guid operationId, Guid? userId, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty || tenantId != tenantContext.TenantId
-            || await products.GetAsync(tenantId, ct) != ResolvedTenantProduct.Business)
+        var product = tenantId == Guid.Empty ? ResolvedTenantProduct.Legacy : await products.GetAsync(tenantId, ct);
+        if (tenantId != tenantContext.TenantId || product is not (ResolvedTenantProduct.Business or ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy)
+            || !await db.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == tenantId, ct))
             return new(AccountingReceiptOutcome.UnsupportedTenant);
         var operation = await db.ExternalAccountingOperations.FirstOrDefaultAsync(item =>
             item.Id == operationId && item.TenantId == tenantId && item.Provider == ProviderKind, ct);
         if (operation is null) return new(AccountingReceiptOutcome.InvoiceNotFound);
+        if (product is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy) && !operation.PaymentId.HasValue)
+            return new(AccountingReceiptOutcome.ExistingPaymentRequired, operation.Id);
+        if (product is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy) && !await db.Payments.IgnoreQueryFilters().AnyAsync(item =>
+            item.Id == operation.PaymentId!.Value && item.TenantId == tenantId && item.InvoiceId == operation.InvoiceId
+            && item.Status == PaymentStatus.Verified, ct))
+            return new(AccountingReceiptOutcome.PaymentNotFound, operation.Id);
         if (operation.Status == ExternalAccountingOperationStatus.Completed) return await ExistingResultAsync(operation, ct);
         if (operation.Status == ExternalAccountingOperationStatus.Finalizing)
         {
@@ -521,6 +532,14 @@ public sealed class ExternalAccountingReceiptService(
                         .FirstOrDefaultAsync(item => item.Id == operation.Id, ct)
                         ?? throw new InvalidOperationException("Receipt operation is no longer available.");
 
+                    if (await products.GetAsync(currentOperation.TenantId, ct) is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy)
+                        && !currentOperation.PaymentId.HasValue)
+                    {
+                        await transaction.CommitAsync(CancellationToken.None);
+                        result = new(AccountingReceiptOutcome.ExistingPaymentRequired, currentOperation.Id);
+                        return;
+                    }
+
                     if (currentOperation.Status == ExternalAccountingOperationStatus.Completed)
                     {
                         var completedResult = await ExistingResultAsync(currentOperation, ct);
@@ -549,6 +568,14 @@ public sealed class ExternalAccountingReceiptService(
                             && item.TenantId == currentOperation.TenantId && item.InvoiceId == currentOperation.InvoiceId, ct)
                         : null;
                     Trace("LinkedPaymentLoaded", currentOperation.Id, $"PaymentId={(payment?.Id.ToString() ?? "NULL")}");
+
+                    if (await products.GetAsync(currentOperation.TenantId, ct) is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy)
+                        && (payment is null || payment.Status != PaymentStatus.Verified))
+                    {
+                        await transaction.CommitAsync(CancellationToken.None);
+                        result = new(AccountingReceiptOutcome.PaymentNotFound, currentOperation.Id);
+                        return;
+                    }
 
                     Trace("LoadPaymentByRequestReference", currentOperation.Id, $"RequestReference={currentOperation.RequestReference}");
                     payment ??= await db.Payments.IgnoreQueryFilters().FirstOrDefaultAsync(item => item.TenantId == currentOperation.TenantId
@@ -805,6 +832,7 @@ public sealed class ExternalAccountingReceiptService(
         if (archive is null || userId is not Guid archiveUserId || archiveUserId == Guid.Empty) return;
         try
         {
+            if (await products.GetAsync(document.TenantId, CancellationToken.None) != ResolvedTenantProduct.Business) return;
             await archive.ArchiveAsync(document.TenantId, document.Id, archiveUserId, CancellationToken.None);
         }
         catch

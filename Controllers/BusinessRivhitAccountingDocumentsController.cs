@@ -1,9 +1,11 @@
 using Clienta.Api.Authorization;
+using Clienta.Api.Data;
 using Clienta.Api.Models;
 using Clienta.Api.Services;
 using Clienta.Api.Services.Integrations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Clienta.Api.Controllers;
 
@@ -17,19 +19,22 @@ public sealed class BusinessRivhitAccountingDocumentsController : ControllerBase
     private readonly IExternalAccountingDocumentService _documents;
     private readonly IExternalAccountingReceiptService _receipts;
     private readonly IExternalAccountingArchiveService _archive;
+    private readonly AppDbContext _db;
 
     public BusinessRivhitAccountingDocumentsController(
         ITenantContext tenantContext,
         ITenantProductService products,
         IExternalAccountingDocumentService documents,
         IExternalAccountingReceiptService receipts,
-        IExternalAccountingArchiveService archive)
+        IExternalAccountingArchiveService archive,
+        AppDbContext db)
     {
         _tenantContext = tenantContext;
         _products = products;
         _documents = documents;
         _receipts = receipts;
         _archive = archive;
+        _db = db;
     }
 
     [HttpGet("/api/business/invoices/accounting-documents")]
@@ -125,6 +130,12 @@ public sealed class BusinessRivhitAccountingDocumentsController : ControllerBase
     {
         var gate = await GateAsync(ct);
         if (gate is not null) return gate;
+        if (await _products.GetAsync(_tenantContext.TenantId, ct) is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy))
+        {
+            var existing = await _documents.GetInvoiceDocumentAsync(_tenantContext.TenantId, invoiceId, ct);
+            if (existing?.Status is not ("Issuing" or "ReconciliationRequired"))
+                return Conflict(new { code = "NoReconciliationRequired" });
+        }
         var result = await _documents.IssueInvoiceAsync(_tenantContext.TenantId, invoiceId, new IssueAccountingInvoiceRequest(), ct);
         return result.Outcome switch
         {
@@ -167,6 +178,7 @@ public sealed class BusinessRivhitAccountingDocumentsController : ControllerBase
     {
         AccountingReceiptOutcome.Issued or AccountingReceiptOutcome.AlreadyCompleted => new OkObjectResult(new { result.OperationId, result.Document }),
         AccountingReceiptOutcome.UnsupportedTenant => new ObjectResult(new { code = "BusinessOnly" }) { StatusCode = StatusCodes.Status403Forbidden },
+        AccountingReceiptOutcome.ExistingPaymentRequired => new ObjectResult(new { code = "ExistingPaymentRequired" }) { StatusCode = StatusCodes.Status403Forbidden },
         AccountingReceiptOutcome.InvoiceNotFound => new NotFoundObjectResult(new { code = "InvoiceNotFound" }),
         AccountingReceiptOutcome.UnsupportedPaymentMethod => new BadRequestObjectResult(new { code = "UnsupportedPaymentMethod" }),
         AccountingReceiptOutcome.InvalidAmount => new BadRequestObjectResult(new { code = "InvalidAmount" }),
@@ -184,7 +196,10 @@ public sealed class BusinessRivhitAccountingDocumentsController : ControllerBase
     private async Task<IActionResult?> GateAsync(CancellationToken ct)
     {
         if (_tenantContext.TenantId == Guid.Empty) return Unauthorized();
-        if (await _products.GetAsync(_tenantContext.TenantId, ct) != ResolvedTenantProduct.Business)
+        if (!await _db.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == _tenantContext.TenantId, ct))
+            return StatusCode(StatusCodes.Status403Forbidden, new { code = "BusinessOnly" });
+        var product = await _products.GetAsync(_tenantContext.TenantId, ct);
+        if (product is not (ResolvedTenantProduct.Business or ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy))
             return StatusCode(StatusCodes.Status403Forbidden, new { code = "BusinessOnly" });
         return null;
     }

@@ -33,7 +33,8 @@ public sealed class RivhitPhase2Tests
         public void SetUserId(Guid userId) => UserId = userId;
     }
 
-    private sealed class Products(Guid businessId, Guid? otherId = null, ResolvedTenantProduct otherType = ResolvedTenantProduct.Legacy) : ITenantProductService
+    private sealed class Products(Guid businessId, Guid? otherId = null, ResolvedTenantProduct otherType = ResolvedTenantProduct.Legacy,
+        ResolvedTenantProduct businessType = ResolvedTenantProduct.Business) : ITenantProductService
     {
         public ResolvedTenantProduct Resolve(TenantProductType? productType) => productType switch
         {
@@ -42,7 +43,7 @@ public sealed class RivhitPhase2Tests
             _ => ResolvedTenantProduct.Legacy
         };
         public Task<ResolvedTenantProduct> GetAsync(Guid tenantId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(tenantId == businessId ? ResolvedTenantProduct.Business : tenantId == otherId ? otherType : ResolvedTenantProduct.Legacy);
+            Task.FromResult(tenantId == businessId ? businessType : tenantId == otherId ? otherType : ResolvedTenantProduct.Legacy);
         public string ToApiValue(ResolvedTenantProduct product) => product.ToString();
     }
 
@@ -247,6 +248,9 @@ public sealed class RivhitPhase2Tests
             new Integrations(BusinessId, Credential), Provider, Payments, new InvoiceBalanceService(Db));
         public ExternalAccountingReceiptService ReceiptsWithArchive => new(Db, TenantContext, new Products(BusinessId),
             new Integrations(BusinessId, Credential), Provider, Payments, new InvoiceBalanceService(Db), Archive);
+        public ExternalAccountingReceiptService ClinicReceipts => new(Db, TenantContext,
+            new Products(BusinessId, businessType: ResolvedTenantProduct.Clinic),
+            new Integrations(BusinessId, Credential), Provider, Payments, new InvoiceBalanceService(Db), Archive);
         public string? Credential = "test-credential";
 
         public IExternalAccountingDocumentService Service(Guid? tenantId = null)
@@ -259,6 +263,13 @@ public sealed class RivhitPhase2Tests
         {
             TenantContext.SetTenant(tenantId ?? BusinessId);
             return new ExternalAccountingDocumentService(Db, new Products(BusinessId), new Integrations(BusinessId, Credential), new Features(), Provider, Archive);
+        }
+
+        public IExternalAccountingDocumentService ClinicServiceWithArchive()
+        {
+            TenantContext.SetTenant(BusinessId);
+            return new ExternalAccountingDocumentService(Db, new Products(BusinessId, businessType: ResolvedTenantProduct.Clinic),
+                new Integrations(BusinessId, Credential), new Features(), Provider, Archive);
         }
 
         public async ValueTask DisposeAsync()
@@ -1431,6 +1442,198 @@ public sealed class RivhitPhase2Tests
     }
 
     [TestMethod]
+    public async Task ClinicInvoice_IssuesThroughSharedAccountingServiceWithoutArchive()
+    {
+        await using var f = await NewFixtureAsync();
+        var tenant = await f.Db.Tenants.SingleAsync(item => item.Id == f.BusinessId);
+        tenant.ProductType = TenantProductType.Clinic;
+        await f.Db.SaveChangesAsync();
+
+        var result = await f.ClinicServiceWithArchive().IssueInvoiceAsync(f.BusinessId, f.InvoiceId,
+            new IssueAccountingInvoiceRequest(), CancellationToken.None);
+
+        Assert.AreEqual(AccountingDocumentOutcome.Issued, result.Outcome);
+        Assert.AreEqual(1, f.Provider.IssueCalls);
+        Assert.AreEqual(0, f.Archive.Calls);
+        Assert.AreEqual(0, await f.Db.Payments.CountAsync());
+        Assert.AreEqual(1, await f.Db.ExternalAccountingDocuments.CountAsync());
+    }
+
+    [TestMethod]
+    public async Task ClinicReceipt_RequiresExistingPayment_AndNeverCreatesAnotherPayment()
+    {
+        await using var f = await NewFixtureAsync();
+        var tenant = await f.Db.Tenants.SingleAsync(item => item.Id == f.BusinessId);
+        tenant.ProductType = TenantProductType.Clinic;
+        await f.Db.SaveChangesAsync();
+
+        var newPaymentMode = await f.ClinicReceipts.IssueAsync(f.BusinessId, f.InvoiceId,
+            new IssueAccountingReceiptRequest { Amount = 25m, PaymentMethod = "cash", PaymentDate = DateTime.UtcNow, IdempotencyKey = "clinic-no-payment" },
+            Guid.NewGuid(), CancellationToken.None);
+        Assert.AreEqual(AccountingReceiptOutcome.ExistingPaymentRequired, newPaymentMode.Outcome);
+        Assert.AreEqual(0, f.Provider.ReceiptCalls);
+        Assert.AreEqual(0, await f.Db.ExternalAccountingOperations.CountAsync());
+        Assert.AreEqual(0, await f.Db.Payments.CountAsync());
+
+        var payment = new Payment
+        {
+            Id = Guid.NewGuid(), TenantId = f.BusinessId, ClientId = f.ClientId, InvoiceId = f.InvoiceId,
+            Amount = 118m, PaymentDate = new DateTime(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc),
+            PaymentMethod = PaymentMethod.BankTransfer, Reference = "clinic-existing", Status = PaymentStatus.Verified
+        };
+        f.Db.Payments.Add(payment);
+        await f.Db.SaveChangesAsync();
+        var before = await f.Db.Payments.CountAsync();
+
+        var result = await f.ClinicReceipts.IssueAsync(f.BusinessId, f.InvoiceId,
+            new IssueAccountingReceiptRequest
+            {
+                Amount = payment.Amount, PaymentDate = payment.PaymentDate, IdempotencyKey = "clinic-existing-payment",
+                PaymentId = payment.Id
+            }, Guid.NewGuid(), CancellationToken.None);
+
+        Assert.AreEqual(AccountingReceiptOutcome.Issued, result.Outcome);
+        Assert.AreEqual(before, await f.Db.Payments.CountAsync());
+        Assert.AreEqual(payment.Id, (await f.Db.ExternalAccountingOperations.SingleAsync()).PaymentId);
+        Assert.AreEqual(payment.Id, (await f.Db.ExternalAccountingDocuments.SingleAsync()).PaymentId);
+        Assert.AreEqual(0, f.Archive.Calls);
+        Assert.AreEqual(1, f.Provider.ReceiptCalls);
+    }
+
+    [TestMethod]
+    public async Task LegacyRivhitAccounting_IsAllowedAndReceiptOnlyLinksExistingVerifiedPayment()
+    {
+        await using var f = await NewFixtureAsync();
+        var tenant = await f.Db.Tenants.SingleAsync(item => item.Id == f.BusinessId);
+        tenant.ProductType = null;
+        await f.Db.SaveChangesAsync();
+
+        var products = new Products(f.BusinessId, businessType: ResolvedTenantProduct.Legacy);
+        var documents = new ExternalAccountingDocumentService(f.Db, products,
+            new Integrations(f.BusinessId, f.Credential), new Features(), f.Provider, f.Archive);
+        var receipts = new ExternalAccountingReceiptService(f.Db, f.TenantContext, products,
+            new Integrations(f.BusinessId, f.Credential), f.Provider, f.Payments, f.Balances, f.Archive);
+        var controller = new BusinessRivhitAccountingDocumentsController(
+            f.TenantContext, products, documents, receipts, f.Archive, f.Db)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var invoiceResult = await controller.Issue(f.InvoiceId, new IssueAccountingInvoiceRequest(), CancellationToken.None);
+        Assert.IsInstanceOfType(invoiceResult, typeof(OkObjectResult));
+        Assert.AreEqual(1, f.Provider.IssueCalls);
+        Assert.AreEqual(1, (await controller.GetForTenant(CancellationToken.None) as OkObjectResult)?.Value is IReadOnlyList<ExternalAccountingDocumentResponse> result ? result.Count : 0);
+
+        var missingPaymentReceipt = await controller.IssueReceipt(f.InvoiceId, new IssueAccountingReceiptRequest
+        {
+            Amount = 25m,
+            PaymentMethod = "cash",
+            PaymentDate = DateTime.UtcNow,
+            IdempotencyKey = "legacy-no-payment"
+        }, CancellationToken.None);
+        Assert.AreEqual(StatusCodes.Status403Forbidden, (missingPaymentReceipt as ObjectResult)?.StatusCode);
+        Assert.AreEqual(0, f.Provider.ReceiptCalls);
+        Assert.AreEqual(0, await f.Db.Payments.CountAsync());
+
+        var payment = new Payment
+        {
+            Id = Guid.NewGuid(), TenantId = f.BusinessId, ClientId = f.ClientId, InvoiceId = f.InvoiceId,
+            Amount = 118m, PaymentDate = new DateTime(2026, 10, 12, 0, 0, 0, DateTimeKind.Utc),
+            PaymentMethod = PaymentMethod.BankTransfer, Reference = "legacy-existing", Status = PaymentStatus.Verified
+        };
+        f.Db.Payments.Add(payment);
+        await f.Db.SaveChangesAsync();
+        var paymentCountBeforeReceipt = await f.Db.Payments.CountAsync();
+        var existingPaymentReceipt = await controller.IssueReceipt(f.InvoiceId, new IssueAccountingReceiptRequest
+        {
+            Amount = payment.Amount,
+            PaymentDate = payment.PaymentDate,
+            IdempotencyKey = "legacy-existing-payment",
+            PaymentId = payment.Id
+        }, CancellationToken.None);
+
+        Assert.IsInstanceOfType(existingPaymentReceipt, typeof(OkObjectResult));
+        Assert.AreEqual(paymentCountBeforeReceipt, await f.Db.Payments.CountAsync());
+        Assert.AreEqual(payment.Id, (await f.Db.ExternalAccountingOperations.SingleAsync()).PaymentId);
+        Assert.AreEqual(payment.Id, (await f.Db.ExternalAccountingDocuments.SingleAsync(item => item.DocumentType == ExternalAccountingPurpose.Receipt)).PaymentId);
+        Assert.AreEqual(1, f.Provider.ReceiptCalls);
+        Assert.AreEqual(0, f.Archive.Calls);
+
+        var archiveResult = await controller.ArchiveDocument(Guid.NewGuid(), CancellationToken.None);
+        Assert.IsInstanceOfType(archiveResult, typeof(OkObjectResult));
+        Assert.AreEqual(1, f.Archive.Calls);
+    }
+
+    [TestMethod]
+    public async Task ClinicInvoiceIssuance_RequiresEnabledAccountingConfiguration()
+    {
+        await using var f = await NewFixtureAsync();
+        var tenant = await f.Db.Tenants.SingleAsync(item => item.Id == f.BusinessId);
+        tenant.ProductType = TenantProductType.Clinic;
+        var integration = await f.Db.TenantIntegrations.SingleAsync();
+        integration.AccountingEnabled = false;
+        await f.Db.SaveChangesAsync();
+
+        var result = await f.ClinicServiceWithArchive().IssueInvoiceAsync(f.BusinessId, f.InvoiceId,
+            new IssueAccountingInvoiceRequest(), CancellationToken.None);
+
+        Assert.AreEqual(AccountingDocumentOutcome.IntegrationUnavailable, result.Outcome);
+        Assert.AreEqual(0, f.Provider.IssueCalls);
+        Assert.AreEqual(0, f.Archive.Calls);
+    }
+
+    [TestMethod]
+    public async Task ClinicCannotIssueInvoiceOwnedByAnotherTenant()
+    {
+        await using var f = await NewFixtureAsync();
+        var tenant = await f.Db.Tenants.SingleAsync(item => item.Id == f.BusinessId);
+        tenant.ProductType = TenantProductType.Clinic;
+        var otherClientId = Guid.NewGuid();
+        var otherInvoiceId = Guid.NewGuid();
+        f.Db.Clients.Add(new Client { Id = otherClientId, TenantId = f.OtherId, FullName = "Other tenant client", IdNumber = "654321" });
+        f.Db.Invoices.Add(new Invoice
+        {
+            Id = otherInvoiceId, TenantId = f.OtherId, ClientId = otherClientId, ClientName = "Other tenant client",
+            InvoiceNumber = "OTHER-INV", InvoiceDate = new DateTime(2026, 10, 18), Status = InvoiceStatus.Pending,
+            VatRate = 18m, Subtotal = 100m, VatAmount = 18m, TotalAmount = 118m, Amount = 118m,
+            FinalAmountToPay = 118m, LineItems = new List<InvoiceLineItem> { new() { Id = Guid.NewGuid(), Description = "Service", Quantity = 1m, Price = 100m } }
+        });
+        await f.Db.SaveChangesAsync();
+
+        var result = await f.ClinicServiceWithArchive().IssueInvoiceAsync(f.BusinessId, otherInvoiceId,
+            new IssueAccountingInvoiceRequest(), CancellationToken.None);
+
+        Assert.AreEqual(AccountingDocumentOutcome.InvoiceNotFound, result.Outcome);
+        Assert.AreEqual(0, f.Provider.IssueCalls);
+        Assert.AreEqual(0, f.Archive.Calls);
+    }
+
+    [TestMethod]
+    public async Task ClinicController_AllowsArchiveButRejectsReceiptWithoutPaymentId()
+    {
+        await using var f = await NewFixtureAsync();
+        var tenant = await f.Db.Tenants.SingleAsync(item => item.Id == f.BusinessId);
+        tenant.ProductType = TenantProductType.Clinic;
+        await f.Db.SaveChangesAsync();
+        var controller = new BusinessRivhitAccountingDocumentsController(
+            f.TenantContext, new Products(f.BusinessId, businessType: ResolvedTenantProduct.Clinic),
+            f.ClinicServiceWithArchive(), f.ClinicReceipts, f.Archive, f.Db)
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var receiptResult = await controller.IssueReceipt(f.InvoiceId,
+            new IssueAccountingReceiptRequest { Amount = 25m, PaymentMethod = "cash", PaymentDate = DateTime.UtcNow, IdempotencyKey = "clinic-controller-no-payment" },
+            CancellationToken.None);
+        var archiveResult = await controller.ArchiveDocument(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.AreEqual(StatusCodes.Status403Forbidden, (receiptResult as ObjectResult)?.StatusCode);
+        Assert.IsInstanceOfType(archiveResult, typeof(OkObjectResult));
+        Assert.AreEqual(1, f.Archive.Calls);
+        Assert.AreEqual(0, f.Provider.ReceiptCalls);
+    }
+
+    [TestMethod]
     public async Task ExistingIssuedDocument_IsReturnedWithoutProviderMutation()
     {
         await using var f = await NewFixtureAsync();
@@ -1475,9 +1678,8 @@ public sealed class RivhitPhase2Tests
 
     [TestMethod]
     [DataTestMethod]
-    [DataRow(TenantProductType.Clinic)]
-    [DataRow(ResolvedTenantProduct.Legacy)]
-    public async Task NonBusinessTenant_IsRejected(ResolvedTenantProduct productType)
+    [DataRow((ResolvedTenantProduct)999)]
+    public async Task UnsupportedProduct_IsRejected(ResolvedTenantProduct productType)
     {
         await using var f = await NewFixtureAsync();
         var otherTenant = await f.Db.Tenants.IgnoreQueryFilters().SingleAsync(tenant => tenant.Id == f.OtherId);

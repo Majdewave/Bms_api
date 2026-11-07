@@ -1,14 +1,16 @@
 using Clienta.Api.Authorization;
+using Clienta.Api.Data;
 using Clienta.Api.Entities;
 using Clienta.Api.Models;
 using Clienta.Api.Services;
 using Clienta.Api.Services.Integrations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Clienta.Api.Controllers;
 
-// Phase 1 exposes the Rivhit integration to explicit Business tenants only; Legacy (null), Clinic and unknown fail closed.
+// Rivhit configuration and accounting are available to Business, Clinic, and Legacy tenants; payment metadata remains Business-only.
 [ApiController]
 [Route("api/business/integrations/rivhit")]
 [Authorize(Policy = IntegrationAuthorization.ManagePolicy)]
@@ -19,21 +21,24 @@ public class BusinessRivhitIntegrationController : ControllerBase
     private readonly ITenantContext _tenantContext;
     private readonly ITenantProductService _productService;
     private readonly ITenantIntegrationService _integrations;
+    private readonly AppDbContext _db;
 
     public BusinessRivhitIntegrationController(
         ITenantContext tenantContext,
         ITenantProductService productService,
-        ITenantIntegrationService integrations)
+        ITenantIntegrationService integrations,
+        AppDbContext db)
     {
         _tenantContext = tenantContext;
         _productService = productService;
         _integrations = integrations;
+        _db = db;
     }
 
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
     {
-        var denied = await GuardAsync(ct);
+        var denied = await GuardAsync(ct, allowClinicConfiguration: true);
         if (denied is not null) return denied;
         return Ok(await _integrations.GetStateAsync(_tenantContext.TenantId, Provider, ct));
     }
@@ -41,7 +46,7 @@ public class BusinessRivhitIntegrationController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> Update([FromBody] UpdateIntegrationRequest request, CancellationToken ct)
     {
-        var denied = await GuardAsync(ct);
+        var denied = await GuardAsync(ct, allowClinicConfiguration: true);
         if (denied is not null) return denied;
 
         var result = await _integrations.UpdateAsync(_tenantContext.TenantId, Provider, request ?? new UpdateIntegrationRequest(), ct);
@@ -57,7 +62,7 @@ public class BusinessRivhitIntegrationController : ControllerBase
     [HttpPost("test")]
     public async Task<IActionResult> Test(CancellationToken ct)
     {
-        var denied = await GuardAsync(ct);
+        var denied = await GuardAsync(ct, allowClinicConfiguration: true);
         if (denied is not null) return denied;
 
         var result = await _integrations.TestConnectionAsync(_tenantContext.TenantId, Provider, ct);
@@ -89,18 +94,22 @@ public class BusinessRivhitIntegrationController : ControllerBase
     [HttpDelete("credential")]
     public async Task<IActionResult> Disconnect(CancellationToken ct)
     {
-        var denied = await GuardAsync(ct);
+        var denied = await GuardAsync(ct, allowClinicConfiguration: true);
         if (denied is not null) return denied;
         return Ok(await _integrations.DisconnectAsync(_tenantContext.TenantId, Provider, ct));
     }
 
-    private async Task<IActionResult?> GuardAsync(CancellationToken ct)
+    private async Task<IActionResult?> GuardAsync(CancellationToken ct, bool allowClinicConfiguration = false)
     {
         var tenantId = _tenantContext.TenantId;
         if (tenantId == Guid.Empty)
             return Unauthorized("Tenant not resolved");
+        if (!await _db.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == tenantId, ct))
+            return StatusCode(StatusCodes.Status403Forbidden, "The Rivhit integration is not available for this tenant.");
 
-        if (await _productService.GetAsync(tenantId, ct) != ResolvedTenantProduct.Business)
+        var product = await _productService.GetAsync(tenantId, ct);
+        if (product != ResolvedTenantProduct.Business
+            && !(allowClinicConfiguration && product is (ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy)))
             return StatusCode(StatusCodes.Status403Forbidden, "The Rivhit integration is not available for this tenant.");
 
         return null;

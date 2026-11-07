@@ -513,6 +513,32 @@ public class AppointmentsController : ControllerBase
         var currentIsActive = IsActiveQueueStatus(currentStatus);
         var newIsActive = IsActiveQueueStatus(newStatus);
 
+        if (currentStatus != AppointmentStatuses.Completed && newStatus == AppointmentStatuses.Completed)
+        {
+            var authenticatedUser = _tenant.UserId.HasValue && _tenant.UserId.Value != Guid.Empty
+                ? await _context.Users
+                    .Where(user => user.Id == _tenant.UserId.Value && user.TenantId == _tenant.TenantId)
+                    .Select(user => new { user.Id, user.Role, user.FullName })
+                    .FirstOrDefaultAsync()
+                : null;
+
+            _context.AuditLogs.Add(new AuditLog
+            {
+                Id = Guid.NewGuid(),
+                TenantId = appointment.TenantId,
+                UserId = authenticatedUser?.Id,
+                EntityName = nameof(Appointment),
+                ActionType = "appointment_completed",
+                EntityId = appointment.Id.ToString(),
+                OldValues = currentStatus,
+                NewValues = newStatus,
+                PerformedBy = authenticatedUser == null
+                    ? null
+                    : $"{authenticatedUser.Role} - {authenticatedUser.FullName}",
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         appointment.Status = newStatus;
         if (request.RoomNumber != null)
         {

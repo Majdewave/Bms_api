@@ -89,7 +89,7 @@ public sealed class RivhitIntegrationTests
         public BusinessRivhitIntegrationController Controller(Guid tenantId)
         {
             Ctx.SetTenant(tenantId);
-            return new BusinessRivhitIntegrationController(Ctx, new TenantProductService(Db), Service());
+            return new BusinessRivhitIntegrationController(Ctx, new TenantProductService(Db), Service(), Db);
         }
 
         public async ValueTask DisposeAsync()
@@ -273,6 +273,52 @@ public sealed class RivhitIntegrationTests
     }
 
     [TestMethod]
+    public async Task ClinicAdmin_CanConfigureAccountingButPaymentsRemainDisabledAndMetadataIsDenied()
+    {
+        await using var env = await NewEnvAsync();
+        var clinic = env.Controller(env.Clinic);
+
+        var configured = Value<IntegrationStateDto>(await clinic.Update(
+            new UpdateIntegrationRequest { ApiToken = Token, IsEnabled = true, AccountingEnabled = true }, default));
+
+        Assert.IsTrue(configured.IsConfigured);
+        Assert.IsTrue(configured.IsEnabled);
+        Assert.IsTrue(configured.AccountingEnabled);
+        Assert.IsFalse(configured.PaymentsAvailable);
+        var stored = await env.Db.TenantIntegrations.IgnoreQueryFilters().SingleAsync(item => item.TenantId == env.Clinic);
+        Assert.IsFalse(stored.PaymentsEnabled);
+        Assert.AreEqual(403, (await clinic.GetMetadata(default) as ObjectResult)?.StatusCode);
+        Assert.AreEqual(0, env.Provider.PaymentTypeCalls);
+        Assert.AreEqual(0, env.Provider.ReceiptTypeCalls);
+    }
+
+    [TestMethod]
+    public async Task LegacyAdmin_CanConfigureAccountingButPaymentsRemainDisabledAndMetadataIsDenied()
+    {
+        await using var env = await NewEnvAsync();
+        var legacy = env.Controller(env.Legacy);
+
+        var configured = Value<IntegrationStateDto>(await legacy.Update(
+            new UpdateIntegrationRequest { ApiToken = Token, IsEnabled = true, AccountingEnabled = true }, default));
+
+        Assert.IsTrue(configured.IsConfigured);
+        Assert.IsTrue(configured.IsEnabled);
+        Assert.IsTrue(configured.AccountingEnabled);
+        Assert.IsFalse(configured.PaymentsAvailable);
+        var stored = await env.Db.TenantIntegrations.IgnoreQueryFilters().SingleAsync(item => item.TenantId == env.Legacy);
+        Assert.IsFalse(stored.PaymentsEnabled);
+        Assert.IsInstanceOfType(await legacy.GetMetadata(default), typeof(ObjectResult));
+        Assert.AreEqual(0, env.Provider.PaymentTypeCalls);
+        Assert.AreEqual(0, env.Provider.ReceiptTypeCalls);
+
+        Assert.IsInstanceOfType(await legacy.Test(default), typeof(OkObjectResult));
+        Assert.AreEqual(1, env.Provider.Calls);
+        var disconnected = Value<IntegrationStateDto>(await legacy.Disconnect(default));
+        Assert.IsFalse(disconnected.IsConfigured);
+        Assert.IsFalse(disconnected.IsEnabled);
+    }
+
+    [TestMethod]
     public async Task StaffCannotModify_AdminPolicyIsEnforcedOnController()
     {
         var attr = typeof(BusinessRivhitIntegrationController).GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>().Single();
@@ -367,10 +413,10 @@ public sealed class RivhitIntegrationTests
     }
 
     [TestMethod]
-    public async Task LegacyClinicAndUnknownTenants_AreDenied()
+    public async Task UnknownTenants_AreDenied()
     {
         await using var env = await NewEnvAsync();
-        foreach (var tenant in new[] { env.Legacy, env.Clinic, Guid.NewGuid() })
+        foreach (var tenant in new[] { Guid.NewGuid() })
         {
             var c = env.Controller(tenant);
             foreach (var result in new[]

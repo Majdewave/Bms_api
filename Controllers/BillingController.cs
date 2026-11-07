@@ -146,6 +146,8 @@ public class BillingController : ControllerBase
                 billingCycle = tenant.BillingCycle.ToString(),
                 subscriptionStatus = tenant.SubscriptionStatus.ToString(),
                 subscriptionEndsAt = tenant.SubscriptionEndsAt,
+                scheduledPlan = tenant.ScheduledPlan?.ToString(),
+                scheduledPlanChangeAt = tenant.ScheduledPlanChangeAt,
                 id = tenant.Id,
                 trialEndsAt = tenant.TrialEndsAt,
                 daysRemaining = daysRemaining > 0 ? daysRemaining : 0,
@@ -229,6 +231,24 @@ public class BillingController : ControllerBase
             var tenant = await _db.Tenants.FindAsync(tenantId);
             if (tenant == null)
                 return NotFound(new { error = "Tenant not found" });
+
+            if (tenant.ProductType == TenantProductType.Clinic)
+            {
+                if (request.NewPlan == PlanType.Pro)
+                {
+                    return BadRequest(new { error = "Clinic Pro is Coming Soon and cannot be selected yet." });
+                }
+
+                if (request.NewPlan is not (PlanType.Basic or PlanType.Enterprise))
+                {
+                    return BadRequest(new { error = "Clinic subscriptions currently support Basic and Enterprise only." });
+                }
+
+                if (request.NewCycle != BillingCycle.Monthly)
+                {
+                    return BadRequest(new { error = "Clinic subscriptions currently support Monthly billing only." });
+                }
+            }
 
             // Determine if this is an upgrade or downgrade
             bool isUpgrade = IsUpgrade(tenant.Plan, tenant.BillingCycle, request.NewPlan, request.NewCycle);

@@ -19,37 +19,21 @@ public class StripeService : IStripeService
     private readonly AppDbContext _db;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
+    private readonly IStripeSubscriptionGateway _subscriptionGateway;
 
-    public StripeService(AppDbContext db, IConfiguration configuration, IEmailService emailService)
+    public StripeService(
+        AppDbContext db,
+        IConfiguration configuration,
+        IEmailService emailService,
+        IStripeSubscriptionGateway subscriptionGateway)
     {
         _db = db;
         _configuration = configuration;
         _emailService = emailService;
+        _subscriptionGateway = subscriptionGateway;
         
         // Set Stripe API key
         StripeConfiguration.ApiKey = _configuration["Stripe:SecretKey"];
-    }
-
-    /// <summary>
-    /// Get the correct Stripe Price ID based on plan and billing cycle
-    /// Note: Basic plan only supports Monthly billing
-    /// </summary>
-    private string GetPriceId(PlanType plan, BillingCycle cycle)
-    {
-        var configKey = (plan, cycle) switch
-        {
-            (PlanType.Basic, BillingCycle.Monthly) => "Stripe:BasicMonthlyPriceId",
-            (PlanType.Basic, BillingCycle.Yearly) => throw new InvalidOperationException("Yearly billing not available for Basic plan. Upgrade to Pro for yearly billing."),
-            (PlanType.Pro, BillingCycle.Monthly) => "Stripe:ProMonthlyPriceId",
-            (PlanType.Pro, BillingCycle.Yearly) => "Stripe:ProYearlyPriceId",
-            _ => throw new InvalidOperationException("Invalid plan configuration")
-        };
-
-        var priceId = _configuration[configKey];
-        if (string.IsNullOrEmpty(priceId))
-            throw new InvalidOperationException($"Price ID not configured for {plan} {cycle}");
-
-        return priceId;
     }
 
     /// <summary>
@@ -75,11 +59,10 @@ public class StripeService : IStripeService
             throw new InvalidOperationException("Already subscribed to this plan");
 
         // Get new price ID
-        var newPriceId = GetPriceId(newPlan, newCycle);
+        var newPriceId = StripePlanResolver.GetPriceId(_configuration, tenant.ProductType, newPlan, newCycle);
 
         // Get existing subscription from Stripe
-        var subscriptionService = new SubscriptionService();
-        var subscription = await subscriptionService.GetAsync(tenant.StripeSubscriptionId);
+        var subscription = await _subscriptionGateway.GetSubscriptionAsync(tenant.StripeSubscriptionId);
 
         if (subscription == null || subscription.Items.Data.Count == 0)
             throw new InvalidOperationException("Subscription not found in Stripe");
@@ -106,7 +89,7 @@ public class StripeService : IStripeService
             };
 
             // Update immediately
-            await subscriptionService.UpdateAsync(subscription.Id, updateOptions);
+            await _subscriptionGateway.UpdateSubscriptionAsync(subscription.Id, updateOptions);
 
             // Update tenant in database
             var planProvider = new PlanProvider();
@@ -123,32 +106,167 @@ public class StripeService : IStripeService
         }
         else
         {
-            // DOWNGRADE: Schedule for end of billing period
-            updateOptions = new SubscriptionUpdateOptions
+            // Schedule the change on the existing Stripe subscription. The item period end is
+            // Stripe's authoritative billing boundary; a local 30-day estimate is not reliable.
+            var currentItem = subscription.Items.Data[0];
+            var effectiveAt = currentItem.CurrentPeriodEnd;
+            if (effectiveAt == default || effectiveAt <= DateTime.UtcNow)
             {
-                Items = new List<SubscriptionItemOptions>
-                {
-                    new SubscriptionItemOptions
-                    {
-                        Id = subscription.Items.Data[0].Id,
-                        Price = newPriceId
-                    }
-                },
-                ProrationBehavior = "none" // No proration, no refund
-            };
+                throw new InvalidOperationException("Stripe did not provide a valid upcoming billing boundary for this subscription.");
+            }
 
-            // Schedule the change (Stripe will apply it at period end)
-            await subscriptionService.UpdateAsync(subscription.Id, updateOptions);
+            await SchedulePlanChangeAsync(subscription, newPriceId, newCycle, effectiveAt);
 
-            // Store scheduled downgrade in database
+            // Keep the active Clienta plan and limits until Stripe reports the target price active.
             tenant.ScheduledPlan = newPlan;
             tenant.BillingCycle = newCycle; // Update cycle now for scheduled change
-            // Stripe will notify via webhook when change is applied
-            tenant.ScheduledPlanChangeAt = DateTime.UtcNow.AddDays(30); // Estimate (webhook updates actual)
+            tenant.ScheduledPlanChangeAt = effectiveAt;
         }
 
         await _db.SaveChangesAsync();
     }
+
+    private async Task SchedulePlanChangeAsync(
+        Subscription subscription,
+        string targetPriceId,
+        BillingCycle targetCycle,
+        DateTime effectiveAt)
+    {
+        var schedule = string.IsNullOrWhiteSpace(subscription.ScheduleId)
+            ? await _subscriptionGateway.CreateScheduleFromSubscriptionAsync(subscription.Id)
+            : await _subscriptionGateway.GetScheduleAsync(subscription.ScheduleId);
+
+        var now = DateTime.UtcNow;
+        var currentPhase = schedule.Phases
+            .Where(phase => phase.EndDate > now)
+            .OrderBy(phase => phase.StartDate)
+            .FirstOrDefault();
+
+        if (currentPhase == null || currentPhase.Items.Count == 0)
+        {
+            throw new InvalidOperationException("Stripe did not return the active subscription schedule phase.");
+        }
+
+        var activePriceId = subscription.Items.Data[0].Price?.Id;
+        var activeItemIndex = currentPhase.Items.FindIndex(item =>
+            string.Equals(item.PriceId, activePriceId, StringComparison.Ordinal));
+        if (activeItemIndex < 0)
+        {
+            throw new InvalidOperationException("The active Stripe price was not present in the current subscription schedule phase.");
+        }
+
+        var currentPhaseOptions = CopyPhase(currentPhase);
+        currentPhaseOptions.EndDate = effectiveAt;
+
+        var nextPhaseOptions = CopyPhase(currentPhase);
+        nextPhaseOptions.StartDate = effectiveAt;
+        nextPhaseOptions.EndDate = default;
+        nextPhaseOptions.Duration = new SubscriptionSchedulePhaseDurationOptions
+        {
+            Interval = targetCycle == BillingCycle.Yearly ? "year" : "month",
+            IntervalCount = 1
+        };
+        nextPhaseOptions.ProrationBehavior = "none";
+        nextPhaseOptions.Items[activeItemIndex].Price = targetPriceId;
+        nextPhaseOptions.Items[activeItemIndex].Plan = null;
+
+        await _subscriptionGateway.UpdateScheduleAsync(schedule.Id, new SubscriptionScheduleUpdateOptions
+        {
+            EndBehavior = "release",
+            ProrationBehavior = "none",
+            Phases = new List<SubscriptionSchedulePhaseOptions>
+            {
+                currentPhaseOptions,
+                nextPhaseOptions
+            }
+        });
+    }
+
+    private static SubscriptionSchedulePhaseOptions CopyPhase(SubscriptionSchedulePhase phase)
+    {
+        return new SubscriptionSchedulePhaseOptions
+        {
+            AddInvoiceItems = MapIfNotEmpty(phase.AddInvoiceItems, item => new SubscriptionSchedulePhaseAddInvoiceItemOptions
+            {
+                Price = item.PriceId,
+                Quantity = item.Quantity,
+                TaxRates = MapIfNotEmpty(item.TaxRates, tax => tax.Id),
+                Metadata = CopyIfNotEmpty(item.Metadata)
+            }),
+            ApplicationFeePercent = phase.ApplicationFeePercent,
+            AutomaticTax = phase.AutomaticTax == null ? null : new SubscriptionSchedulePhaseAutomaticTaxOptions
+            {
+                Enabled = phase.AutomaticTax.Enabled
+            },
+            BillingCycleAnchor = phase.BillingCycleAnchor,
+            BillingThresholds = phase.BillingThresholds == null ? null : new SubscriptionSchedulePhaseBillingThresholdsOptions
+            {
+                AmountGte = phase.BillingThresholds.AmountGte,
+                ResetBillingCycleAnchor = phase.BillingThresholds.ResetBillingCycleAnchor
+            },
+            CollectionMethod = phase.CollectionMethod,
+            Currency = phase.Currency,
+            DefaultPaymentMethod = phase.DefaultPaymentMethodId,
+            DefaultTaxRates = MapIfNotEmpty(phase.DefaultTaxRates, tax => tax.Id),
+            Description = phase.Description,
+            Discounts = MapIfNotEmpty(phase.Discounts, discount => new SubscriptionSchedulePhaseDiscountOptions
+            {
+                Coupon = discount.CouponId,
+                Discount = discount.DiscountId,
+                PromotionCode = discount.PromotionCodeId
+            }),
+            EndDate = phase.EndDate,
+            InvoiceSettings = phase.InvoiceSettings == null ? null : new SubscriptionSchedulePhaseInvoiceSettingsOptions
+            {
+                AccountTaxIds = MapIfNotEmpty(phase.InvoiceSettings.AccountTaxIdIds, id => id),
+                DaysUntilDue = phase.InvoiceSettings.DaysUntilDue
+            },
+            Items = phase.Items.Select(item => new SubscriptionSchedulePhaseItemOptions
+            {
+                BillingThresholds = item.BillingThresholds == null ? null : new SubscriptionSchedulePhaseItemBillingThresholdsOptions
+                {
+                    UsageGte = item.BillingThresholds.UsageGte
+                },
+                Discounts = MapIfNotEmpty(item.Discounts, discount => new SubscriptionSchedulePhaseItemDiscountOptions
+                {
+                    Coupon = discount.CouponId,
+                    Discount = discount.DiscountId,
+                    PromotionCode = discount.PromotionCodeId
+                }),
+                Metadata = CopyIfNotEmpty(item.Metadata),
+                Price = item.PriceId,
+                Quantity = item.Quantity,
+                TaxRates = MapIfNotEmpty(item.TaxRates, tax => tax.Id)
+            }).ToList(),
+            Metadata = CopyIfNotEmpty(phase.Metadata),
+            OnBehalfOf = phase.OnBehalfOfId,
+            ProrationBehavior = phase.ProrationBehavior,
+            StartDate = phase.StartDate,
+            TransferData = phase.TransferData == null ? null : new SubscriptionSchedulePhaseTransferDataOptions
+            {
+                AmountPercent = phase.TransferData.AmountPercent,
+                Destination = phase.TransferData.DestinationId
+            },
+            Trial = phase.TrialEnd.HasValue,
+            TrialEnd = phase.TrialEnd
+        };
+    }
+
+    private static List<TOptions>? MapIfNotEmpty<TSource, TOptions>(
+        IEnumerable<TSource>? source,
+        Func<TSource, TOptions> map)
+    {
+        if (source == null)
+            return null;
+
+        var mapped = source.Select(map).ToList();
+        return mapped.Count == 0 ? null : mapped;
+    }
+
+    private static Dictionary<string, string>? CopyIfNotEmpty(IDictionary<string, string>? source) =>
+        source == null || source.Count == 0
+            ? null
+            : new Dictionary<string, string>(source);
 
     /// <summary>
     /// Determine if a plan change is an upgrade or downgrade
@@ -192,7 +310,7 @@ public class StripeService : IStripeService
             throw new InvalidOperationException("Admin email not found");
 
         // Get the correct price ID based on plan and billing cycle
-        var priceId = GetPriceId(planType, billingCycle);
+        var priceId = StripePlanResolver.GetPriceId(_configuration, tenant.ProductType, planType, billingCycle);
 
         var options = new SessionCreateOptions
         {
@@ -211,13 +329,7 @@ public class StripeService : IStripeService
             SuccessUrl = "https://clienta.digitalpenpro.com/success?session_id={CHECKOUT_SESSION_ID}",
             CancelUrl = "https://clienta.digitalpenpro.com/billing",
             ClientReferenceId = tenantId.ToString(),
-            Metadata = new Dictionary<string, string>
-            {
-                { "tenant_id", tenantId.ToString() },
-                { "subdomain", tenant.Subdomain },
-                { "plan_type", planType.ToString() },
-                { "billing_cycle", billingCycle.ToString() }
-            }
+            Metadata = StripePlanResolver.CreateCheckoutMetadata(tenant, planType, billingCycle)
         };
 
         var service = new SessionService();
@@ -258,6 +370,11 @@ public class StripeService : IStripeService
 
                 case "customer.subscription.updated":
                     await HandleSubscriptionUpdated(stripeEvent);
+                    break;
+
+                case "subscription_schedule.updated":
+                case "subscription_schedule.completed":
+                    await HandleSubscriptionScheduleUpdated(stripeEvent);
                     break;
 
                 case "customer.subscription.deleted":
@@ -344,36 +461,57 @@ public class StripeService : IStripeService
             return;
         }
 
-        if (!session.Metadata.TryGetValue("plan_type", out var planTypeStr) || string.IsNullOrWhiteSpace(planTypeStr))
-        {
-            Console.WriteLine("❌ Stripe checkout metadata plan_type missing");
-            return;
-        }
-
-        if (!Enum.TryParse<PlanType>(planTypeStr, true, out var planType))
-        {
-            Console.WriteLine($"❌ Stripe checkout metadata plan_type invalid: {planTypeStr}");
-            return;
-        }
-
-        if (!session.Metadata.TryGetValue("billing_cycle", out var billingCycleStr) || string.IsNullOrWhiteSpace(billingCycleStr))
-        {
-            Console.WriteLine("❌ Stripe checkout metadata billing_cycle missing");
-            return;
-        }
-
-        if (!Enum.TryParse<BillingCycle>(billingCycleStr, true, out var billingCycle))
-        {
-            Console.WriteLine($"❌ Stripe checkout metadata billing_cycle invalid: {billingCycleStr}");
-            return;
-        }
-
         var tenant = await _db.Tenants.FindAsync(tenantId);
 
         if (tenant == null)
         {
             Console.WriteLine($"❌ Tenant not found for tenant_id: {tenantId}");
             return;
+        }
+
+        PlanType planType;
+        BillingCycle billingCycle;
+        if (session.Metadata.ContainsKey("product_type"))
+        {
+            if (!StripePlanResolver.TryResolveClinicCheckout(session.Metadata, tenant.ProductType, out planType, out billingCycle))
+            {
+                Console.WriteLine("❌ Stripe Clinic checkout metadata does not match the tenant or an allowed Clinic plan");
+                return;
+            }
+        }
+        else
+        {
+            // Clinic sessions must carry the product marker; unmarked historical/generic sessions
+            // remain supported for all non-Clinic tenants.
+            if (tenant.ProductType == TenantProductType.Clinic)
+            {
+                Console.WriteLine("❌ Stripe checkout metadata product_type missing for Clinic tenant");
+                return;
+            }
+
+            if (!session.Metadata.TryGetValue("plan_type", out var planTypeStr) || string.IsNullOrWhiteSpace(planTypeStr))
+            {
+                Console.WriteLine("❌ Stripe checkout metadata plan_type missing");
+                return;
+            }
+
+            if (!Enum.TryParse<PlanType>(planTypeStr, true, out planType))
+            {
+                Console.WriteLine($"❌ Stripe checkout metadata plan_type invalid: {planTypeStr}");
+                return;
+            }
+
+            if (!session.Metadata.TryGetValue("billing_cycle", out var billingCycleStr) || string.IsNullOrWhiteSpace(billingCycleStr))
+            {
+                Console.WriteLine("❌ Stripe checkout metadata billing_cycle missing");
+                return;
+            }
+
+            if (!Enum.TryParse<BillingCycle>(billingCycleStr, true, out billingCycle))
+            {
+                Console.WriteLine($"❌ Stripe checkout metadata billing_cycle invalid: {billingCycleStr}");
+                return;
+            }
         }
 
         Console.WriteLine("✅ Stripe checkout completed");
@@ -470,22 +608,12 @@ public class StripeService : IStripeService
 
         if (tenant == null) return;
 
-        // Check if a scheduled plan change should be applied
-        if (tenant.ScheduledPlan.HasValue && 
-            tenant.ScheduledPlanChangeAt.HasValue && 
-            DateTime.UtcNow >= tenant.ScheduledPlanChangeAt.Value)
+        // Event payloads can be delayed or delivered out of order. Confirm the current Stripe
+        // subscription price before applying a scheduled plan; the stored date alone is not proof.
+        if (tenant.ScheduledPlan.HasValue)
         {
-            // Apply the scheduled plan change
-            var planProvider = new PlanProvider();
-            var planDef = planProvider.GetPlan(tenant.ScheduledPlan.Value);
-
-            tenant.Plan = tenant.ScheduledPlan.Value;
-            tenant.UserLimit = planDef.UserLimit;
-            tenant.MessageLimit = planDef.MessageLimit;
-
-            // Clear scheduled plan change
-            tenant.ScheduledPlan = null;
-            tenant.ScheduledPlanChangeAt = null;
+            var currentSubscription = await _subscriptionGateway.GetSubscriptionAsync(subscription.Id);
+            await ActivateScheduledPlanIfPriceIsActiveAsync(tenant, currentSubscription);
         }
 
         // Map Stripe subscription status to our enum
@@ -502,6 +630,58 @@ public class StripeService : IStripeService
         // Suspend if not active/trialing
         tenant.IsSuspended = !(subscription.Status == "active" || subscription.Status == "trialing");
         
+        await _db.SaveChangesAsync();
+    }
+
+    private async Task HandleSubscriptionScheduleUpdated(Event stripeEvent)
+    {
+        var schedule = stripeEvent.Data.Object as SubscriptionSchedule;
+        var subscriptionId = schedule?.SubscriptionId ?? schedule?.Subscription?.Id;
+        if (string.IsNullOrWhiteSpace(subscriptionId))
+            return;
+
+        var tenant = await _db.Tenants
+            .FirstOrDefaultAsync(candidate => candidate.StripeSubscriptionId == subscriptionId);
+        if (tenant?.ScheduledPlan == null)
+            return;
+
+        var currentSubscription = await _subscriptionGateway.GetSubscriptionAsync(subscriptionId);
+        await ActivateScheduledPlanIfPriceIsActiveAsync(tenant, currentSubscription);
+        await _db.SaveChangesAsync();
+    }
+
+    private async Task ActivateScheduledPlanIfPriceIsActiveAsync(Tenant tenant, Subscription subscription)
+    {
+        if (!tenant.ScheduledPlan.HasValue)
+            return;
+
+        string targetPriceId;
+        try
+        {
+            targetPriceId = StripePlanResolver.GetPriceId(
+                _configuration,
+                tenant.ProductType,
+                tenant.ScheduledPlan.Value,
+                tenant.BillingCycle);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Console.WriteLine($"Scheduled Stripe plan price cannot be resolved for tenant {tenant.Id}: {exception.Message}");
+            return;
+        }
+
+        var targetPriceIsActive = subscription.Items?.Data?.Any(item =>
+            string.Equals(item.Price?.Id, targetPriceId, StringComparison.Ordinal)) == true;
+        if (!targetPriceIsActive)
+            return;
+
+        var planDefinition = new PlanProvider().GetPlan(tenant.ScheduledPlan.Value);
+        tenant.Plan = tenant.ScheduledPlan.Value;
+        tenant.UserLimit = planDefinition.UserLimit;
+        tenant.MessageLimit = planDefinition.MessageLimit;
+        tenant.ScheduledPlan = null;
+        tenant.ScheduledPlanChangeAt = null;
+
         await _db.SaveChangesAsync();
     }
 

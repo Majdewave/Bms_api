@@ -118,7 +118,10 @@ public sealed class ExternalAccountingDocumentService : IExternalAccountingDocum
 
     public async Task<IReadOnlyList<ExternalAccountingDocumentResponse>> GetTenantDocumentsAsync(Guid tenantId, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty || await _products.GetAsync(tenantId, ct) != ResolvedTenantProduct.Business)
+        if (tenantId == Guid.Empty || !await _db.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == tenantId, ct))
+            return Array.Empty<ExternalAccountingDocumentResponse>();
+        var product = await _products.GetAsync(tenantId, ct);
+        if (product is not (ResolvedTenantProduct.Business or ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy))
             return Array.Empty<ExternalAccountingDocumentResponse>();
         var rows = await _db.ExternalAccountingDocuments.AsNoTracking()
             .Where(x => x.TenantId == tenantId && x.Provider == Provider)
@@ -128,7 +131,11 @@ public sealed class ExternalAccountingDocumentService : IExternalAccountingDocum
 
     public async Task<AccountingDocumentOperationResult> IssueInvoiceAsync(Guid tenantId, Guid invoiceId, IssueAccountingInvoiceRequest request, CancellationToken ct)
     {
-        if (tenantId == Guid.Empty || await _products.GetAsync(tenantId, ct) != ResolvedTenantProduct.Business)
+        if (tenantId == Guid.Empty)
+            return new(AccountingDocumentOutcome.UnsupportedTenant, null);
+        var product = await _products.GetAsync(tenantId, ct);
+        if (!await _db.Tenants.IgnoreQueryFilters().AnyAsync(tenant => tenant.Id == tenantId, ct)
+            || product is not (ResolvedTenantProduct.Business or ResolvedTenantProduct.Clinic or ResolvedTenantProduct.Legacy))
             return new(AccountingDocumentOutcome.UnsupportedTenant, null);
         if (!await _features.IsEnabledAsync("invoices"))
             return new(AccountingDocumentOutcome.UnsupportedTenant, null);
@@ -401,6 +408,7 @@ public sealed class ExternalAccountingDocumentService : IExternalAccountingDocum
         if (_archive is null) return;
         try
         {
+            if (await _products.GetAsync(document.TenantId, CancellationToken.None) != ResolvedTenantProduct.Business) return;
             await _archive.ArchiveAsync(document.TenantId, document.Id, Guid.Empty, CancellationToken.None);
         }
         catch

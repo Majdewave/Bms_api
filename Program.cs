@@ -115,6 +115,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IOnboardingService, OnboardingService>();
 builder.Services.AddScoped<ITenantSeedService, TenantSeedService>();
 builder.Services.AddScoped<IStripeService, StripeService>();
+builder.Services.AddScoped<IStripeSubscriptionGateway, StripeSubscriptionGateway>();
 builder.Services.AddScoped<IImagingAccessionNumberGenerator, ImagingAccessionNumberGenerator>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
