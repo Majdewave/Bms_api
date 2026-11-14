@@ -36,7 +36,7 @@ Footer:
 - Clienta
 - Business Management Platform
 - https://clienta.digitalpenpro.com
-- support@clienta.digitalpenpro.com
+- Clienta-Support@digitalpenpro.com 
 
 ---
 
@@ -74,7 +74,7 @@ Footer:
 - Clienta
 - Business Management Platform
 - https://clienta.digitalpenpro.com
-- support@clienta.digitalpenpro.com
+- Clienta-Support@digitalpenpro.com 
 
 ---
 
@@ -112,7 +112,7 @@ Footer:
 - Clienta
 - Business Management Platform
 - https://clienta.digitalpenpro.com
-- support@clienta.digitalpenpro.com
+- Clienta-Support@digitalpenpro.com 
 
 ---
 
@@ -130,7 +130,7 @@ CTA:
 - Log in to Clienta
 
 Support:
-- support@clienta.digitalpenpro.com
+- Clienta-Support@digitalpenpro.com 
 
 ---
 
@@ -148,7 +148,7 @@ CTA:
 - התחברות ל-Clienta
 
 Support:
-- support@clienta.digitalpenpro.com
+- Clienta-Support@digitalpenpro.com 
 
 ---
 
@@ -166,4 +166,4 @@ CTA:
 - تسجيل الدخول إلى Clienta
 
 Support:
-- support@clienta.digitalpenpro.com
+- Clienta-Support@digitalpenpro.com 

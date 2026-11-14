@@ -3,7 +3,7 @@ namespace Clienta.Api.Entities;
 public class PlatformSettings
 {
     public Guid Id { get; set; }
-    public string SupportEmail { get; set; } = "support@clienta.digitalpenpro.com";
+    public string SupportEmail { get; set; } = "Clienta-Support@digitalpenpro.com ";
     public string? SupportPhone { get; set; }
     public string? WebsiteUrl { get; set; } = "https://clienta.digitalpenpro.com";
     public int DefaultTrialDays { get; set; } = 21;

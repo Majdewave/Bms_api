@@ -1452,6 +1452,51 @@ namespace Clienta.Api.Migrations
                     b.ToTable("InterpretationReportDocuments");
                 });
 
+            modelBuilder.Entity("Clienta.Api.Entities.InterpretationReportTemplate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("InterpreterUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Modality")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InterpreterUserId");
+
+                    b.HasIndex("TenantId", "InterpreterUserId", "IsActive");
+
+                    b.HasIndex("TenantId", "InterpreterUserId", "Modality", "IsActive");
+
+                    b.ToTable("InterpretationReportTemplates");
+                });
+
             modelBuilder.Entity("Clienta.Api.Entities.InterpretationRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3646,6 +3691,25 @@ namespace Clienta.Api.Migrations
                     b.Navigation("InterpretationReport");
 
                     b.Navigation("InterpretationRequest");
+
+                    b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.InterpretationReportTemplate", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.User", "InterpreterUser")
+                        .WithMany()
+                        .HasForeignKey("InterpreterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InterpreterUser");
 
                     b.Navigation("Tenant");
                 });

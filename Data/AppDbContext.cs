@@ -78,6 +78,7 @@ public class AppDbContext : DbContext
     public DbSet<ImagingGatewayCredential> ImagingGatewayCredentials { get; set; } = null!;
     public DbSet<InterpretationRequest> InterpretationRequests { get; set; } = null!;
     public DbSet<InterpretationReport> InterpretationReports { get; set; } = null!;
+    public DbSet<InterpretationReportTemplate> InterpretationReportTemplates { get; set; } = null!;
     public DbSet<InterpretationReportDocument> InterpretationReportDocuments { get; set; } = null!;
 
     // PM (Project Management) foundation - Phase 1A.
@@ -205,6 +206,9 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<InterpretationReport>()
             .HasQueryFilter(report => _tenantContext.TenantId == Guid.Empty || report.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .HasQueryFilter(template => _tenantContext.TenantId == Guid.Empty || template.TenantId == _tenantContext.TenantId);
 
         modelBuilder.Entity<InterpretationReportDocument>()
             .HasQueryFilter(document => _tenantContext.TenantId == Guid.Empty || document.TenantId == _tenantContext.TenantId);
@@ -815,6 +819,32 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<InterpretationReport>()
             .HasIndex(report => new { report.TenantId, report.UpdatedAt });
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .Property(template => template.Name)
+            .HasMaxLength(120);
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .Property(template => template.Modality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .HasOne(template => template.Tenant)
+            .WithMany()
+            .HasForeignKey(template => template.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .HasOne(template => template.InterpreterUser)
+            .WithMany()
+            .HasForeignKey(template => template.InterpreterUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .HasIndex(template => new { template.TenantId, template.InterpreterUserId, template.IsActive });
+
+        modelBuilder.Entity<InterpretationReportTemplate>()
+            .HasIndex(template => new { template.TenantId, template.InterpreterUserId, template.Modality, template.IsActive });
 
         modelBuilder.Entity<InterpretationRequest>()
             .HasOne(request => request.Tenant)

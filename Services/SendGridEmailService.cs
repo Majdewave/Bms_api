@@ -17,7 +17,7 @@ public class SendGridEmailService : IEmailService
         var apiKey = _config["SendGrid:ApiKey"];
         var client = new SendGridClient(apiKey);
 
-        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var from = new EmailAddress("Clienta-Support@digitalpenpro.com", "Clienta");
         var to = new EmailAddress(toEmail);
 
         var subject = "איפוס סיסמה";
@@ -48,7 +48,7 @@ public class SendGridEmailService : IEmailService
         var apiKey = _config["SendGrid:ApiKey"];
         var client = new SendGridClient(apiKey);
 
-        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var from = new EmailAddress("Clienta-Support@digitalpenpro.com", "Clienta");
         var toEmail = new EmailAddress(to);
 
         var msg = MailHelper.CreateSingleEmail(from, toEmail, subject, "", html);
@@ -70,7 +70,7 @@ public class SendGridEmailService : IEmailService
         var apiKey = _config["SendGrid:ApiKey"];
         var client = new SendGridClient(apiKey);
 
-        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var from = new EmailAddress("Clienta-Support@digitalpenpro.com", "Clienta");
         var to = new EmailAddress(email);
 
         var subject = $"Your Trial Expires in {daysLeft} Days";
@@ -106,7 +106,7 @@ public class SendGridEmailService : IEmailService
         var apiKey = _config["SendGrid:ApiKey"];
         var client = new SendGridClient(apiKey);
 
-        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var from = new EmailAddress("Clienta-Support@digitalpenpro.com", "Clienta");
         var to = new EmailAddress(email);
 
         var subject = "Your Trial Has Expired";
@@ -144,7 +144,7 @@ public class SendGridEmailService : IEmailService
         var apiKey = _config["SendGrid:ApiKey"];
         var client = new SendGridClient(apiKey);
 
-        var from = new EmailAddress("mjd.salman@gmail.com", "Clienta");
+        var from = new EmailAddress("Clienta-Support@digitalpenpro.com", "Clienta");
         var to = new EmailAddress(toEmail);
 
         var subject = "הזמנה למערכת";

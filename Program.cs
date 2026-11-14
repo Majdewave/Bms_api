@@ -20,10 +20,30 @@ using QuestPDF.Drawing;
 using QuestPDF.Infrastructure;
 using System.Text;
 using Amazon.S3;
+using Npgsql;
 
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (builder.Environment.IsDevelopment())
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        throw new InvalidOperationException("Development requires an explicit connection to the local clienta_local database.");
+    }
+
+    var connection = new NpgsqlConnectionStringBuilder(connectionString);
+    var isLoopbackHost = connection.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+        || connection.Host.Equals("127.0.0.1", StringComparison.Ordinal)
+        || connection.Host.Equals("::1", StringComparison.Ordinal);
+    if (!isLoopbackHost || connection.Port != 5433 || !connection.Database.Equals("clienta_local", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Development is restricted to localhost:5433/clienta_local; refusing to connect to any other database.");
+    }
+}
+
 // Stripe configuration
 var stripeSecretKey = builder.Configuration["Stripe:SecretKey"];
 StripeConfiguration.ApiKey = stripeSecretKey;
@@ -45,7 +65,15 @@ builder.Services.AddScoped<IDepartmentFeatureResolver, DepartmentFeatureResolver
 builder.Services.AddScoped<IUserDepartmentFeatureAccessService, UserDepartmentFeatureAccessService>();
 builder.Services.AddScoped<IDepartmentAccessService, DepartmentAccessService>();
 builder.Services.AddScoped<TrialService>();
-builder.Services.AddHostedService<TrialBackgroundService>();
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHostedService<TrialBackgroundService>();
+    builder.Services.AddHostedService<CleanupService>();
+}
+else
+{
+    Console.WriteLine("Development mode: trial and appointment-cleanup background workers disabled; outbound email is suppressed.");
+}
 builder.Services.AddAWSService<IAmazonS3>(); 
 
 // PM (Project Management) foundation - Phase 1A.
@@ -86,7 +114,8 @@ FontManager.RegisterFont(
 );
 
 var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
-var bindHost = Environment.GetEnvironmentVariable("CLIENTA_API_BIND_HOST") ?? "0.0.0.0";
+var bindHost = Environment.GetEnvironmentVariable("CLIENTA_API_BIND_HOST")
+    ?? (builder.Environment.IsDevelopment() ? "127.0.0.1" : "0.0.0.0");
 builder.WebHost.UseUrls($"http://{bindHost}:{port}");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -107,7 +136,14 @@ builder.Services.AddScoped<PlatformJwtService>();
 builder.Services.AddScoped<AuthSeedService>();
 builder.Services.AddScoped<TenantService>();
 builder.Services.AddScoped<Clienta.Api.Services.TokenService>();
-builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddScoped<IEmailService, DevelopmentEmailService>();
+}
+else
+{
+    builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+}
 builder.Services.AddScoped<IOnboardingLocalizationService, OnboardingLocalizationService>();
 builder.Services.AddScoped<ITenantApprovalService, TenantApprovalService>();
 builder.Services.AddScoped<ITenantAccessValidator, TenantAccessValidator>();
@@ -119,7 +155,6 @@ builder.Services.AddScoped<IStripeSubscriptionGateway, StripeSubscriptionGateway
 builder.Services.AddScoped<IImagingAccessionNumberGenerator, ImagingAccessionNumberGenerator>();
 builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
 builder.Services.AddSingleton<IPlanProvider, PlanProvider>();
-builder.Services.AddHostedService<CleanupService>();
 builder.Services.AddScoped<IPlatformTenantManagementService, PlatformTenantManagementService>();
 builder.Services.AddScoped<IPlatformDashboardService, PlatformDashboardService>();
 builder.Services.AddScoped<IPlatformUserManagementService, PlatformUserManagementService>();
@@ -419,11 +454,16 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 });
 
 
-// Ensure DB schema is up-to-date in every environment.
-using (var scope = app.Services.CreateScope())
+// Development databases are managed explicitly; never apply migrations during local startup.
+if (!app.Environment.IsDevelopment())
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
+}
+else
+{
+    app.Logger.LogInformation("Development startup: automatic migrations are disabled.");
 }
 
 

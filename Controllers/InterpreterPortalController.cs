@@ -239,6 +239,175 @@ public class InterpreterPortalController : ControllerBase
         user.LicenseNumber,
         user.UseStamp && !string.IsNullOrWhiteSpace(user.StampUrl));
 
+    [HttpGet("/api/interpreter/report-templates")]
+    public async Task<IActionResult> ListReportTemplates(
+        [FromQuery] string? modality,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        var normalizedModality = NormalizeTemplateModality(modality);
+        var templateFamilyModality = NormalizeTemplateFamily(normalizedModality);
+        var isXrayTemplateFamily = templateFamilyModality == "DX";
+        var templates = await _context.InterpretationReportTemplates
+            .AsNoTracking()
+            .Where(template =>
+                template.TenantId == _tenant.TenantId &&
+                template.InterpreterUserId == userId &&
+                template.IsActive &&
+                (normalizedModality == null || template.Modality == null ||
+                 (isXrayTemplateFamily
+                     ? template.Modality == "DX" || template.Modality == "DR" || template.Modality == "CR"
+                     : template.Modality == templateFamilyModality)))
+            .OrderBy(template => template.Name)
+            .Select(template => new InterpretationReportTemplateDto(
+                template.Id,
+                template.Name,
+                template.Modality,
+                template.Content,
+                template.CreatedAt,
+                template.UpdatedAt))
+            .ToListAsync(cancellationToken);
+
+        return Ok(templates);
+    }
+
+    [HttpGet("/api/interpreter/report-templates/{templateId:guid}")]
+    public async Task<IActionResult> GetReportTemplate(
+        Guid templateId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        var template = await _context.InterpretationReportTemplates
+            .AsNoTracking()
+            .FirstOrDefaultAsync(candidate =>
+                candidate.Id == templateId &&
+                candidate.TenantId == _tenant.TenantId &&
+                candidate.InterpreterUserId == userId &&
+                candidate.IsActive,
+                cancellationToken);
+
+        return template == null ? NotFound() : Ok(ToTemplateDto(template));
+    }
+
+    [HttpPost("/api/interpreter/report-templates")]
+    public async Task<IActionResult> CreateReportTemplate(
+        [FromBody] SaveInterpretationReportTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        if (!TryNormalizeTemplate(request, out var name, out var modality, out var content))
+            return BadRequest("Template name and content are required; name must be at most 120 characters and content at most 100000 characters.");
+
+        var now = DateTime.UtcNow;
+        var template = new InterpretationReportTemplate
+        {
+            Id = Guid.NewGuid(),
+            TenantId = _tenant.TenantId,
+            InterpreterUserId = userId,
+            Name = name,
+            Modality = modality,
+            Content = content,
+            IsActive = true,
+            CreatedAt = now,
+        };
+
+        _context.InterpretationReportTemplates.Add(template);
+        await _context.SaveChangesAsync(cancellationToken);
+        return CreatedAtAction(nameof(GetReportTemplate), new { templateId = template.Id }, ToTemplateDto(template));
+    }
+
+    [HttpPut("/api/interpreter/report-templates/{templateId:guid}")]
+    public async Task<IActionResult> UpdateReportTemplate(
+        Guid templateId,
+        [FromBody] SaveInterpretationReportTemplateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        if (!TryNormalizeTemplate(request, out var name, out var modality, out var content))
+            return BadRequest("Template name and content are required; name must be at most 120 characters and content at most 100000 characters.");
+
+        var template = await _context.InterpretationReportTemplates.FirstOrDefaultAsync(candidate =>
+            candidate.Id == templateId &&
+            candidate.TenantId == _tenant.TenantId &&
+            candidate.InterpreterUserId == userId &&
+            candidate.IsActive,
+            cancellationToken);
+        if (template == null)
+            return NotFound();
+
+        template.Name = name;
+        template.Modality = modality;
+        template.Content = content;
+        template.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return Ok(ToTemplateDto(template));
+    }
+
+    [HttpDelete("/api/interpreter/report-templates/{templateId:guid}")]
+    public async Task<IActionResult> DeactivateReportTemplate(
+        Guid templateId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetInterpreter(out var userId))
+            return Forbid();
+
+        var template = await _context.InterpretationReportTemplates.FirstOrDefaultAsync(candidate =>
+            candidate.Id == templateId &&
+            candidate.TenantId == _tenant.TenantId &&
+            candidate.InterpreterUserId == userId &&
+            candidate.IsActive,
+            cancellationToken);
+        if (template == null)
+            return NotFound();
+
+        template.IsActive = false;
+        template.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return NoContent();
+    }
+
+    private static InterpretationReportTemplateDto ToTemplateDto(InterpretationReportTemplate template) => new(
+        template.Id,
+        template.Name,
+        template.Modality,
+        template.Content,
+        template.CreatedAt,
+        template.UpdatedAt);
+
+    private static string? NormalizeTemplateModality(string? modality)
+    {
+        if (string.IsNullOrWhiteSpace(modality))
+            return null;
+
+        return modality.Trim().ToUpperInvariant();
+    }
+
+    private static string? NormalizeTemplateFamily(string? modality) =>
+        modality is "DR" or "CR" ? "DX" : modality;
+
+    private static bool TryNormalizeTemplate(
+        SaveInterpretationReportTemplateRequest request,
+        out string name,
+        out string? modality,
+        out string content)
+    {
+        name = request.Name?.Trim() ?? string.Empty;
+        modality = NormalizeTemplateModality(request.Modality);
+        content = request.Content ?? string.Empty;
+        return name.Length is > 0 and <= 120 &&
+               content.Trim().Length > 0 &&
+               content.Length <= 100000 &&
+               (modality == null || modality.Length <= 16);
+    }
+
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {

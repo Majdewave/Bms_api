@@ -256,7 +256,7 @@ public class AuthController : ControllerBase
             try
             {
                 await _emailService.SendEmailAsync(
-                    "mjd.salman@gmail.com",
+                    "Clienta-Support@digitalpenpro.com",
                     "🎉 New Clienta Registration (Pending Approval)",
                     BuildRegistrationAdminEmail(tenant, user, request, language, registrationUtc, registrationLocal)
                 );

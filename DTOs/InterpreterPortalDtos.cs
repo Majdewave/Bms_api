@@ -78,3 +78,18 @@ public record InterpreterReportDto(
 public record SaveInterpreterReportRequest(
     string Content
 );
+
+public record SaveInterpretationReportTemplateRequest(
+    string Name,
+    string? Modality,
+    string Content
+);
+
+public record InterpretationReportTemplateDto(
+    Guid Id,
+    string Name,
+    string? Modality,
+    string Content,
+    DateTime CreatedAt,
+    DateTime? UpdatedAt
+);

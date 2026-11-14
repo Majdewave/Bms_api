@@ -578,7 +578,7 @@ public class StripeService : IStripeService
         try
         {
             await _emailService.SendEmailAsync(
-                "mjd.salman@gmail.com",
+                "Clienta-Support@digitalpenpro.com",
                 "New Paid Subscription in Clienta",
                 $@"<h2>New Paid Subscription in Clienta</h2>
                 <p><strong>Tenant Name:</strong> {tenant.Name}</p>

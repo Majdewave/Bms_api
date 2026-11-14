@@ -20,7 +20,7 @@ public class OnboardingLocalizationService : IOnboardingLocalizationService
     {
         _baseUrl = (configuration["App:BaseUrl"] ?? "https://clienta.digitalpenpro.com").TrimEnd('/');
         _logoUrl = $"{_baseUrl}/clienta-logo.png";
-        _supportEmail = configuration["Support:Email"] ?? "support@clienta.digitalpenpro.com";
+        _supportEmail = configuration["Support:Email"] ?? "Clienta-Support@digitalpenpro.com ";
     }
 
     public string ResolveLanguage(string? preferredLanguage, string? acceptLanguageHeader)
