@@ -10,6 +10,7 @@ namespace Clienta.Api.Services;
 public interface IStripeService
 {
     Task<string> CreateCheckoutSessionAsync(Guid tenantId, PlanType planType, BillingCycle billingCycle);
+    Task<string> CreateBillingPortalSessionAsync(string customerId, string returnUrl);
     Task ChangePlanAsync(Guid tenantId, PlanType newPlan, BillingCycle newCycle);
     Task HandleWebhookAsync(string json, string stripeSignature);
 }
@@ -334,6 +335,18 @@ public class StripeService : IStripeService
 
         var service = new SessionService();
         var session = await service.CreateAsync(options);
+
+        return session.Url;
+    }
+
+    public async Task<string> CreateBillingPortalSessionAsync(string customerId, string returnUrl)
+    {
+        var service = new Stripe.BillingPortal.SessionService();
+        var session = await service.CreateAsync(new Stripe.BillingPortal.SessionCreateOptions
+        {
+            Customer = customerId,
+            ReturnUrl = returnUrl
+        });
 
         return session.Url;
     }

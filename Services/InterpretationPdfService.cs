@@ -151,8 +151,9 @@ public sealed class InterpretationPdfService
                     if (!string.IsNullOrWhiteSpace(tenant.WhatsApp))
                         contactParts.Add($"WhatsApp {tenant.WhatsApp}");
 
-                    if (!string.IsNullOrWhiteSpace(tenant.OwnerUser?.Email))
-                        contactParts.Add(tenant.OwnerUser.Email);
+                    var businessEmail = tenant.BusinessEmail ?? tenant.OwnerUser?.Email;
+                    if (!string.IsNullOrWhiteSpace(businessEmail))
+                        contactParts.Add(businessEmail);
 
                     if (contactParts.Count > 0)
                     {

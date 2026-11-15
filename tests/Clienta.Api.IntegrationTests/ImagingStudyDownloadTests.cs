@@ -164,6 +164,7 @@ public sealed class ImagingStudyDownloadTests
                 {
                     Id = Guid.NewGuid(), TenantId = tenant.Id, ImagingStudyId = study.Id,
                     ImagingSeriesId = series.Id, SOPInstanceUID = $"sop-{index}", SOPClassUID = "dicom-class",
+                    InstanceNumber = index,
                     LocalFilePath = string.Empty, StorageStatus = ImagingStudyStorageStatuses.LocalAndS3,
                     S3Bucket = "imaging-test-bucket", S3Key = $"key-{index}",
                 });
@@ -187,7 +188,8 @@ public sealed class ImagingStudyDownloadTests
                 {
                     ["AWS:ImagingBucketName"] = "imaging-test-bucket",
                 }).Build(),
-                NullLogger<ImagingStudiesController>.Instance);
+                NullLogger<ImagingStudiesController>.Instance,
+                new UnusedMediaExportService());
             controller.ControllerContext = new ControllerContext
             {
                 HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } },
@@ -201,5 +203,11 @@ public sealed class ImagingStudyDownloadTests
             if (File.Exists(_databasePath)) File.Delete(_databasePath);
             await Task.CompletedTask;
         }
+    }
+
+    private sealed class UnusedMediaExportService : IImagingMediaExportService
+    {
+        public Task<Stream> CreateArchiveAsync(IReadOnlyList<ImagingInstance> instances, CancellationToken cancellationToken) =>
+            throw new AssertFailedException("The media export service must not be used by DownloadStudy tests.");
     }
 }

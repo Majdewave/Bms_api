@@ -268,6 +268,12 @@ namespace Clienta.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("HealthFund")
+                        .HasColumnType("text");
+
+                    b.Property<string>("HealthFundOther")
+                        .HasColumnType("text");
+
                     b.Property<string>("IdNumber")
                         .HasColumnType("text");
 
@@ -2508,6 +2514,9 @@ namespace Clienta.Api.Migrations
 
                     b.Property<int>("BillingCycle")
                         .HasColumnType("integer");
+
+                    b.Property<string>("BusinessEmail")
+                        .HasColumnType("text");
 
                     b.Property<string>("BusinessRegistrationNumber")
                         .HasColumnType("text");

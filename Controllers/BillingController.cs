@@ -1,4 +1,3 @@
-using Stripe.BillingPortal;
 using Stripe;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -74,12 +73,6 @@ public class BillingController : ControllerBase
             var baseUrl = (_configuration["App:BaseUrl"] ?? "https://clienta.digitalpenpro.com").TrimEnd('/');
             var returnUrl = $"{baseUrl}/billing";
 
-            var options = new SessionCreateOptions
-            {
-                Customer = tenant.StripeCustomerId,
-                ReturnUrl = returnUrl
-            };
-
             _logger.LogInformation(
                 "Creating Stripe billing portal session. TenantId={TenantId}, CustomerId={CustomerId}, SubscriptionId={SubscriptionId}, ReturnUrl={ReturnUrl}",
                 tenant.Id,
@@ -87,10 +80,11 @@ public class BillingController : ControllerBase
                 tenant.StripeSubscriptionId,
                 returnUrl);
 
-            var service = new SessionService();
-            var session = await service.CreateAsync(options);
+            var sessionUrl = await _stripeService.CreateBillingPortalSessionAsync(
+                tenant.StripeCustomerId,
+                returnUrl);
 
-            return Ok(new { url = session.Url });
+            return Ok(new { url = sessionUrl });
         }
         catch (StripeException ex)
         {

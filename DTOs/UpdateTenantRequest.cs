@@ -5,6 +5,7 @@ public class UpdateTenantRequest
     public string? Name { get; set; }
     public string? LegalBusinessName { get; set; }
     public string? BusinessRegistrationNumber { get; set; }
+    public string? BusinessEmail { get; set; }
     public string? LogoUrl { get; set; }
     public string? BusinessStampUrl { get; set; }
     public string? Phone { get; set; }

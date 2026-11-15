@@ -17,6 +17,14 @@ public class ClientsController : ControllerBase
     private readonly ITenantContext _tenantContext;
     private const string DuplicateIdNumberCode = "DUPLICATE_CLIENT_ID_NUMBER";
     private const string DuplicateIdNumberMessage = "A client with this ID number already exists.";
+    private static readonly HashSet<string> HealthFundCodes = new(StringComparer.Ordinal)
+    {
+        "Clalit",
+        "Maccabi",
+        "Meuhedet",
+        "Leumit",
+        "Other"
+    };
 
 
     public ClientsController(AppDbContext context, ITenantContext tenantContext)
@@ -34,6 +42,12 @@ public class ClientsController : ControllerBase
 
         return idNumber.Trim();
     }
+
+    private static string? NormalizeHealthFund(string? healthFund) =>
+        string.IsNullOrWhiteSpace(healthFund) ? null : healthFund.Trim();
+
+    private static string? NormalizeHealthFundOther(string? healthFundOther) =>
+        string.IsNullOrWhiteSpace(healthFundOther) ? null : healthFundOther.Trim();
 
     // GET /api/clients
     [Authorize(Policy = "view_clients")]
@@ -75,7 +89,9 @@ public class ClientsController : ControllerBase
                 .Select(a => (DateTime?)a.StartTime)
                 .FirstOrDefault(),
             _context.Appointments
-                .Any(a => a.ClientId == c.Id && !a.IsDocumented)
+                .Any(a => a.ClientId == c.Id && !a.IsDocumented),
+            c.HealthFund,
+            c.HealthFundOther
         ))
             .ToListAsync();
         return Ok(clients);
@@ -105,7 +121,9 @@ public class ClientsController : ControllerBase
                     .Select(a => (DateTime?)a.StartTime)
                     .FirstOrDefault(),
                 _context.Appointments
-                    .Any(a => a.ClientId == c.Id && !a.IsDocumented)
+                    .Any(a => a.ClientId == c.Id && !a.IsDocumented),
+                c.HealthFund,
+                c.HealthFundOther
             ))
             .FirstOrDefaultAsync();
         if (client == null)
@@ -151,6 +169,10 @@ public class ClientsController : ControllerBase
         if (_tenantContext.TenantId == Guid.Empty)
             return Unauthorized("Tenant not resolved");
 
+        var healthFund = NormalizeHealthFund(request.HealthFund);
+        if (healthFund != null && !HealthFundCodes.Contains(healthFund))
+            return BadRequest(new { error = "Invalid Health Fund code." });
+
         var normalizedIdNumber = NormalizeIdNumber(request.IdNumber);
 
         if (normalizedIdNumber is not null)
@@ -185,6 +207,8 @@ public class ClientsController : ControllerBase
             Email = request.Email,
             Phone = request.Phone,
             Address = request.Address,
+            HealthFund = healthFund,
+            HealthFundOther = healthFund == "Other" ? NormalizeHealthFundOther(request.HealthFundOther) : null,
             InternalNote = request.InternalNote,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
@@ -205,7 +229,9 @@ public class ClientsController : ControllerBase
             client.CreatedAt,
             client.Status,
             null, // LastVisit not present
-            client.IsNotDocumented
+            client.IsNotDocumented,
+            client.HealthFund,
+            client.HealthFundOther
         ));
     }
 
@@ -217,6 +243,10 @@ public class ClientsController : ControllerBase
         var client = await _context.Clients.FirstOrDefaultAsync(c => c.Id == id);
         if (client == null)
             return NotFound();
+
+        var healthFund = NormalizeHealthFund(request.HealthFund);
+        if (healthFund != null && !HealthFundCodes.Contains(healthFund))
+            return BadRequest(new { error = "Invalid Health Fund code." });
 
         var normalizedIdNumber = NormalizeIdNumber(request.IdNumber);
 
@@ -255,6 +285,11 @@ public class ClientsController : ControllerBase
         client.Email = request.Email;
         client.Phone = request.Phone;
         client.Address = request.Address;
+        if (request.HealthFund != null)
+        {
+            client.HealthFund = healthFund;
+            client.HealthFundOther = healthFund == "Other" ? NormalizeHealthFundOther(request.HealthFundOther) : null;
+        }
         client.InternalNote = request.InternalNote;
         client.IsActive = request.IsActive;
         await _context.SaveChangesAsync();

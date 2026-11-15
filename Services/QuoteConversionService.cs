@@ -39,7 +39,7 @@ public class QuoteConversionService : IQuoteConversionService
             LegalBusinessName = isBusinessTenant ? tenant.LegalBusinessName : null,
             BusinessRegistrationNumber = isBusinessTenant ? tenant.BusinessRegistrationNumber : null,
             BusinessPhone = isBusinessTenant ? tenant.Phone : quote.BusinessPhone,
-            BusinessEmail = isBusinessTenant ? tenant.OwnerUser?.Email : quote.BusinessEmail,
+            BusinessEmail = isBusinessTenant ? tenant.BusinessEmail ?? tenant.OwnerUser?.Email : quote.BusinessEmail,
             BusinessStampUrl = isBusinessTenant ? tenant.BusinessStampUrl : null,
             LogoUrl = isBusinessTenant ? tenant.LogoUrl : quote.LogoUrl,
             LogoBase64 = quote.LogoBase64,

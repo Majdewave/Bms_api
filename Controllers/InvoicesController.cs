@@ -407,7 +407,9 @@ public class InvoicesController : ControllerBase
             var businessAddress = isBusinessTenant ? tenant?.Address ?? invoice.BusinessAddress : invoice.BusinessAddress;
             var businessPhone = isBusinessTenant ? tenant?.Phone ?? invoice.BusinessPhone : invoice.BusinessPhone ?? tenant?.Phone;
             var businessWhatsApp = tenant?.WhatsApp;
-            var businessEmail = isBusinessTenant ? tenant?.OwnerUser?.Email ?? invoice.BusinessEmail : invoice.BusinessEmail ?? tenant?.OwnerUser?.Email;
+            var businessEmail = isBusinessTenant
+                ? tenant?.BusinessEmail ?? tenant?.OwnerUser?.Email ?? invoice.BusinessEmail
+                : invoice.BusinessEmail ?? tenant?.OwnerUser?.Email;
             var legalBusinessName = isBusinessTenant ? tenant?.LegalBusinessName ?? invoice.LegalBusinessName : invoice.LegalBusinessName;
             var businessRegistrationNumber = isBusinessTenant ? tenant?.BusinessRegistrationNumber ?? invoice.BusinessRegistrationNumber : invoice.BusinessRegistrationNumber;
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
@@ -531,7 +533,7 @@ public class InvoicesController : ControllerBase
             invoice.LegalBusinessName = tenant?.LegalBusinessName;
             invoice.BusinessRegistrationNumber = tenant?.BusinessRegistrationNumber;
             invoice.BusinessPhone = tenant?.Phone ?? invoice.BusinessPhone;
-            invoice.BusinessEmail = tenant?.OwnerUser?.Email ?? invoice.BusinessEmail;
+            invoice.BusinessEmail = tenant?.BusinessEmail ?? tenant?.OwnerUser?.Email ?? invoice.BusinessEmail;
             invoice.BusinessStampUrl = tenant?.BusinessStampUrl;
             invoice.LogoUrl = tenant?.LogoUrl ?? invoice.LogoUrl;
         }

@@ -58,6 +58,7 @@ public class TenantController : ControllerBase
             tenant.Phone,
             tenant.Address,
             email = tenant.OwnerUser == null ? null : tenant.OwnerUser.Email,
+            businessEmail = tenant.BusinessEmail ?? (tenant.OwnerUser == null ? null : tenant.OwnerUser.Email),
             tenant.WhatsApp,
             tenant.LogoUrl,
             tenant.BusinessStampUrl,
@@ -95,8 +96,13 @@ public class TenantController : ControllerBase
         if (tenant == null)
             return NotFound();
 
+        if (!TryNormalizeBusinessEmail(request.BusinessEmail, out var businessEmail))
+            return BadRequest(new { error = "Business email must be a valid email address." });
+
         if (!string.IsNullOrWhiteSpace(request.Name))
             tenant.Name = request.Name;
+
+        tenant.BusinessEmail = businessEmail;
 
         if (request.LegalBusinessName != null)
             tenant.LegalBusinessName = NormalizeNullableText(request.LegalBusinessName);
@@ -149,6 +155,14 @@ public class TenantController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok();
+    }
+
+    private static bool TryNormalizeBusinessEmail(string? value, out string? normalized)
+    {
+        normalized = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        return normalized == null ||
+            (normalized.Length <= 254 &&
+             new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(normalized));
     }
 
     // GET /api/tenant

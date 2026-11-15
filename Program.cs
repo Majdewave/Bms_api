@@ -75,6 +75,8 @@ else
     Console.WriteLine("Development mode: trial and appointment-cleanup background workers disabled; outbound email is suppressed.");
 }
 builder.Services.AddAWSService<IAmazonS3>(); 
+builder.Services.AddSingleton<IWeasisPortablePackageProvider, WeasisPortablePackageProvider>();
+builder.Services.AddSingleton<IImagingMediaExportService, ImagingMediaExportService>();
 
 // PM (Project Management) foundation - Phase 1A.
 builder.Services.AddScoped<IPmAccessService, PmAccessService>();

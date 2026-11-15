@@ -467,7 +467,9 @@ public class QuotesController : ControllerBase
             var businessName = isBusinessTenant ? tenant?.Name ?? quote.BusinessName ?? labels.BusinessFallback : quote.BusinessName ?? tenant?.Name ?? labels.BusinessFallback;
             var businessAddress = isBusinessTenant ? tenant?.Address ?? quote.BusinessAddress : quote.BusinessAddress;
             var businessPhone = isBusinessTenant ? tenant?.Phone ?? quote.BusinessPhone : quote.BusinessPhone ?? tenant?.Phone;
-            var businessEmail = isBusinessTenant ? tenant?.OwnerUser?.Email ?? quote.BusinessEmail : quote.BusinessEmail ?? tenant?.OwnerUser?.Email;
+            var businessEmail = isBusinessTenant
+                ? tenant?.BusinessEmail ?? tenant?.OwnerUser?.Email ?? quote.BusinessEmail
+                : quote.BusinessEmail ?? tenant?.OwnerUser?.Email;
             var businessWhatsApp = tenant?.WhatsApp;
             var (notesText, termsText) = SplitQuoteNotes(quote.Notes);
             var baseUrl = $"{Request.Scheme}://{Request.Host}";
@@ -561,7 +563,7 @@ public class QuotesController : ControllerBase
             quote.BusinessName = tenant.Name;
             quote.BusinessAddress = tenant.Address;
             quote.BusinessPhone = tenant.Phone;
-            quote.BusinessEmail = tenant.OwnerUser?.Email;
+            quote.BusinessEmail = tenant.BusinessEmail ?? tenant.OwnerUser?.Email;
             quote.LogoUrl = tenant.LogoUrl;
         }
 

@@ -27,14 +27,22 @@ public class ImagingStudiesController : ControllerBase
     private readonly IAmazonS3 _s3Client;
     private readonly IConfiguration _configuration;
     private readonly ILogger<ImagingStudiesController> _logger;
+    private readonly IImagingMediaExportService _mediaExportService;
 
-    public ImagingStudiesController(AppDbContext db, ITenantContext tenantContext, IAmazonS3 s3Client, IConfiguration configuration, ILogger<ImagingStudiesController> logger)
+    public ImagingStudiesController(
+        AppDbContext db,
+        ITenantContext tenantContext,
+        IAmazonS3 s3Client,
+        IConfiguration configuration,
+        ILogger<ImagingStudiesController> logger,
+        IImagingMediaExportService mediaExportService)
     {
         _db = db;
         _tenantContext = tenantContext;
         _s3Client = s3Client;
         _configuration = configuration;
         _logger = logger;
+        _mediaExportService = mediaExportService;
     }
 
     [HttpGet("/api/clients/{clientId:guid}/imaging/studies")]
@@ -321,6 +329,164 @@ public class ImagingStudiesController : ControllerBase
             return StudyDownloadUnavailable();
         }
     }
+
+    [HttpGet("{studyId:guid}/export-media")]
+    [Authorize(Policy = "view_clients")]
+    public async Task<IActionResult> ExportStudyMedia(Guid studyId, CancellationToken cancellationToken)
+    {
+        var tenantId = _tenantContext.TenantId;
+        if (tenantId == Guid.Empty)
+        {
+            return Unauthorized(new { error = "tenant_not_resolved", message = "Tenant not resolved." });
+        }
+
+        var study = await _db.ImagingStudies
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.TenantId == tenantId && item.Id == studyId, cancellationToken);
+        if (study == null)
+        {
+            return NotFound(new { error = "imaging_study_not_found", message = "Imaging study not found for the current tenant." });
+        }
+
+        var clientBelongsToTenant = await _db.Clients
+            .AsNoTracking()
+            .AnyAsync(client => client.TenantId == tenantId && client.Id == study.ClientId, cancellationToken);
+        if (!clientBelongsToTenant)
+        {
+            return NotFound(new { error = "imaging_study_not_found", message = "Imaging study not found for the current tenant." });
+        }
+
+        var series = await _db.ImagingSeries
+            .AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ImagingStudyId == studyId)
+            .ToListAsync(cancellationToken);
+        var instances = await _db.ImagingInstances
+            .AsNoTracking()
+            .Where(item => item.TenantId == tenantId && item.ImagingStudyId == studyId)
+            .OrderBy(item => item.ImagingSeriesId)
+            .ThenBy(item => item.InstanceNumber ?? int.MaxValue)
+            .ThenBy(item => item.Id)
+            .ToListAsync(cancellationToken);
+
+        if (instances.Count == 0 || series.Count == 0)
+        {
+            return StudyMediaExportIncomplete();
+        }
+
+        var seriesIds = series.Select(item => item.Id).ToHashSet();
+        var seriesWithInstances = instances.Select(item => item.ImagingSeriesId).ToHashSet();
+        if (instances.Any(item => !seriesIds.Contains(item.ImagingSeriesId)) ||
+            series.Any(item => !seriesWithInstances.Contains(item.Id)))
+        {
+            return StudyMediaExportIncomplete();
+        }
+
+        var configuredImagingBucket = _configuration["AWS:ImagingBucketName"]?.Trim();
+        foreach (var instance in instances)
+        {
+            if (!string.Equals(instance.StorageStatus, ImagingStudyStorageStatuses.LocalAndS3, StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(instance.S3Bucket) ||
+                string.IsNullOrWhiteSpace(instance.S3Key))
+            {
+                return StudyMediaExportIncomplete();
+            }
+
+            var bucket = instance.S3Bucket.Trim();
+            var key = instance.S3Key.Trim();
+            if (string.IsNullOrWhiteSpace(configuredImagingBucket) ||
+                !string.Equals(bucket, configuredImagingBucket, StringComparison.Ordinal) ||
+                key.StartsWith('/') || key.Contains('\\') || key.Split('/').Any(segment => segment is "." or ".."))
+            {
+                return StudyMediaExportIncomplete();
+            }
+
+            try
+            {
+                await _s3Client.GetObjectMetadataAsync(new GetObjectMetadataRequest
+                {
+                    BucketName = bucket,
+                    Key = key,
+                }, cancellationToken);
+            }
+            catch (AmazonS3Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Media export preflight failed for tenant {TenantId}, study {StudyId}, instance {InstanceId}.",
+                    tenantId,
+                    studyId,
+                    instance.Id);
+                return StudyMediaExportIncomplete();
+            }
+        }
+
+        _logger.LogInformation(
+            "Imaging media export started for tenant {TenantId}, study {StudyId}, accession {AccessionNumber}, and {InstanceCount} instances.",
+            tenantId,
+            studyId,
+            study.AccessionNumber,
+            instances.Count);
+        try
+        {
+            var exportStream = await _mediaExportService.CreateArchiveAsync(instances, cancellationToken);
+            _logger.LogInformation(
+                "Imaging media export completed for tenant {TenantId}, study {StudyId}, accession {AccessionNumber}, and {InstanceCount} instances.",
+                tenantId,
+                studyId,
+                study.AccessionNumber,
+                instances.Count);
+            return File(
+                exportStream,
+                "application/zip",
+                ImagingMediaExportService.CreateDownloadFileName(study.AccessionNumber, studyId));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogInformation(
+                "Imaging media export cancelled for tenant {TenantId}, study {StudyId}, and {InstanceCount} instances.",
+                tenantId,
+                studyId,
+                instances.Count);
+            throw;
+        }
+        catch (ImagingMediaExportException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Imaging media export failed for tenant {TenantId}, study {StudyId}, accession {AccessionNumber}, and {InstanceCount} instances with reason {Failure}.",
+                tenantId,
+                studyId,
+                study.AccessionNumber,
+                instances.Count,
+                ex.Failure);
+
+            return ex.Failure switch
+            {
+                ImagingMediaExportFailure.IncompleteStudy => StudyMediaExportIncomplete(),
+                ImagingMediaExportFailure.ViewerUnavailable => StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    new { error = "media_viewer_unavailable", message = "The portable viewer is temporarily unavailable." }),
+                ImagingMediaExportFailure.DicomDirectoryFailed => StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new { error = "media_directory_failed", message = "The DICOM media directory could not be generated." }),
+                ImagingMediaExportFailure.TemporaryStorageUnavailable => StatusCode(
+                    StatusCodes.Status507InsufficientStorage,
+                    new { error = "media_storage_unavailable", message = "The media export could not be prepared." }),
+                ImagingMediaExportFailure.CapacityExceeded => StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    new { error = "media_export_busy", message = "The media export service is busy. Please try again later." }),
+                _ => StatusCode(
+                    StatusCodes.Status500InternalServerError,
+                    new { error = "media_export_failed", message = "The media export could not be completed." }),
+            };
+        }
+    }
+
+    private ConflictObjectResult StudyMediaExportIncomplete() => Conflict(new
+    {
+        error = "imaging_study_incomplete",
+        message = "The complete study cannot currently be exported because one or more DICOM instances are unavailable.",
+    });
 
     private ConflictObjectResult StudyDownloadUnavailable() => Conflict(new
     {

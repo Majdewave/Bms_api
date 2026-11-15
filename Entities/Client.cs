@@ -13,6 +13,8 @@ public class Client : ITenantEntity
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? Address { get; set; }
+    public string? HealthFund { get; set; }
+    public string? HealthFundOther { get; set; }
     public string? InternalNote { get; set; }
     public bool IsDocumented { get; set; } = true;
     public bool IsNotDocumented { get; set; } = false;

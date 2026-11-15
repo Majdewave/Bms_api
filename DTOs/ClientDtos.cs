@@ -7,7 +7,9 @@ public record CreateClientRequest(
     string? Email,
     string? Phone,
     string? Address,
-    string? InternalNote
+    string? InternalNote,
+    string? HealthFund = null,
+    string? HealthFundOther = null
 );
 
 public record UpdateClientRequest(
@@ -18,7 +20,9 @@ public record UpdateClientRequest(
     string? Phone,
     string? Address,
     string? InternalNote,
-    bool IsActive
+    bool IsActive,
+    string? HealthFund = null,
+    string? HealthFundOther = null
 );
 
 public record ClientResponse(
@@ -34,7 +38,9 @@ public record ClientResponse(
     DateTime CreatedAt,
     string Status,
     DateTime? LastVisit,
-    bool IsNotDocumented
+    bool IsNotDocumented,
+    string? HealthFund = null,
+    string? HealthFundOther = null
 );
 
 public record DuplicateClientIdNumberCheckResponse(

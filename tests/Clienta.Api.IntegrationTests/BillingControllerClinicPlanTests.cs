@@ -94,6 +94,34 @@ public sealed class BillingControllerClinicPlanTests
         Assert.AreEqual(effectiveAt, ReadProperty<DateTime?>(value, "scheduledPlanChangeAt"));
     }
 
+    [TestMethod]
+    public async Task PortalSessionUsesAuthenticatedTenantsStoredCustomerAndBillingReturnUrl()
+    {
+        await using var fixture = await Fixture.CreateAsync(TenantProductType.Clinic, PlanType.Basic);
+
+        var result = await fixture.Controller.CreatePortalSession();
+
+        Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+        Assert.AreEqual(fixture.Tenant.StripeCustomerId, fixture.StripeService.LastPortalCustomerId);
+        Assert.AreEqual("https://clienta.test/billing", fixture.StripeService.LastPortalReturnUrl);
+        Assert.AreEqual(
+            "https://billing.stripe.test/session",
+            ReadProperty<string>(((OkObjectResult)result).Value!, "url"));
+    }
+
+    [TestMethod]
+    public async Task PortalSessionRejectsTenantWithoutStoredStripeCustomer()
+    {
+        await using var fixture = await Fixture.CreateAsync(TenantProductType.Clinic, PlanType.Basic);
+        fixture.Tenant.StripeCustomerId = null;
+        await fixture.Db.SaveChangesAsync();
+
+        var result = await fixture.Controller.CreatePortalSession();
+
+        Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+        Assert.AreEqual(0, fixture.StripeService.PortalSessionCalls);
+    }
+
     private static T ReadProperty<T>(object source, string name)
     {
         var value = source.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public)?.GetValue(source);
@@ -115,7 +143,12 @@ public sealed class BillingControllerClinicPlanTests
                 StripeService,
                 tenantContext,
                 db,
-                new ConfigurationBuilder().Build(),
+                new ConfigurationBuilder()
+                    .AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["App:BaseUrl"] = "https://clienta.test/"
+                    })
+                    .Build(),
                 NullLogger<BillingController>.Instance);
         }
 
@@ -171,11 +204,22 @@ public sealed class BillingControllerClinicPlanTests
     private sealed class FakeStripeService : IStripeService
     {
         public int ChangePlanCalls { get; private set; }
+        public int PortalSessionCalls { get; private set; }
         public PlanType? LastPlan { get; private set; }
         public BillingCycle? LastCycle { get; private set; }
+        public string? LastPortalCustomerId { get; private set; }
+        public string? LastPortalReturnUrl { get; private set; }
 
         public Task<string> CreateCheckoutSessionAsync(Guid tenantId, PlanType planType, BillingCycle billingCycle) =>
             Task.FromResult("https://example.test/checkout");
+
+        public Task<string> CreateBillingPortalSessionAsync(string customerId, string returnUrl)
+        {
+            PortalSessionCalls++;
+            LastPortalCustomerId = customerId;
+            LastPortalReturnUrl = returnUrl;
+            return Task.FromResult("https://billing.stripe.test/session");
+        }
 
         public Task ChangePlanAsync(Guid tenantId, PlanType newPlan, BillingCycle newCycle)
         {
