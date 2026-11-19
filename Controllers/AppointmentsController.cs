@@ -347,7 +347,9 @@ public class AppointmentsController : ControllerBase
             await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
                 selectedService?.DepartmentId,
                 "medicalImagingEnabled");
-        var isImagingAppointment = normalizedImagingModality != null && medicalImagingEnabled;
+        if (normalizedImagingModality != null && !medicalImagingEnabled)
+            return Forbid();
+        var isImagingAppointment = normalizedImagingModality != null;
         var appointmentStaffId = request.StaffId;
         Guid? technicianBusinessUserId = null;
 
@@ -563,7 +565,9 @@ public class AppointmentsController : ControllerBase
             await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
                 targetDepartmentId,
                 "medicalImagingEnabled");
-        var isImagingAppointment = normalizedImagingModality != null && medicalImagingEnabled;
+        if (normalizedImagingModality != null && !medicalImagingEnabled)
+            return Forbid();
+        var isImagingAppointment = normalizedImagingModality != null;
         var imagingOrder = await _context.ImagingOrders.FirstOrDefaultAsync(order =>
             order.TenantId == _tenant.TenantId &&
             order.AppointmentId == appointment.Id);

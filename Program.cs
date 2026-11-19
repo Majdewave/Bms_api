@@ -59,6 +59,7 @@ builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddScoped<IQuoteConversionService, QuoteConversionService>();
 builder.Services.AddScoped<TenantResolver>();
 builder.Services.AddScoped<IFeatureService, FeatureService>();
+builder.Services.AddScoped<IMedicalImagingEntitlementService, MedicalImagingEntitlementService>();
 builder.Services.AddScoped<Clienta.Api.Services.IInvoicePaymentService, Clienta.Api.Services.InvoicePaymentService>();
 builder.Services.AddScoped<Clienta.Api.Services.IInvoiceBalanceService, Clienta.Api.Services.InvoiceBalanceService>();
 builder.Services.AddScoped<IDepartmentFeatureResolver, DepartmentFeatureResolver>();

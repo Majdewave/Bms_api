@@ -2,6 +2,7 @@ using Amazon.S3;
 using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
+using Clienta.Api.Filters;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -66,6 +67,7 @@ public class ImagingOrdersLookupController : ControllerBase
 
     [HttpDelete("{orderId:guid}")]
     [Authorize(Roles = "Admin")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> DeleteImagingOrder(
         Guid orderId,
         CancellationToken cancellationToken)

@@ -29,10 +29,14 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
     ];
 
     private readonly AppDbContext _context;
+    private readonly IMedicalImagingEntitlementService _medicalImagingEntitlementService;
 
-    public DepartmentFeatureResolver(AppDbContext context)
+    public DepartmentFeatureResolver(
+        AppDbContext context,
+        IMedicalImagingEntitlementService medicalImagingEntitlementService)
     {
         _context = context;
+        _medicalImagingEntitlementService = medicalImagingEntitlementService;
     }
 
     public async Task<bool> IsFeatureEnabledAsync(Guid tenantId, Guid? departmentId, string featureKey, CancellationToken cancellationToken = default)
@@ -72,6 +76,7 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
     {
         var tenantFeatures = await GetTenantFeaturesAsync(tenantId, cancellationToken);
         var businessCapabilitiesEnabled = await HasCurrentBusinessCapabilitiesAsync(tenantId, cancellationToken);
+        var medicalImagingEntitled = await _medicalImagingEntitlementService.IsEntitledAsync(tenantId, cancellationToken);
 
         var existing = await _context.DepartmentFeatures
             .AsNoTracking()
@@ -85,6 +90,11 @@ public class DepartmentFeatureResolver : IDepartmentFeatureResolver
             {
                 var tenantEnabled = (businessCapabilitiesEnabled && string.Equals(key, "quotesEnabled", StringComparison.OrdinalIgnoreCase))
                     || IsTenantFeatureEnabled(tenantFeatures, key);
+                if (string.Equals(key, "medicalImagingEnabled", StringComparison.OrdinalIgnoreCase) &&
+                    !medicalImagingEntitled)
+                {
+                    tenantEnabled = false;
+                }
                 var businessQuotesEntitled = businessCapabilitiesEnabled &&
                     string.Equals(key, "quotesEnabled", StringComparison.OrdinalIgnoreCase);
                 var departmentEnabled = businessQuotesEntitled

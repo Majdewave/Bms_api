@@ -16,19 +16,22 @@ public class FeaturesController : ControllerBase
     private readonly ITenantContext _tenantContext;
     private readonly IUserDepartmentFeatureAccessService _userDepartmentFeatureAccessService;
     private readonly IPmAccessService _pmAccessService;
+    private readonly IMedicalImagingEntitlementService _medicalImagingEntitlementService;
 
     public FeaturesController(
         AppDbContext context,
         IFeatureService featureService,
         ITenantContext tenantContext,
         IUserDepartmentFeatureAccessService userDepartmentFeatureAccessService,
-        IPmAccessService pmAccessService)
+        IPmAccessService pmAccessService,
+        IMedicalImagingEntitlementService medicalImagingEntitlementService)
     {
         _context = context;
         _featureService = featureService;
         _tenantContext = tenantContext;
         _userDepartmentFeatureAccessService = userDepartmentFeatureAccessService;
         _pmAccessService = pmAccessService;
+        _medicalImagingEntitlementService = medicalImagingEntitlementService;
     }
 
     // Read-only PM flag check for Phase 2 frontend routing. Deliberately separate from
@@ -50,6 +53,7 @@ public class FeaturesController : ControllerBase
             return Unauthorized("Tenant not resolved");
 
         var features = await _featureService.GetAsync();
+        var medicalImagingEntitled = await _medicalImagingEntitlementService.IsEntitledAsync(_tenantContext.TenantId);
         var dto = new UpdateTenantFeaturesRequest(
             features.ReportsEnabled,
             features.InvoicesEnabled,
@@ -62,9 +66,20 @@ public class FeaturesController : ControllerBase
             features.QueueDisplayEnabled,
             features.WhatsAppEnabled,
             features.NotDocumentedEnabled,
-            features.MedicalImagingEnabled
+            medicalImagingEntitled && features.MedicalImagingEnabled
         );
         return Ok(dto);
+    }
+
+    [HttpGet("medical-imaging-entitlement")]
+    public async Task<IActionResult> GetMedicalImagingEntitlement(CancellationToken cancellationToken)
+    {
+        if (_tenantContext.TenantId == Guid.Empty)
+            return Unauthorized("Tenant not resolved");
+
+        var entitled = await _medicalImagingEntitlementService
+            .IsEntitledAsync(_tenantContext.TenantId, cancellationToken);
+        return Ok(new { entitled });
     }
 
     [HttpGet("commercial-capabilities")]
@@ -130,7 +145,8 @@ public class FeaturesController : ControllerBase
         features.QueueDisplayEnabled = request.QueueDisplayEnabled;
         features.WhatsAppEnabled = request.WhatsAppEnabled;
         features.NotDocumentedEnabled = request.NotDocumentedEnabled;
-        features.MedicalImagingEnabled = request.MedicalImagingEnabled;
+        if (await _medicalImagingEntitlementService.IsEntitledAsync(_tenantContext.TenantId))
+            features.MedicalImagingEnabled = request.MedicalImagingEnabled;
 
         await _context.SaveChangesAsync();
 

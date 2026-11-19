@@ -16,11 +16,16 @@ public class FeatureService : IFeatureService
 {
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
+    private readonly IMedicalImagingEntitlementService _medicalImagingEntitlementService;
 
-    public FeatureService(AppDbContext db, ITenantContext tenantContext)
+    public FeatureService(
+        AppDbContext db,
+        ITenantContext tenantContext,
+        IMedicalImagingEntitlementService medicalImagingEntitlementService)
     {
         _db = db;
         _tenantContext = tenantContext;
+        _medicalImagingEntitlementService = medicalImagingEntitlementService;
     }
 
     public async Task<TenantFeatures> GetAsync()
@@ -87,8 +92,8 @@ public class FeatureService : IFeatureService
             .Select(tenant => BusinessPlanEntitlement.HasCurrentBusinessCapabilities(tenant.ProductType, tenant.Plan))
             .FirstOrDefaultAsync();
 
-        if (!businessCapabilitiesEnabled)
-            return features;
+        var medicalImagingEntitled = await _medicalImagingEntitlementService
+            .IsEntitledAsync(_tenantContext.TenantId);
 
         // Return a detached view model so presenting entitlements never mutates or persists legacy feature flags.
         return new TenantFeatures
@@ -96,8 +101,8 @@ public class FeatureService : IFeatureService
             Id = features.Id,
             TenantId = features.TenantId,
             ReportsEnabled = features.ReportsEnabled,
-            InvoicesEnabled = true,
-            QuotesEnabled = true,
+            InvoicesEnabled = businessCapabilitiesEnabled || features.InvoicesEnabled,
+            QuotesEnabled = businessCapabilitiesEnabled || features.QuotesEnabled,
             PrescriptionsEnabled = features.PrescriptionsEnabled,
             DrugsEnabled = features.DrugsEnabled,
             BeforeAfterPhotosEnabled = features.BeforeAfterPhotosEnabled,
@@ -106,17 +111,27 @@ public class FeatureService : IFeatureService
             QueueDisplayEnabled = features.QueueDisplayEnabled,
             WhatsAppEnabled = features.WhatsAppEnabled,
             NotDocumentedEnabled = features.NotDocumentedEnabled,
-            MedicalImagingEnabled = features.MedicalImagingEnabled,
+            MedicalImagingEnabled = medicalImagingEntitled && features.MedicalImagingEnabled,
             PmEnabled = features.PmEnabled,
         };
     }
 
     public async Task<bool> IsEnabledAsync(string feature)
     {
-        if (_tenantContext.TenantId == Guid.Empty)
-            return true;
-
         var normalizedFeature = feature.Trim().ToLowerInvariant();
+        var isMedicalImagingFeature = normalizedFeature is "medicalimaging" or "medicalimagingenabled" or "medical_imaging";
+
+        if (_tenantContext.TenantId == Guid.Empty)
+            return !isMedicalImagingFeature;
+
+        if (isMedicalImagingFeature)
+        {
+            if (!await _medicalImagingEntitlementService.IsEntitledAsync(_tenantContext.TenantId))
+                return false;
+
+            return (await GetAsync()).MedicalImagingEnabled;
+        }
+
         if (normalizedFeature is "quotes" or "quotesenabled" or "quotes_enabled" or "invoices" or "invoicesenabled" or "invoices_enabled")
         {
             var tenant = await _db.Tenants

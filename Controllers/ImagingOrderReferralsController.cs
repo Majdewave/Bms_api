@@ -1,6 +1,7 @@
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Filters;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,6 +12,7 @@ namespace Clienta.Api.Controllers;
 
 [ApiController]
 [Route("api/imaging/orders/{imagingOrderId}/referral")]
+[TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
 [Authorize(Policy = "manage_appointments")]
 public class ImagingOrderReferralsController : ControllerBase
 {

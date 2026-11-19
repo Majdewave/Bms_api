@@ -4,6 +4,7 @@ using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Filters;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -51,6 +52,7 @@ public class ImagingStudiesController : ControllerBase
 
     [HttpGet("/api/clients/{clientId:guid}/imaging/studies")]
     [Authorize(Policy = "view_clients")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetClientImagingStudies(Guid clientId, CancellationToken cancellationToken)
     {
         if (_tenantContext.TenantId == Guid.Empty)
@@ -88,6 +90,7 @@ public class ImagingStudiesController : ControllerBase
 
     [HttpGet("/api/clients/{clientId:guid}/imaging/cases")]
     [Authorize(Policy = "view_clients")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetClientImagingCases(Guid clientId, CancellationToken cancellationToken)
     {
         if (_tenantContext.TenantId == Guid.Empty)
@@ -153,6 +156,7 @@ public class ImagingStudiesController : ControllerBase
 
     [HttpGet("/api/imaging/studies/{studyId:guid}")]
     [Authorize(Policy = "view_clients")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetStudyHierarchy(Guid studyId, CancellationToken cancellationToken)
     {
         if (_tenantContext.TenantId == Guid.Empty)
@@ -223,6 +227,7 @@ public class ImagingStudiesController : ControllerBase
 
     [HttpGet("{studyId:guid}/download")]
     [Authorize(Policy = "view_clients")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> DownloadStudy(Guid studyId, CancellationToken cancellationToken)
     {
         var tenantId = _tenantContext.TenantId;
@@ -337,6 +342,7 @@ public class ImagingStudiesController : ControllerBase
 
     [HttpGet("{studyId:guid}/export-media")]
     [Authorize(Policy = "view_clients")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> ExportStudyMedia(Guid studyId, CancellationToken cancellationToken)
     {
         var tenantId = _tenantContext.TenantId;
@@ -501,6 +507,7 @@ public class ImagingStudiesController : ControllerBase
 
     [HttpGet("/api/imaging/instances/{instanceId:guid}/file")]
     [Authorize(Policy = "view_clients")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetInstanceFile(Guid instanceId, CancellationToken cancellationToken)
     {
         if (_tenantContext.TenantId == Guid.Empty)

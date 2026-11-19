@@ -3,6 +3,7 @@ using Amazon.S3.Model;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Filters;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -412,6 +413,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpGet]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
         if (!TryGetInterpreter(out var userId))
@@ -437,6 +439,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpGet("{requestId:guid}/case")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetCase(
         Guid requestId,
         CancellationToken cancellationToken)
@@ -568,6 +571,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpGet("{requestId:guid}/report/pdf")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetReportPdf(
         Guid requestId,
         [FromQuery] bool download,
@@ -604,6 +608,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpPut("{requestId:guid}/report")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> SaveReport(
         Guid requestId,
         [FromBody] SaveInterpreterReportRequest request,
@@ -704,6 +709,7 @@ public class InterpreterPortalController : ControllerBase
             report.UpdatedAt));
     }
     [HttpPost("{requestId:guid}/complete")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> CompleteInterpretation(
         Guid requestId,
         CancellationToken cancellationToken)
@@ -847,6 +853,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpGet("{requestId:guid}/referral")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetReferral(
         Guid requestId,
         CancellationToken cancellationToken)
@@ -877,6 +884,7 @@ public class InterpreterPortalController : ControllerBase
             referral.OriginalFileName);
     }
     [HttpGet("{requestId:guid}/instances/{instanceId:guid}/file")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetInstanceFile(
         Guid requestId,
         Guid instanceId,
@@ -971,6 +979,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpGet("{requestId:guid}/instances/{instanceId:guid}/annotations")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> GetInstanceAnnotations(
         Guid requestId,
         Guid instanceId,
@@ -1028,6 +1037,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpPost("{requestId:guid}/instances/{instanceId:guid}/annotations")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> CreateInstanceMarker(
         Guid requestId,
         Guid instanceId,
@@ -1092,6 +1102,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpPut("{requestId:guid}/annotations/{annotationId:guid}")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> UpdateInstanceMarker(
         Guid requestId,
         Guid annotationId,
@@ -1138,6 +1149,7 @@ public class InterpreterPortalController : ControllerBase
     }
 
     [HttpDelete("{requestId:guid}/annotations/{annotationId:guid}")]
+    [TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
     public async Task<IActionResult> DeleteInstanceMarker(
         Guid requestId,
         Guid annotationId,

@@ -2,6 +2,7 @@ using Clienta.Api.Authorization;
 using Clienta.Api.Data;
 using Clienta.Api.DTOs;
 using Clienta.Api.Entities;
+using Clienta.Api.Filters;
 using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,7 @@ namespace Clienta.Api.Controllers;
 
 [ApiController]
 [Route("api/imaging")]
+[TypeFilter(typeof(RequireMedicalImagingEntitlementFilter))]
 public class ImagingAnnotationsController : ControllerBase
 {
     private readonly AppDbContext _db;

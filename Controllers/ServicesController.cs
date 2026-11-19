@@ -18,6 +18,7 @@ namespace Clienta.Api.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ITenantContext _tenant;
+        private readonly IMedicalImagingEntitlementService _medicalImagingEntitlementService;
         private static readonly HashSet<string> AllowedImagingModalities = new(StringComparer.Ordinal)
         {
             "US",
@@ -25,10 +26,14 @@ namespace Clienta.Api.Controllers
             "CR"
         };
 
-        public ServicesController(AppDbContext context, ITenantContext tenant)
+        public ServicesController(
+            AppDbContext context,
+            ITenantContext tenant,
+            IMedicalImagingEntitlementService medicalImagingEntitlementService)
         {
             _context = context;
             _tenant = tenant;
+            _medicalImagingEntitlementService = medicalImagingEntitlementService;
         }
 
         // GET: /api/services
@@ -73,6 +78,11 @@ namespace Clienta.Api.Controllers
             var normalizedImagingModality = NormalizeImagingModality(request.ImagingModality);
             if (normalizedImagingModality == null && !string.IsNullOrWhiteSpace(request.ImagingModality))
                 return BadRequest("Imaging modality must be one of: US, DX, CR, or null.");
+            if (normalizedImagingModality != null &&
+                !await _medicalImagingEntitlementService.IsEntitledAsync(_tenant.TenantId))
+            {
+                return Forbid();
+            }
 
             var department = await _context.Departments
                 .FirstOrDefaultAsync(d => d.Id == request.DepartmentId.Value && d.TenantId == _tenant.TenantId);
@@ -132,6 +142,12 @@ namespace Clienta.Api.Controllers
 
             if (service == null)
                 return NotFound();
+
+            if (!string.Equals(service.ImagingModality, normalizedImagingModality, StringComparison.OrdinalIgnoreCase) &&
+                !await _medicalImagingEntitlementService.IsEntitledAsync(_tenant.TenantId))
+            {
+                return Forbid();
+            }
 
             service.Name = request.Name.Trim();
             service.DefaultDurationMinutes = request.DefaultDurationMinutes;

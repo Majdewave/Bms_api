@@ -17,6 +17,7 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
     private readonly IDepartmentFeatureResolver _departmentFeatureResolver;
+    private readonly IMedicalImagingEntitlementService _medicalImagingEntitlementService;
 
     private static readonly string[] FirstConsumerFeatureKeys =
     [
@@ -35,11 +36,13 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
     public UserDepartmentFeatureAccessService(
         AppDbContext db,
         ITenantContext tenantContext,
-        IDepartmentFeatureResolver departmentFeatureResolver)
+        IDepartmentFeatureResolver departmentFeatureResolver,
+        IMedicalImagingEntitlementService medicalImagingEntitlementService)
     {
         _db = db;
         _tenantContext = tenantContext;
         _departmentFeatureResolver = departmentFeatureResolver;
+        _medicalImagingEntitlementService = medicalImagingEntitlementService;
     }
 
     public async Task<bool> CanCurrentUserAccessFeatureAsync(string featureKey)
@@ -53,6 +56,12 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
         var userId = _tenantContext.UserId;
 
         if (tenantId == Guid.Empty || userId is null || userId.Value == Guid.Empty)
+        {
+            return false;
+        }
+
+        if (IsMedicalImagingFeature(featureKey) &&
+            !await _medicalImagingEntitlementService.IsEntitledAsync(tenantId))
         {
             return false;
         }
@@ -91,6 +100,12 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
     public async Task<bool> CanUserAccessFeatureAsync(Guid tenantId, Guid userId, string featureKey)
     {
         if (tenantId == Guid.Empty || userId == Guid.Empty || string.IsNullOrWhiteSpace(featureKey))
+        {
+            return false;
+        }
+
+        if (IsMedicalImagingFeature(featureKey) &&
+            !await _medicalImagingEntitlementService.IsEntitledAsync(tenantId))
         {
             return false;
         }
@@ -160,4 +175,8 @@ public class UserDepartmentFeatureAccessService : IUserDepartmentFeatureAccessSe
             results["medicalImagingEnabled"]
         );
     }
+
+    private static bool IsMedicalImagingFeature(string featureKey) =>
+        string.Equals(featureKey.Trim(), "medicalImagingEnabled", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(featureKey.Trim(), "medicalImaging", StringComparison.OrdinalIgnoreCase);
 }
