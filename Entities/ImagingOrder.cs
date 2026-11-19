@@ -30,6 +30,11 @@ public class ImagingOrder : ITenantEntity
 
     public string? ReferringDoctorName { get; set; }
 
+    public string? TechnicianNotes { get; set; }
+
+    public Guid? PerformingTechnicianId { get; set; }
+    public User? PerformingTechnician { get; set; }
+
     [Required]
     public DateTime ScheduledStartTime { get; set; }
 

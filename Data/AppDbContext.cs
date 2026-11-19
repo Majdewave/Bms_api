@@ -80,6 +80,11 @@ public class AppDbContext : DbContext
     public DbSet<InterpretationReport> InterpretationReports { get; set; } = null!;
     public DbSet<InterpretationReportTemplate> InterpretationReportTemplates { get; set; } = null!;
     public DbSet<InterpretationReportDocument> InterpretationReportDocuments { get; set; } = null!;
+    public DbSet<StaffWorkSession> StaffWorkSessions => Set<StaffWorkSession>();
+    public DbSet<InterpreterRate> InterpreterRates => Set<InterpreterRate>();
+    public DbSet<InterpreterWorkItem> InterpreterWorkItems => Set<InterpreterWorkItem>();
+    public DbSet<TechnicianRate> TechnicianRates => Set<TechnicianRate>();
+    public DbSet<TechnicianWorkItem> TechnicianWorkItems => Set<TechnicianWorkItem>();
 
     // PM (Project Management) foundation - Phase 1A.
     public DbSet<Project> Projects => Set<Project>();
@@ -183,6 +188,12 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ImagingOrder>()
             .HasQueryFilter(io => _tenantContext.TenantId == Guid.Empty || io.TenantId == _tenantContext.TenantId);
 
+        modelBuilder.Entity<TechnicianRate>()
+            .HasQueryFilter(rate => _tenantContext.TenantId == Guid.Empty || rate.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .HasQueryFilter(item => _tenantContext.TenantId == Guid.Empty || item.TenantId == _tenantContext.TenantId);
+
         modelBuilder.Entity<ImagingOrderDocument>()
             .HasQueryFilter(document => _tenantContext.TenantId == Guid.Empty || document.TenantId == _tenantContext.TenantId);
 
@@ -212,6 +223,183 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<InterpretationReportDocument>()
             .HasQueryFilter(document => _tenantContext.TenantId == Guid.Empty || document.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasQueryFilter(session => _tenantContext.TenantId == Guid.Empty || session.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<InterpreterRate>()
+            .HasQueryFilter(rate => _tenantContext.TenantId == Guid.Empty || rate.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .HasQueryFilter(item => _tenantContext.TenantId == Guid.Empty || item.TenantId == _tenantContext.TenantId);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .Property(session => session.CorrectionReason)
+            .HasMaxLength(500);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(session => session.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(session => session.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(session => session.CreatedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(session => session.ClockOutByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(session => session.LastCorrectedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasIndex(session => new { session.TenantId, session.UserId, session.ClockInAt });
+
+        modelBuilder.Entity<StaffWorkSession>()
+            .HasIndex(session => new { session.TenantId, session.UserId })
+            .IsUnique()
+            .HasFilter("\"ClockOutAt\" IS NULL");
+
+        modelBuilder.Entity<InterpreterRate>()
+            .Property(rate => rate.Modality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<InterpreterRate>()
+            .Property(rate => rate.Currency)
+            .HasMaxLength(3);
+
+        modelBuilder.Entity<InterpreterRate>()
+            .HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(rate => rate.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpreterRate>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(rate => rate.InterpreterUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpreterRate>()
+            .HasIndex(rate => new { rate.TenantId, rate.InterpreterUserId, rate.Modality })
+            .IsUnique()
+            .HasFilter("\"IsActive\" = TRUE");
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .Property(item => item.OriginalModality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .Property(item => item.PayrollModality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .Property(item => item.AccessionNumber)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .Property(item => item.Currency)
+            .HasMaxLength(3);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(item => item.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(item => item.InterpreterUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .HasIndex(item => new { item.TenantId, item.InterpretationRequestId })
+            .IsUnique();
+
+        modelBuilder.Entity<InterpreterWorkItem>()
+            .HasIndex(item => new { item.TenantId, item.InterpreterUserId, item.CompletedAt });
+
+        modelBuilder.Entity<ImagingOrder>()
+            .HasOne(order => order.PerformingTechnician)
+            .WithMany()
+            .HasForeignKey(order => order.PerformingTechnicianId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<TechnicianRate>()
+            .Property(rate => rate.Modality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<TechnicianRate>()
+            .Property(rate => rate.Currency)
+            .HasMaxLength(3);
+
+        modelBuilder.Entity<TechnicianRate>()
+            .HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(rate => rate.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<TechnicianRate>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(rate => rate.TechnicianUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<TechnicianRate>()
+            .HasIndex(rate => new { rate.TenantId, rate.TechnicianUserId, rate.Modality })
+            .IsUnique()
+            .HasFilter("\"IsActive\" = TRUE");
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .Property(item => item.OriginalModality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .Property(item => item.PayrollModality)
+            .HasMaxLength(16);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .Property(item => item.AccessionNumber)
+            .HasMaxLength(128);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .Property(item => item.Currency)
+            .HasMaxLength(3);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .HasOne<Tenant>()
+            .WithMany()
+            .HasForeignKey(item => item.TenantId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .HasOne<User>()
+            .WithMany()
+            .HasForeignKey(item => item.TechnicianUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .HasIndex(item => new { item.TenantId, item.ImagingStudyId })
+            .IsUnique();
+
+        modelBuilder.Entity<TechnicianWorkItem>()
+            .HasIndex(item => new { item.TenantId, item.TechnicianUserId, item.PerformedAt });
 
         modelBuilder.Entity<ImagingAnnotation>()
             .HasOne(a => a.ImagingInstance)

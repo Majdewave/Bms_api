@@ -21,6 +21,7 @@ public class ImagingStudiesController : ControllerBase
     private const string StudyUidUniqueConstraintName = "IX_ImagingStudies_TenantId_StudyInstanceUID";
     private const string SeriesUidUniqueConstraintName = "IX_ImagingSeries_TenantId_SeriesInstanceUID";
     private const string SopUidUniqueConstraintName = "IX_ImagingInstances_TenantId_SOPInstanceUID";
+    private const string TechnicianStudyUniqueConstraintName = "IX_TechnicianWorkItems_TenantId_ImagingStudyId";
 
     private readonly AppDbContext _db;
     private readonly ITenantContext _tenantContext;
@@ -28,6 +29,7 @@ public class ImagingStudiesController : ControllerBase
     private readonly IConfiguration _configuration;
     private readonly ILogger<ImagingStudiesController> _logger;
     private readonly IImagingMediaExportService _mediaExportService;
+    private readonly ITechnicianWorkSummaryService _technicianWorkSummaryService;
 
     public ImagingStudiesController(
         AppDbContext db,
@@ -35,7 +37,8 @@ public class ImagingStudiesController : ControllerBase
         IAmazonS3 s3Client,
         IConfiguration configuration,
         ILogger<ImagingStudiesController> logger,
-        IImagingMediaExportService mediaExportService)
+        IImagingMediaExportService mediaExportService,
+        ITechnicianWorkSummaryService technicianWorkSummaryService)
     {
         _db = db;
         _tenantContext = tenantContext;
@@ -43,6 +46,7 @@ public class ImagingStudiesController : ControllerBase
         _configuration = configuration;
         _logger = logger;
         _mediaExportService = mediaExportService;
+        _technicianWorkSummaryService = technicianWorkSummaryService;
     }
 
     [HttpGet("/api/clients/{clientId:guid}/imaging/studies")]
@@ -113,6 +117,7 @@ public class ImagingStudiesController : ControllerBase
                 order.Modality,
                 order.Status,
                 order.ReferringDoctorName,
+                order.TechnicianNotes,
                 order.ScheduledStartTime,
                 order.CreatedAt,
                 _db.ImagingOrderDocuments
@@ -763,6 +768,11 @@ public class ImagingStudiesController : ControllerBase
                 try
                 {
                     await _db.SaveChangesAsync(cancellationToken);
+                    await _technicianWorkSummaryService.AddReceivedStudyWorkItemAsync(
+                        imagingOrder.Id,
+                        study.Id,
+                        cancellationToken);
+                    await _db.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
 
                     return Ok(ToResponse(
@@ -860,7 +870,8 @@ public class ImagingStudiesController : ControllerBase
             return pg.SqlState == PostgresErrorCodes.UniqueViolation &&
                    (string.Equals(pg.ConstraintName, StudyUidUniqueConstraintName, StringComparison.Ordinal) ||
                     string.Equals(pg.ConstraintName, SeriesUidUniqueConstraintName, StringComparison.Ordinal) ||
-                    string.Equals(pg.ConstraintName, SopUidUniqueConstraintName, StringComparison.Ordinal));
+                    string.Equals(pg.ConstraintName, SopUidUniqueConstraintName, StringComparison.Ordinal) ||
+                    string.Equals(pg.ConstraintName, TechnicianStudyUniqueConstraintName, StringComparison.Ordinal));
         }
 
         return false;

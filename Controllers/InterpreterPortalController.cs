@@ -22,6 +22,7 @@ public class InterpreterPortalController : ControllerBase
     private readonly IAmazonS3 _s3Client;
     private readonly ILogger<InterpreterPortalController> _logger;
     private readonly InterpretationPdfService _interpretationPdfService;
+    private readonly IInterpreterWorkSummaryService _interpreterWorkSummaryService;
     private readonly string _assetBucket;
 
     public InterpreterPortalController(
@@ -30,13 +31,15 @@ public class InterpreterPortalController : ControllerBase
         IAmazonS3 s3Client,
         ILogger<InterpreterPortalController> logger,
         IConfiguration configuration,
-        InterpretationPdfService interpretationPdfService)
+        InterpretationPdfService interpretationPdfService,
+        IInterpreterWorkSummaryService interpreterWorkSummaryService)
     {
         _context = context;
         _tenant = tenant;
         _s3Client = s3Client;
         _logger = logger;
         _interpretationPdfService = interpretationPdfService;
+        _interpreterWorkSummaryService = interpreterWorkSummaryService;
         _assetBucket = configuration["AWS:BucketName"] ?? string.Empty;
     }
 
@@ -463,6 +466,7 @@ public class InterpreterPortalController : ControllerBase
                 Modality = r.ImagingOrder.Modality,
                 ScheduledStartTime = r.ImagingOrder.ScheduledStartTime,
                 ReferringDoctorName = r.ImagingOrder.ReferringDoctorName,
+                TechnicianNotes = r.ImagingOrder.TechnicianNotes,
 
                 ImagingStudyId = r.ImagingStudyId,
                 StudyInstanceUID = r.ImagingStudy.StudyInstanceUID,
@@ -550,6 +554,7 @@ public class InterpreterPortalController : ControllerBase
             request.Modality,
             request.ScheduledStartTime,
             request.ReferringDoctorName,
+            request.TechnicianNotes,
 
             request.ImagingStudyId,
             request.StudyInstanceUID,
@@ -612,6 +617,7 @@ public class InterpreterPortalController : ControllerBase
                 .ThenInclude(order => order.Client)
             .Include(request => request.ImagingOrder)
                 .ThenInclude(order => order.Service)
+            .Include(request => request.ImagingStudy)
             .FirstOrDefaultAsync(r =>
                 r.TenantId == _tenant.TenantId &&
                 r.AssignedInterpreterId == userId &&
@@ -710,6 +716,7 @@ public class InterpreterPortalController : ControllerBase
                 .ThenInclude(order => order.Client)
             .Include(request => request.ImagingOrder)
                 .ThenInclude(order => order.Service)
+            .Include(request => request.ImagingStudy)
             .FirstOrDefaultAsync(r =>
                 r.TenantId == _tenant.TenantId &&
                 r.AssignedInterpreterId == userId &&
@@ -811,6 +818,11 @@ public class InterpreterPortalController : ControllerBase
         interpretationRequest.Status = InterpretationRequestStatuses.Completed;
         interpretationRequest.StartedAt ??= now;
         interpretationRequest.UpdatedAt = now;
+
+        await _interpreterWorkSummaryService.AddCompletedWorkItemAsync(
+            interpretationRequest,
+            interpretationRequest.CompletedAt.Value,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
 

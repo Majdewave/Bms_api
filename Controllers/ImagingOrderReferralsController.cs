@@ -5,6 +5,7 @@ using Clienta.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Clienta.Api.Controllers;
 
@@ -18,11 +19,16 @@ public class ImagingOrderReferralsController : ControllerBase
 
     private readonly AppDbContext _context;
     private readonly ITenantContext _tenant;
+    private readonly ILogger<ImagingOrderReferralsController> _logger;
 
-    public ImagingOrderReferralsController(AppDbContext context, ITenantContext tenant)
+    public ImagingOrderReferralsController(
+        AppDbContext context,
+        ITenantContext tenant,
+        ILogger<ImagingOrderReferralsController> logger)
     {
         _context = context;
         _tenant = tenant;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -33,6 +39,50 @@ public class ImagingOrderReferralsController : ControllerBase
 
         var document = await FindReferralDocumentAsync(order.Id);
         return Ok(ToDto(order, document));
+    }
+
+    /// <summary>Updates optional internal technician notes for a tenant-owned imaging order.</summary>
+    [HttpPatch("technician-notes")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateTechnicianNotes(
+        Guid imagingOrderId,
+        UpdateImagingOrderTechnicianNotesRequest request,
+        CancellationToken cancellationToken)
+    {
+        var stage = "order lookup";
+        try
+        {
+            var order = await FindOrderAsync(imagingOrderId, cancellationToken);
+            if (order == null) return NotFound();
+
+            order.TechnicianNotes = string.IsNullOrWhiteSpace(request.TechnicianNotes)
+                ? null
+                : request.TechnicianNotes;
+            order.UpdatedAt = DateTime.UtcNow;
+            stage = "save";
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return NoContent();
+        }
+        catch (Exception exception)
+        {
+            var postgresException = GetPostgresException(exception);
+            _logger.LogError(
+                exception,
+                "Technician notes update failed during {Stage}. ImagingOrderId={ImagingOrderId}, TenantId={TenantId}, ExceptionType={ExceptionType}, ExceptionMessage={ExceptionMessage}, InnerExceptionType={InnerExceptionType}, InnerExceptionMessage={InnerExceptionMessage}, PostgreSqlSqlState={PostgreSqlSqlState}, PostgreSqlTable={PostgreSqlTable}, PostgreSqlColumn={PostgreSqlColumn}",
+                stage,
+                imagingOrderId,
+                _tenant.TenantId,
+                exception.GetType().FullName,
+                exception.Message,
+                exception.InnerException?.GetType().FullName,
+                exception.InnerException?.Message,
+                postgresException?.SqlState,
+                postgresException?.TableName,
+                postgresException?.ColumnName);
+            throw;
+        }
     }
 
     [HttpPut]
@@ -149,8 +199,23 @@ public class ImagingOrderReferralsController : ControllerBase
         return NoContent();
     }
 
-    private Task<ImagingOrder?> FindOrderAsync(Guid imagingOrderId) =>
-        _context.ImagingOrders.FirstOrDefaultAsync(order => order.Id == imagingOrderId && order.TenantId == _tenant.TenantId);
+    private Task<ImagingOrder?> FindOrderAsync(
+        Guid imagingOrderId,
+        CancellationToken cancellationToken = default) =>
+        _context.ImagingOrders.FirstOrDefaultAsync(
+            order => order.Id == imagingOrderId && order.TenantId == _tenant.TenantId,
+            cancellationToken);
+
+    private static PostgresException? GetPostgresException(Exception exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current is PostgresException postgresException)
+                return postgresException;
+        }
+
+        return null;
+    }
 
     private Task<ImagingOrderDocument?> FindReferralDocumentAsync(Guid imagingOrderId) =>
         _context.ImagingOrderDocuments.FirstOrDefaultAsync(document =>

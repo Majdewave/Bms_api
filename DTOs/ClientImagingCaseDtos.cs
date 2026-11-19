@@ -17,6 +17,7 @@ public record ClientImagingCaseDto(
     string Modality,
     string Status,
     string? ReferringDoctorName,
+    string? TechnicianNotes,
     DateTime ScheduledStartTime,
     DateTime CreatedAt,
     ClientImagingReferralDocumentDto? Referral,

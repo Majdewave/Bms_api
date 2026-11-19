@@ -213,7 +213,8 @@ internal sealed class MarkerFixture : IAsyncDisposable
         var controller = new InterpreterPortalController(
             context, TenantContext, (IAmazonS3)null!, NullLogger<InterpreterPortalController>.Instance,
             new ConfigurationBuilder().Build(),
-            new InterpretationPdfService((IAmazonS3)null!, new ConfigurationBuilder().Build(), NullLogger<InterpretationPdfService>.Instance));
+            new InterpretationPdfService((IAmazonS3)null!, new ConfigurationBuilder().Build(), NullLogger<InterpretationPdfService>.Instance),
+            new InterpreterWorkSummaryService(context, TenantContext));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext

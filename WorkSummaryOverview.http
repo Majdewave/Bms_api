@@ -1,0 +1,7 @@
+@baseUrl = https://localhost:7078
+@token = replace-with-manager-access-token
+
+### Get a tenant-scoped work summary overview
+GET {{baseUrl}}/api/work-summary/overview?fromUtc=2026-01-01T00%3A00%3A00Z&toUtc=2026-02-01T00%3A00%3A00Z
+Authorization: Bearer {{token}}
+Accept: application/json

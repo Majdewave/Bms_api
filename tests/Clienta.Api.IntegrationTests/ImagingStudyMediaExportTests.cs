@@ -430,7 +430,8 @@ public sealed class ImagingStudyMediaExportTests
                     ["AWS:ImagingBucketName"] = "imaging-test-bucket",
                 }).Build(),
                 NullLogger<ImagingStudiesController>.Instance,
-                exportService);
+                exportService,
+                new TechnicianWorkSummaryService(context, TenantContext));
             controller.ControllerContext = new ControllerContext
             {
                 HttpContext = new DefaultHttpContext { Response = { Body = new MemoryStream() } },

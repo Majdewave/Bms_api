@@ -43,6 +43,10 @@
   </ItemGroup>
 
 <ItemGroup>
+  <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+</ItemGroup>
+
+<ItemGroup>
   <Compile Remove="tests\**\*.cs" />
 
   <!-- Standalone development/admin tools must not compile into Clienta.Api -->
@@ -63,6 +67,13 @@
   <Content Remove="artifacts\**\*" />
   <None Remove="artifacts\**\*" />
   <EmbeddedResource Remove="artifacts\**\*" />
+
+  <Content Remove="publish-check\**\*" />
+  <None Remove="publish-check\**\*" />
+  <EmbeddedResource Remove="publish-check\**\*" />
+  <Content Remove="publish-timezone-fix\**\*" />
+  <None Remove="publish-timezone-fix\**\*" />
+  <EmbeddedResource Remove="publish-timezone-fix\**\*" />
 </ItemGroup>
 
 </Project>

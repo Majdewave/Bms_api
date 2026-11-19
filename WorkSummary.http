@@ -1,0 +1,52 @@
+@baseUrl = https://localhost:5001
+@staffUserId = 00000000-0000-0000-0000-000000000001
+@interpreterUserId = 00000000-0000-0000-0000-000000000002
+@sessionId = 00000000-0000-0000-0000-000000000003
+@rateId = 00000000-0000-0000-0000-000000000004
+
+### Get current staff attendance
+GET {{baseUrl}}/api/work-summary/attendance/current
+
+### Clock in the authenticated staff user
+POST {{baseUrl}}/api/work-summary/attendance/clock-in
+
+### Clock out the authenticated staff user
+POST {{baseUrl}}/api/work-summary/attendance/clock-out
+
+### Correct a staff session (manager)
+PUT {{baseUrl}}/api/work-summary/staff/{{staffUserId}}/sessions/{{sessionId}}
+Content-Type: application/json
+
+{
+  "clockInAt": "2026-01-15T08:00:00Z",
+  "clockOutAt": "2026-01-15T16:00:00Z",
+  "reason": "Corrected from approved time record"
+}
+
+### Get staff hours in a UTC range (manager)
+GET {{baseUrl}}/api/work-summary/staff/{{staffUserId}}/hours?fromUtc=2026-01-01T00:00:00Z&toUtc=2026-02-01T00:00:00Z
+
+### List current and historical interpreter rates (manager)
+GET {{baseUrl}}/api/work-summary/interpreter-rates
+
+### Set an interpreter XRay rate (manager)
+PUT {{baseUrl}}/api/work-summary/interpreters/{{interpreterUserId}}/rates/XRay
+Content-Type: application/json
+
+{
+  "amount": 25.00
+}
+
+### Set an interpreter ultrasound rate (manager)
+PUT {{baseUrl}}/api/work-summary/interpreters/{{interpreterUserId}}/rates/US
+Content-Type: application/json
+
+{
+  "amount": 35.00
+}
+
+### Deactivate an interpreter rate (manager)
+DELETE {{baseUrl}}/api/work-summary/interpreter-rates/{{rateId}}
+
+### Get interpreter work in a UTC range (manager)
+GET {{baseUrl}}/api/work-summary/interpreters/{{interpreterUserId}}/work?fromUtc=2026-01-01T00:00:00Z&toUtc=2026-02-01T00:00:00Z

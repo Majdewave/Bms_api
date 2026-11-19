@@ -1142,6 +1142,9 @@ namespace Clienta.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("PerformingTechnicianId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ReferringDoctorName")
                         .HasColumnType("text");
 
@@ -1153,6 +1156,9 @@ namespace Clienta.Api.Migrations
 
                     b.Property<string>("Status")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TechnicianNotes")
                         .HasColumnType("text");
 
                     b.Property<Guid>("TenantId")
@@ -1170,6 +1176,8 @@ namespace Clienta.Api.Migrations
                         .IsUnique();
 
                     b.HasIndex("ClientId");
+
+                    b.HasIndex("PerformingTechnicianId");
 
                     b.HasIndex("ServiceId");
 
@@ -1557,6 +1565,111 @@ namespace Clienta.Api.Migrations
                     b.HasIndex("TenantId", "Status", "RequestedAt");
 
                     b.ToTable("InterpretationRequests");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.InterpreterRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<Guid>("InterpreterUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Modality")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InterpreterUserId");
+
+                    b.HasIndex("TenantId", "InterpreterUserId", "Modality")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\" = TRUE");
+
+                    b.ToTable("InterpreterRates");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.InterpreterWorkItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccessionNumber")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<Guid>("ImagingOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ImagingStudyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InterpretationRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("InterpreterUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OriginalModality")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("PayrollModality")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<decimal?>("RateAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InterpreterUserId");
+
+                    b.HasIndex("TenantId", "InterpretationRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "InterpreterUserId", "CompletedAt");
+
+                    b.ToTable("InterpreterWorkItems");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Invoice", b =>
@@ -2498,6 +2611,167 @@ namespace Clienta.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("StaffDepartments");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.StaffWorkSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ClockInAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("ClockOutAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ClockOutByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CorrectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("LastCorrectedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("LastCorrectedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClockOutByUserId");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("LastCorrectedByUserId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TenantId", "UserId")
+                        .IsUnique()
+                        .HasFilter("\"ClockOutAt\" IS NULL");
+
+                    b.HasIndex("TenantId", "UserId", "ClockInAt");
+
+                    b.ToTable("StaffWorkSessions");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.TechnicianRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("numeric");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Modality")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("TechnicianUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TechnicianUserId");
+
+                    b.HasIndex("TenantId", "TechnicianUserId", "Modality")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\" = TRUE");
+
+                    b.ToTable("TechnicianRates");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.TechnicianWorkItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccessionNumber")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<Guid>("ImagingOrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ImagingStudyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OriginalModality")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("PayrollModality")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTime>("PerformedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("RateAmount")
+                        .HasColumnType("numeric");
+
+                    b.Property<Guid>("TechnicianUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TechnicianUserId");
+
+                    b.HasIndex("TenantId", "ImagingStudyId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "TechnicianUserId", "PerformedAt");
+
+                    b.ToTable("TechnicianWorkItems");
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Tenant", b =>
@@ -3536,6 +3810,11 @@ namespace Clienta.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("Clienta.Api.Entities.User", "PerformingTechnician")
+                        .WithMany()
+                        .HasForeignKey("PerformingTechnicianId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Clienta.Api.Entities.Service", "Service")
                         .WithMany()
                         .HasForeignKey("ServiceId")
@@ -3550,6 +3829,8 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Appointment");
 
                     b.Navigation("Client");
+
+                    b.Navigation("PerformingTechnician");
 
                     b.Navigation("Service");
 
@@ -3766,6 +4047,36 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Tenant");
                 });
 
+            modelBuilder.Entity("Clienta.Api.Entities.InterpreterRate", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("InterpreterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.InterpreterWorkItem", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("InterpreterUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Clienta.Api.Entities.Invoice", b =>
                 {
                     b.HasOne("Clienta.Api.Entities.Project", null)
@@ -3977,6 +4288,67 @@ namespace Clienta.Api.Migrations
                     b.Navigation("Staff");
 
                     b.Navigation("Tenant");
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.StaffWorkSession", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("ClockOutByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("LastCorrectedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Clienta.Api.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.TechnicianRate", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("TechnicianUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Clienta.Api.Entities.TechnicianWorkItem", b =>
+                {
+                    b.HasOne("Clienta.Api.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("TechnicianUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Clienta.Api.Entities.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Clienta.Api.Entities.Tenant", b =>

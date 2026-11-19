@@ -29,6 +29,7 @@ public record InterpreterCaseDto(
     string Modality,
     DateTime ScheduledStartTime,
     string? ReferringDoctorName,
+    string? TechnicianNotes,
 
     Guid ImagingStudyId,
     string StudyInstanceUID,

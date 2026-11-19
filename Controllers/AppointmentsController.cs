@@ -62,7 +62,8 @@ public class AppointmentsController : ControllerBase
             .Where(b =>
                 b.TenantId == tenantId &&
                 b.User.IsActive &&
-                b.User.Role != "Interpreter")
+                b.User.Role != "Interpreter" &&
+                b.User.Role != "Technician")
             .OrderBy(b => b.User.FullName)
             .Select(b => new
             {
@@ -76,6 +77,29 @@ public class AppointmentsController : ControllerBase
             .ToListAsync();
 
         return Ok(staff);
+    }
+
+    [HttpGet("technician-options")]
+    public async Task<IActionResult> GetTechnicianOptions(CancellationToken cancellationToken)
+    {
+        var technicians = await _context.Users
+            .AsNoTracking()
+            .Where(user =>
+                user.TenantId == _tenant.TenantId &&
+                user.IsActive &&
+                user.Role == "Technician" &&
+                _context.BusinessUsers.Any(businessUser =>
+                    businessUser.TenantId == _tenant.TenantId &&
+                    businessUser.UserId == user.Id))
+            .OrderBy(user => user.FullName)
+            .ThenBy(user => user.Email)
+            .Select(user => new AppointmentTechnicianOptionResponse(
+                user.Id,
+                user.FullName ?? user.Email,
+                user.Email))
+            .ToListAsync(cancellationToken);
+
+        return Ok(technicians);
     }
 
     // GET /appointments/queue
@@ -214,7 +238,17 @@ public class AppointmentsController : ControllerBase
                     .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
                     .Select(order => (Guid?)order.Id)
                     .FirstOrDefault(),
-                a.RoomNumber
+                a.RoomNumber,
+                _context.ImagingOrders
+                    .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
+                    .Select(order => order.PerformingTechnicianId)
+                    .FirstOrDefault(),
+                _context.ImagingOrders
+                    .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
+                    .Select(order => order.PerformingTechnician == null
+                        ? null
+                        : order.PerformingTechnician.FullName ?? order.PerformingTechnician.Email)
+                    .FirstOrDefault()
             ))
             .ToListAsync();
 
@@ -258,7 +292,17 @@ public class AppointmentsController : ControllerBase
                     .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
                     .Select(order => (Guid?)order.Id)
                     .FirstOrDefault(),
-                a.RoomNumber
+                a.RoomNumber,
+                _context.ImagingOrders
+                    .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
+                    .Select(order => order.PerformingTechnicianId)
+                    .FirstOrDefault(),
+                _context.ImagingOrders
+                    .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == a.Id)
+                    .Select(order => order.PerformingTechnician == null
+                        ? null
+                        : order.PerformingTechnician.FullName ?? order.PerformingTechnician.Email)
+                    .FirstOrDefault()
             ))
             .FirstOrDefaultAsync();
 
@@ -297,16 +341,50 @@ public class AppointmentsController : ControllerBase
                 return BadRequest("Invalid service.");
         }
 
-        if (request.StaffId.HasValue)
+        var normalizedImagingModality = NormalizeImagingModality(selectedService?.ImagingModality);
+        var medicalImagingEnabled =
+            normalizedImagingModality != null &&
+            await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
+                selectedService?.DepartmentId,
+                "medicalImagingEnabled");
+        var isImagingAppointment = normalizedImagingModality != null && medicalImagingEnabled;
+        var appointmentStaffId = request.StaffId;
+        Guid? technicianBusinessUserId = null;
+
+        if (isImagingAppointment)
+        {
+            if (!request.PerformingTechnicianId.HasValue)
+                return BadRequest("A performing technician is required for imaging appointments.");
+
+            if (!await IsActiveTechnicianAsync(request.PerformingTechnicianId.Value, HttpContext.RequestAborted))
+                return BadRequest("Invalid performing technician.");
+
+            technicianBusinessUserId = await GetTechnicianBusinessUserIdAsync(
+                request.PerformingTechnicianId.Value,
+                HttpContext.RequestAborted);
+            if (!technicianBusinessUserId.HasValue)
+                return BadRequest("The performing technician is not available for appointments.");
+
+            appointmentStaffId = technicianBusinessUserId;
+        }
+        else if (request.PerformingTechnicianId.HasValue)
+        {
+            return BadRequest("A performing technician can only be assigned to an enabled imaging appointment.");
+        }
+
+        if (!isImagingAppointment && request.StaffId.HasValue)
         {
             var staffExists = await _context.BusinessUsers
-                .AnyAsync(b => b.Id == request.StaffId && b.TenantId == _tenant.TenantId);
+                .AnyAsync(b =>
+                    b.Id == request.StaffId &&
+                    b.TenantId == _tenant.TenantId &&
+                    b.User.Role != "Technician");
 
             if (!staffExists)
                 return BadRequest("Invalid staff.");
         }
 
-        if (request.StaffId.HasValue && request.ServiceId.HasValue)
+        if (!isImagingAppointment && request.StaffId.HasValue && request.ServiceId.HasValue)
         {
             var isAllowed = await IsServiceAllowedForStaffAsync(request.StaffId.Value, selectedService?.DepartmentId);
             if (!isAllowed)
@@ -337,7 +415,7 @@ public class AppointmentsController : ControllerBase
             ClientId = request.ClientId,
             ServiceId = request.ServiceId,
             DepartmentId = selectedService?.DepartmentId,
-            StaffId = request.StaffId,
+            StaffId = appointmentStaffId,
             CreatedByUserId = _tenant.UserId ?? Guid.Empty,
             StartTime = normalizedStartTimeUtc,
             EndTime = normalizedEndTimeUtc,
@@ -350,15 +428,7 @@ public class AppointmentsController : ControllerBase
         };
 
         ImagingOrder? imagingOrder = null;
-        var normalizedImagingModality = NormalizeImagingModality(selectedService?.ImagingModality);
-
-        var medicalImagingEnabled =
-            normalizedImagingModality != null &&
-            await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
-                appointment.DepartmentId,
-                "medicalImagingEnabled");
-
-        if (normalizedImagingModality != null && medicalImagingEnabled)
+        if (isImagingAppointment)
         {
             var imagingOrderExists = await _context.ImagingOrders
                 .AnyAsync(io => io.AppointmentId == appointment.Id);
@@ -376,6 +446,7 @@ public class AppointmentsController : ControllerBase
                     Modality = normalizedImagingModality,
                     Status = ImagingOrderStatuses.Scheduled,
                     ReferringDoctorName = NormalizeReferringDoctorName(request.ReferringDoctorName),
+                    PerformingTechnicianId = request.PerformingTechnicianId,
                     ScheduledStartTime = appointment.StartTime,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -473,29 +544,110 @@ public class AppointmentsController : ControllerBase
         }
 
         Service? selectedService = null;
-        if (request.ServiceId.HasValue)
+        var targetServiceId = request.ServiceId ?? appointment.ServiceId;
+        if (targetServiceId.HasValue)
         {
             selectedService = await _context.Services
-                .FirstOrDefaultAsync(s => s.Id == request.ServiceId && s.TenantId == _tenant.TenantId);
+                .FirstOrDefaultAsync(s => s.Id == targetServiceId && s.TenantId == _tenant.TenantId);
 
-            if (selectedService == null)
+            if (request.ServiceId.HasValue && selectedService == null)
                 return BadRequest("Invalid service.");
         }
 
-        if (request.StaffId.HasValue)
-        {
-            var staffExists = await _context.BusinessUsers
-                .AnyAsync(b => b.Id == request.StaffId && b.TenantId == _tenant.TenantId);
+        var targetDepartmentId = request.ServiceId.HasValue
+            ? selectedService?.DepartmentId
+            : appointment.DepartmentId;
+        var normalizedImagingModality = NormalizeImagingModality(selectedService?.ImagingModality);
+        var medicalImagingEnabled =
+            normalizedImagingModality != null &&
+            await _userDepartmentFeatureAccessService.IsFeatureEnabledAsync(
+                targetDepartmentId,
+                "medicalImagingEnabled");
+        var isImagingAppointment = normalizedImagingModality != null && medicalImagingEnabled;
+        var imagingOrder = await _context.ImagingOrders.FirstOrDefaultAsync(order =>
+            order.TenantId == _tenant.TenantId &&
+            order.AppointmentId == appointment.Id);
+        var appointmentStaffId = request.StaffId ?? appointment.StaffId;
 
-            if (!staffExists)
-                return BadRequest("Invalid staff.");
+        if (isImagingAppointment)
+        {
+            if (request.ClearPerformingTechnician)
+                return BadRequest("A performing technician is required for imaging appointments.");
+
+            if (request.PerformingTechnicianId.HasValue &&
+                !await IsActiveTechnicianAsync(request.PerformingTechnicianId.Value, HttpContext.RequestAborted))
+            {
+                return BadRequest("Invalid performing technician.");
+            }
+
+            var technicianUserId = request.PerformingTechnicianId ?? imagingOrder?.PerformingTechnicianId;
+            if (!technicianUserId.HasValue)
+                return BadRequest("A performing technician is required for imaging appointments.");
+
+            var technicianBusinessUserId = await GetTechnicianBusinessUserIdAsync(
+                technicianUserId.Value,
+                HttpContext.RequestAborted);
+            if (request.PerformingTechnicianId.HasValue && !technicianBusinessUserId.HasValue)
+                return BadRequest("The performing technician is not available for appointments.");
+
+            if (imagingOrder == null)
+            {
+                imagingOrder = new ImagingOrder
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = _tenant.TenantId,
+                    ClientId = appointment.ClientId,
+                    AppointmentId = appointment.Id,
+                    ServiceId = targetServiceId,
+                    AccessionNumber = await GenerateAccessionNumberAsync(normalizedImagingModality!),
+                    Modality = normalizedImagingModality!,
+                    Status = ImagingOrderStatuses.Scheduled,
+                    PerformingTechnicianId = technicianUserId,
+                    ScheduledStartTime = appointment.StartTime,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                _context.ImagingOrders.Add(imagingOrder);
+            }
+            else if (request.PerformingTechnicianId.HasValue)
+            {
+                imagingOrder.PerformingTechnicianId = technicianUserId;
+                imagingOrder.UpdatedAt = DateTime.UtcNow;
+            }
+
+            if (technicianBusinessUserId.HasValue)
+                appointmentStaffId = technicianBusinessUserId;
         }
-
-        if (request.StaffId.HasValue && request.ServiceId.HasValue)
+        else
         {
-            var isAllowed = await IsServiceAllowedForStaffAsync(request.StaffId.Value, selectedService?.DepartmentId);
-            if (!isAllowed)
-                return BadRequest("Selected service is not available for this staff member.");
+            if (request.PerformingTechnicianId.HasValue)
+                return BadRequest("A performing technician can only be assigned to an enabled imaging appointment.");
+
+            if (request.StaffId.HasValue)
+            {
+                var staffExists = await _context.BusinessUsers
+                    .AnyAsync(b =>
+                        b.Id == request.StaffId &&
+                        b.TenantId == _tenant.TenantId &&
+                        b.User.Role != "Technician");
+
+                if (!staffExists)
+                    return BadRequest("Invalid staff.");
+            }
+
+            if (request.StaffId.HasValue && request.ServiceId.HasValue)
+            {
+                var isAllowed = await IsServiceAllowedForStaffAsync(request.StaffId.Value, selectedService?.DepartmentId);
+                if (!isAllowed)
+                    return BadRequest("Selected service is not available for this staff member.");
+            }
+
+            if (request.ServiceId.HasValue &&
+                !request.StaffId.HasValue &&
+                appointment.StaffId.HasValue &&
+                await IsTechnicianBusinessUserAsync(appointment.StaffId.Value, HttpContext.RequestAborted))
+            {
+                return BadRequest("Select a treating staff member when changing an imaging appointment to a non-imaging service.");
+            }
         }
 
         if (request.StartTime != default)
@@ -582,8 +734,8 @@ public class AppointmentsController : ControllerBase
             appointment.DepartmentId = selectedService?.DepartmentId;
         }
 
-        if (request.StaffId.HasValue)
-            appointment.StaffId = request.StaffId;
+        if (isImagingAppointment || request.StaffId.HasValue)
+            appointment.StaffId = appointmentStaffId;
 
         if (request.IsDocumented.HasValue)
         {
@@ -623,9 +775,6 @@ public class AppointmentsController : ControllerBase
 
         if (request.ReferringDoctorName != null)
         {
-            var imagingOrder = await _context.ImagingOrders
-                .FirstOrDefaultAsync(io => io.Id != Guid.Empty && io.AppointmentId == appointment.Id && io.TenantId == _tenant.TenantId);
-
             if (imagingOrder != null)
             {
                 imagingOrder.ReferringDoctorName = NormalizeReferringDoctorName(request.ReferringDoctorName);
@@ -876,7 +1025,9 @@ public class AppointmentsController : ControllerBase
             appointment.IsDocumented,
             await _context.ClientConsents.AnyAsync(c => c.AppointmentId == appointment.Id),
             await GetImagingOrderIdAsync(appointment.Id),
-            appointment.RoomNumber
+            appointment.RoomNumber,
+            await GetPerformingTechnicianIdAsync(appointment.Id),
+            await GetPerformingTechnicianNameAsync(appointment.Id)
         );
     }
 
@@ -885,6 +1036,44 @@ public class AppointmentsController : ControllerBase
             .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == appointmentId)
             .Select(order => (Guid?)order.Id)
             .FirstOrDefaultAsync();
+
+    private Task<Guid?> GetPerformingTechnicianIdAsync(Guid appointmentId) =>
+        _context.ImagingOrders
+            .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == appointmentId)
+            .Select(order => order.PerformingTechnicianId)
+            .FirstOrDefaultAsync();
+
+    private Task<string?> GetPerformingTechnicianNameAsync(Guid appointmentId) =>
+        _context.ImagingOrders
+            .Where(order => order.TenantId == _tenant.TenantId && order.AppointmentId == appointmentId)
+            .Select(order => order.PerformingTechnician == null
+                ? null
+                : order.PerformingTechnician.FullName ?? order.PerformingTechnician.Email)
+            .FirstOrDefaultAsync();
+
+    private Task<bool> IsActiveTechnicianAsync(Guid userId, CancellationToken cancellationToken) =>
+        _context.Users.AnyAsync(user =>
+            user.Id == userId &&
+            user.TenantId == _tenant.TenantId &&
+            user.IsActive &&
+            user.Role == "Technician",
+            cancellationToken);
+
+    private Task<Guid?> GetTechnicianBusinessUserIdAsync(Guid userId, CancellationToken cancellationToken) =>
+        _context.BusinessUsers
+            .Where(businessUser =>
+                businessUser.TenantId == _tenant.TenantId &&
+                businessUser.UserId == userId &&
+                businessUser.User.Role == "Technician")
+            .Select(businessUser => (Guid?)businessUser.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private Task<bool> IsTechnicianBusinessUserAsync(Guid businessUserId, CancellationToken cancellationToken) =>
+        _context.BusinessUsers.AnyAsync(businessUser =>
+            businessUser.Id == businessUserId &&
+            businessUser.TenantId == _tenant.TenantId &&
+            businessUser.User.Role == "Technician",
+            cancellationToken);
 
     private static DateTime NormalizeToUtc(DateTime value)
     {

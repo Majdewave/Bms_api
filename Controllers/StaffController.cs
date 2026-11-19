@@ -69,6 +69,7 @@ public class StaffController : ControllerBase
         "Admin" => "Admin",
         "Staff" => "Staff",
         "Interpreter" => "Interpreter",
+        "Technician" => "Technician",
         _ => null
     };
 
@@ -276,13 +277,13 @@ public class StaffController : ControllerBase
 
         var role = NormalizeRole(request.Role);
         if (role == null)
-            return BadRequest("Role must be Admin, Staff, or Interpreter.");
+            return BadRequest("Role must be Admin, Staff, Interpreter, or Technician.");
 
         var permissions = role == "Staff" ? request.Permissions : [];
-        var departmentIds = role == "Interpreter" ? [] : request.DepartmentIds;
+        var departmentIds = role is "Interpreter" or "Technician" ? [] : request.DepartmentIds;
 
         if (role != "Interpreter" && string.IsNullOrWhiteSpace(request.Password))
-            return BadRequest("Password is required for Admin and Staff users.");
+            return BadRequest("Password is required for Admin, Staff, and Technician users.");
 
         var hashed = role == "Interpreter"
             ? string.Empty
@@ -391,7 +392,7 @@ public class StaffController : ControllerBase
 
         var role = NormalizeRole(request.Role);
         if (role == null)
-            return BadRequest("Role must be Admin, Staff, or Interpreter.");
+            return BadRequest("Role must be Admin, Staff, Interpreter, or Technician.");
 
         var isOwner = ownerUserId == user.Id;
         if (isOwner && (!request.IsActive || role != "Admin"))
@@ -401,7 +402,7 @@ public class StaffController : ControllerBase
             return Forbid();
 
         var permissions = role == "Staff" ? request.Permissions : [];
-        var departmentIds = role == "Interpreter" ? [] : request.DepartmentIds;
+        var departmentIds = role is "Interpreter" or "Technician" ? [] : request.DepartmentIds;
 
         user.FullName = request.FullName;
         user.Email = request.Email;

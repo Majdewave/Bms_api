@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Clienta.Api.IntegrationTests;
@@ -23,26 +24,47 @@ public sealed class ImagingOrderReferralPdfTests
         public void SetUserId(Guid userId) => UserId = userId;
     }
 
+    private sealed class CapturingLogger : ILogger<ImagingOrderReferralsController>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Messages.Add($"{formatter(state, exception)} {exception}");
+        }
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(
             SqliteConnection connection,
             AppDbContext db,
             ImagingOrderReferralsController controller,
-            Guid orderId)
+            Guid orderId,
+            CapturingLogger logger)
         {
             Connection = connection;
             Db = db;
             Controller = controller;
             OrderId = orderId;
+            Logger = logger;
         }
 
         public SqliteConnection Connection { get; }
         public AppDbContext Db { get; }
         public ImagingOrderReferralsController Controller { get; }
         public Guid OrderId { get; }
+        public CapturingLogger Logger { get; }
 
-        public static async Task<Fixture> CreateAsync()
+        public static async Task<Fixture> CreateAsync(CapturingLogger? logger = null)
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             await connection.OpenAsync();
@@ -53,6 +75,7 @@ public sealed class ImagingOrderReferralPdfTests
                 TenantId = Guid.NewGuid(),
                 UserId = Guid.NewGuid(),
             };
+            logger ??= new CapturingLogger();
             var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
             var db = new AppDbContext(options, tenantContext);
             await db.Database.EnsureCreatedAsync();
@@ -97,8 +120,9 @@ public sealed class ImagingOrderReferralPdfTests
             return new Fixture(
                 connection,
                 db,
-                new ImagingOrderReferralsController(db, tenantContext),
-                orderId);
+                new ImagingOrderReferralsController(db, tenantContext, logger),
+                orderId,
+                logger);
         }
 
         public async ValueTask DisposeAsync()
@@ -150,6 +174,53 @@ public sealed class ImagingOrderReferralPdfTests
         Assert.IsInstanceOfType(
             await fixture.Controller.DownloadDocument(fixture.OrderId),
             typeof(NotFoundResult));
+    }
+
+    [TestMethod]
+    public async Task UpdateTechnicianNotes_PersistsLineBreaksAndAllowsClearing()
+    {
+        await using var fixture = await Fixture.CreateAsync();
+        const string notes = "Patient had difficulty remaining still.\nPositioning limited the view.";
+
+        var updated = await fixture.Controller.UpdateTechnicianNotes(
+            fixture.OrderId,
+            new UpdateImagingOrderTechnicianNotesRequest(notes),
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType(updated, typeof(NoContentResult));
+        Assert.AreEqual(notes, (await fixture.Db.ImagingOrders.SingleAsync()).TechnicianNotes);
+
+        var cleared = await fixture.Controller.UpdateTechnicianNotes(
+            fixture.OrderId,
+            new UpdateImagingOrderTechnicianNotesRequest("  \n "),
+            CancellationToken.None);
+
+        Assert.IsInstanceOfType(cleared, typeof(NoContentResult));
+        Assert.IsNull((await fixture.Db.ImagingOrders.SingleAsync()).TechnicianNotes);
+    }
+
+    [TestMethod]
+    public async Task UpdateTechnicianNotes_LogsDatabaseFailureWithoutLoggingNoteContents()
+    {
+        var logger = new CapturingLogger();
+        await using var fixture = await Fixture.CreateAsync(logger);
+        const string noteContents = "private-note-sentinel";
+        await fixture.Db.Database.ExecuteSqlRawAsync(
+            "CREATE TRIGGER FailTechnicianNotes BEFORE UPDATE OF TechnicianNotes ON ImagingOrders " +
+            "BEGIN SELECT RAISE(FAIL, 'simulated database failure'); END;");
+
+        await Assert.ThrowsExceptionAsync<DbUpdateException>(() =>
+            fixture.Controller.UpdateTechnicianNotes(
+                fixture.OrderId,
+                new UpdateImagingOrderTechnicianNotesRequest(noteContents),
+                CancellationToken.None));
+
+        var log = string.Join(Environment.NewLine, logger.Messages);
+        StringAssert.Contains(log, "Technician notes update failed during save");
+        StringAssert.Contains(log, fixture.OrderId.ToString());
+        StringAssert.Contains(log, fixture.Db.ImagingOrders.Single().TenantId.ToString());
+        StringAssert.Contains(log, "DbUpdateException");
+        Assert.IsFalse(log.Contains(noteContents, StringComparison.Ordinal));
     }
 
     private static IFormFile MakeFile(string name, string contentType, byte[] bytes)

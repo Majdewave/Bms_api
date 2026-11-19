@@ -445,6 +445,10 @@ builder.Services.AddAWSService<Amazon.S3.IAmazonS3>();
 builder.Services.AddScoped<IFileStorage, S3FileStorage>();
 builder.Services.AddScoped<IClientFileService, ClientFileService>();
 builder.Services.AddScoped<InterpretationPdfService>();
+builder.Services.AddScoped<IStaffWorkSessionService, StaffWorkSessionService>();
+builder.Services.AddScoped<IInterpreterWorkSummaryService, InterpreterWorkSummaryService>();
+builder.Services.AddScoped<ITechnicianWorkSummaryService, TechnicianWorkSummaryService>();
+builder.Services.AddScoped<IWorkSummaryOverviewService, WorkSummaryOverviewService>();
 builder.Services.AddSingleton<ITeamChatOnlineUsersStore, InMemoryTeamChatOnlineUsersStore>();
 
 var app = builder.Build();

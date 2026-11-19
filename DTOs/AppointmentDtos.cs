@@ -9,7 +9,8 @@ public record CreateAppointmentRequest(
     Guid? StaffId,
     bool IsDocumented = true,
     string? ReferringDoctorName = null,
-    string? RoomNumber = null
+    string? RoomNumber = null,
+    Guid? PerformingTechnicianId = null
 );
 
 public record UpdateAppointmentRequest(
@@ -22,7 +23,9 @@ public record UpdateAppointmentRequest(
     bool? IsDocumented = true,
     int? QueueNumber = null,
     string? ReferringDoctorName = null,
-    string? RoomNumber = null
+    string? RoomNumber = null,
+    Guid? PerformingTechnicianId = null,
+    bool ClearPerformingTechnician = false
 );
 
 public record AppointmentDto(
@@ -45,7 +48,9 @@ public record AppointmentDto(
     bool IsDocumented,
     bool HasSignedConsent,
     Guid? ImagingOrderId,
-    string? RoomNumber = null
+    string? RoomNumber = null,
+    Guid? PerformingTechnicianId = null,
+    string? PerformingTechnicianName = null
 );
 
 public record ReorderWaitingQueueItemRequest(
@@ -74,4 +79,10 @@ public record AppointmentResponse(
     string? StaffName,
     string? ServiceName,
     bool IsDocumented
+);
+
+public sealed record AppointmentTechnicianOptionResponse(
+    Guid Id,
+    string FullName,
+    string Email
 );
